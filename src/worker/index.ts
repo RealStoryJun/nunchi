@@ -1,4 +1,4 @@
-import { Env, err } from './types';
+import { Env, err, ok, isBusinessType } from './types';
 import { handleAuth } from './auth';
 import { handleMenus } from './menus';
 import { handleSales } from './sales';
@@ -28,6 +28,21 @@ export default {
       }
 
       if (!session) return err('로그인이 필요합니다.', 401);
+
+      if (path === '/api/me/business-type' && request.method === 'POST') {
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return err('잘못된 요청입니다.');
+        }
+        const bt = (body as { businessType?: unknown })?.businessType;
+        if (!isBusinessType(bt)) return err('지원하지 않는 업태입니다.');
+        await env.DB.prepare('UPDATE users SET business_type = ? WHERE id = ?')
+          .bind(bt, session.user.id)
+          .run();
+        return ok({ business_type: bt });
+      }
 
       if (path === '/api/menus' || path.startsWith('/api/menus/')) {
         return await handleMenus(

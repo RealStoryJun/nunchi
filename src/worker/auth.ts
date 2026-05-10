@@ -115,7 +115,14 @@ export const handleAuth = async (
     const userId = Number(result.meta.last_row_id);
     const { token, expiresAt } = await createSession(env, userId);
     return ok(
-      { user: { id: userId, email, business_name: businessName } },
+      {
+        user: {
+          id: userId,
+          email,
+          business_name: businessName,
+          business_type: null,
+        },
+      },
       { headers: { 'set-cookie': sessionCookie(token, expiresAt) } },
     );
   }
@@ -139,10 +146,15 @@ export const handleAuth = async (
     if (!ipRl.ok) return tooMany(ipRl.retryAfterMs);
 
     const user = await env.DB.prepare(
-      'SELECT id, email, password_hash, business_name FROM users WHERE email = ?',
+      'SELECT id, email, password_hash, business_name, business_type FROM users WHERE email = ?',
     )
       .bind(email)
-      .first<Pick<UserRow, 'id' | 'email' | 'password_hash' | 'business_name'>>();
+      .first<
+        Pick<
+          UserRow,
+          'id' | 'email' | 'password_hash' | 'business_name' | 'business_type'
+        >
+      >();
     // 사용자 존재 여부와 무관하게 PBKDF2 한 번 돌려서 timing 균형
     const stored = user?.password_hash ?? (await getDummyHash());
     const valid = await verifyPassword(body.password, stored);
@@ -162,6 +174,7 @@ export const handleAuth = async (
           id: user.id,
           email: user.email,
           business_name: user.business_name,
+          business_type: user.business_type,
         },
       },
       { headers: { 'set-cookie': sessionCookie(token, expiresAt) } },

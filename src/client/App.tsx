@@ -3,6 +3,7 @@ import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Recover from './pages/Recover';
+import Onboarding from './pages/Onboarding';
 import Sales from './pages/Sales';
 import Menus from './pages/Menus';
 import BI from './pages/BI';
@@ -23,6 +24,14 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/recover" element={<Recover />} />
+      <Route
+        path="/onboarding"
+        element={
+          <Protected requireBusinessType={false}>
+            <Onboarding />
+          </Protected>
+        }
+      />
       <Route path="/sales" element={protect(<Sales />)} />
       <Route path="/menus" element={protect(<Menus />)} />
       <Route path="/bi" element={protect(<BI />)} />

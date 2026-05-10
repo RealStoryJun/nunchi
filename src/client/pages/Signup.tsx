@@ -42,7 +42,7 @@ export default function Signup() {
         recoveryAnswer,
       });
       await refreshAuth();
-      navigate('/menus');
+      navigate('/onboarding');
     } catch (err) {
       setError(err instanceof Error ? err.message : '회원가입에 실패했습니다.');
     } finally {

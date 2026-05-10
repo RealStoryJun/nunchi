@@ -42,12 +42,18 @@ export const getSessionUser = async (
   const token = parseCookie(request.headers.get('cookie'), COOKIE);
   if (!token) return null;
   const row = await env.DB.prepare(
-    `SELECT u.id, u.email, u.business_name, s.expires_at
+    `SELECT u.id, u.email, u.business_name, u.business_type, s.expires_at
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ?`,
   )
     .bind(token)
-    .first<{ id: number; email: string; business_name: string; expires_at: number }>();
+    .first<{
+      id: number;
+      email: string;
+      business_name: string;
+      business_type: string | null;
+      expires_at: number;
+    }>();
   if (!row) return null;
   if (row.expires_at < Date.now()) {
     await destroySession(env, token);
@@ -55,7 +61,12 @@ export const getSessionUser = async (
   }
   return {
     token,
-    user: { id: row.id, email: row.email, business_name: row.business_name },
+    user: {
+      id: row.id,
+      email: row.email,
+      business_name: row.business_name,
+      business_type: row.business_type,
+    },
   };
 };
 

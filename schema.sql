@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   business_name TEXT NOT NULL,
+  business_type TEXT,
   recovery_question TEXT NOT NULL,
   recovery_answer_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL

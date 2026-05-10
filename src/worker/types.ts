@@ -7,6 +7,7 @@ export interface SessionUser {
   id: number;
   email: string;
   business_name: string;
+  business_type: string | null;
 }
 
 export interface UserRow {
@@ -14,10 +15,29 @@ export interface UserRow {
   email: string;
   password_hash: string;
   business_name: string;
+  business_type: string | null;
   recovery_question: string;
   recovery_answer_hash: string;
   created_at: number;
 }
+
+export const BUSINESS_TYPE_IDS = [
+  'cafe',
+  'restaurant',
+  'bakery',
+  'bar',
+  'clothing',
+  'bag',
+  'cosmetics',
+  'flower',
+  'bookstore',
+  'pet',
+  'beauty',
+  'other',
+] as const;
+export type BusinessType = (typeof BUSINESS_TYPE_IDS)[number];
+export const isBusinessType = (v: unknown): v is BusinessType =>
+  typeof v === 'string' && (BUSINESS_TYPE_IDS as readonly string[]).includes(v);
 
 export interface MenuRow {
   id: number;

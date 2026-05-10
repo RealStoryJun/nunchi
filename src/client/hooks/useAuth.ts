@@ -5,6 +5,7 @@ export interface User {
   id: number;
   email: string;
   business_name: string;
+  business_type: string | null;
 }
 
 interface AuthState {

@@ -10,14 +10,12 @@ export default function Landing() {
     <div className="min-h-screen flex flex-col">
       <header className="px-6 py-5 flex items-center justify-between max-w-5xl mx-auto w-full">
         <Logo />
-        <div className="flex gap-2">
-          <Link to="/login" className="btn-ghost px-4">
-            로그인
-          </Link>
-          <Link to="/signup" className="btn-primary px-4">
-            시작하기
-          </Link>
-        </div>
+        <Link
+          to="/login"
+          className="text-sub hover:text-ink text-sm px-3 py-2.5 rounded-md"
+        >
+          로그인
+        </Link>
       </header>
       <main className="flex-1 flex items-center">
         <div className="max-w-5xl mx-auto w-full px-6 py-12 grid md:grid-cols-2 gap-12 items-center">

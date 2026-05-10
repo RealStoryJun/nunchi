@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nunchi",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-05-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nunchi-db",
+      "database_id": "15671f48-7350-49c4-8c9a-23c4d7d505f4"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

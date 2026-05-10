@@ -47,6 +47,10 @@ export default function Sales() {
     () => getCache<Sale[]>(salesCacheKey),
   );
   const [savingId, setSavingId] = useState<number | null>(null);
+  // 같은 메뉴 동시 클릭 차단 (useRef로 동기 체크 — React 렌더 비동기 race 회피)
+  const inFlightRef = useRef<Set<number>>(new Set());
+  // optimistic id 충돌 방지 카운터 (같은 ms 두 메뉴 탭 시 음수 id 중복 방지)
+  const optimisticCounterRef = useRef(0);
 
   const loadAll = useCallback(async () => {
     const now = new Date();
@@ -104,9 +108,10 @@ export default function Sales() {
     if (inFlightRef.current.has(menu.id)) return;
     inFlightRef.current.add(menu.id);
     setSavingId(menu.id);
-    // 낙관적 업데이트
+    // 낙관적 업데이트 — id는 카운터 + ms로 충돌 방지 (같은 ms 동시 탭 안전)
+    optimisticCounterRef.current = (optimisticCounterRef.current + 1) & 0xfff;
     const optimistic: Sale = {
-      id: -Date.now(),
+      id: -(Date.now() * 4096 + optimisticCounterRef.current),
       menu_id: menu.id,
       quantity: 1,
       cost_at_sale: menu.cost,
@@ -157,9 +162,6 @@ export default function Sales() {
 
   const recent = (todaySales ?? []).slice(0, 5);
   const salesLoading = todaySales === null;
-
-  // 같은 메뉴 동시 클릭 차단 (useRef로 동기 체크 — React 렌더 비동기 race 회피)
-  const inFlightRef = useRef<Set<number>>(new Set());
 
   // 하단 고정 카드 실제 높이를 측정해 paddingBottom에 반영 (가려짐 방지)
   const footRef = useRef<HTMLDivElement>(null);

@@ -274,20 +274,25 @@ export default function Menus() {
                 {items.map((m, idx) => (
                   <li
                     key={m.id}
-                    className="flex items-center gap-3 px-4 py-3"
+                    className="px-4 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-3"
                   >
-                    <span className="text-2xl w-10 text-center">{m.emoji}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{m.name}</div>
-                      <div className="text-sub text-sm num">
-                        {won(m.price)} <span className="text-xs">/ 원가 {won(m.cost)}</span>
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className="text-2xl w-10 shrink-0 text-center">
+                        {m.emoji}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{m.name}</div>
+                        <div className="text-sub text-sm num">
+                          {won(m.price)}{' '}
+                          <span className="text-xs">/ 원가 {won(m.cost)}</span>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 self-end md:self-auto shrink-0">
                       <button
                         type="button"
                         onClick={() => move(m.id, 'up')}
-                        disabled={idx === 0 && grouped[0]?.[0] === cat}
+                        disabled={idx === 0}
                         className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
                         aria-label="위로"
                       >
@@ -296,7 +301,8 @@ export default function Menus() {
                       <button
                         type="button"
                         onClick={() => move(m.id, 'down')}
-                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub"
+                        disabled={idx === items.length - 1}
+                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
                         aria-label="아래로"
                       >
                         <NavIcon name="chevron-down" size={18} />

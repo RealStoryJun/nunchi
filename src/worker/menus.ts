@@ -140,25 +140,27 @@ export const handleMenus = async (
       return ok({});
     }
 
-    // POST /api/menus/:id/up | /down — display_order 조정
+    // POST /api/menus/:id/up | /down — 같은 카테고리 안에서만 swap
     if ((sub === '/up' || sub === '/down') && request.method === 'POST') {
       const dir = sub === '/up' ? -1 : 1;
       const cur = await env.DB.prepare(
-        'SELECT display_order FROM menus WHERE id = ? AND user_id = ?',
+        'SELECT display_order, category FROM menus WHERE id = ? AND user_id = ?',
       )
         .bind(id, user.id)
-        .first<{ display_order: number }>();
+        .first<{ display_order: number; category: string | null }>();
       if (!cur) return err('메뉴를 찾을 수 없습니다.', 404);
       const neighbor = await env.DB.prepare(
         `SELECT id, display_order FROM menus
-         WHERE user_id = ? AND archived = 0 AND display_order ${dir < 0 ? '<' : '>'} ?
+         WHERE user_id = ?
+           AND archived = 0
+           AND COALESCE(category, '') = COALESCE(?, '')
+           AND display_order ${dir < 0 ? '<' : '>'} ?
          ORDER BY display_order ${dir < 0 ? 'DESC' : 'ASC'}
          LIMIT 1`,
       )
-        .bind(user.id, cur.display_order)
+        .bind(user.id, cur.category, cur.display_order)
         .first<{ id: number; display_order: number }>();
       if (!neighbor) return ok({});
-      // swap
       await env.DB.batch([
         env.DB.prepare('UPDATE menus SET display_order = ? WHERE id = ?').bind(
           neighbor.display_order,

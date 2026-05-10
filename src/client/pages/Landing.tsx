@@ -23,7 +23,7 @@ export default function Landing() {
         <div className="max-w-5xl mx-auto w-full px-6 py-12 grid md:grid-cols-2 gap-12 items-center">
           <div>
             <p className="text-sub mb-3">1인 사업자를 위한</p>
-            <h1 className="font-display text-5xl md:text-6xl leading-tight text-accent">
+            <h1 className="font-display text-4xl md:text-6xl leading-tight text-accent break-keep">
               사장님의 매출 감각,<br />
               <span className="text-ink">눈치</span>
             </h1>
@@ -42,7 +42,7 @@ export default function Landing() {
           </div>
           <div className="card p-6 md:p-8">
             <div className="text-sub text-sm mb-2">오늘의 매출</div>
-            <div className="num text-4xl md:text-5xl font-bold text-accent">
+            <div className="num text-3xl md:text-5xl font-bold text-accent">
               487,500원
             </div>
             <div className="num text-sub mt-1">순이익 312,400원 · 마진 64.1%</div>

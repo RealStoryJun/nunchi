@@ -6,7 +6,7 @@ import { useAuth, logout } from '../hooks/useAuth';
 
 const sideItems = [
   { to: '/sales', label: '판매 입력', icon: '🧾' },
-  { to: '/menus', label: '메뉴 관리', icon: '🍱' },
+  { to: '/menus', label: '메뉴 관리', icon: '🏷️' },
   { to: '/bi', label: 'BI 대시보드', icon: '📊' },
   { to: '/account', label: '계정 설정', icon: '⚙️' },
 ];

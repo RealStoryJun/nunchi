@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 
 const items = [
   { to: '/sales', label: '판매', icon: '🧾' },
-  { to: '/menus', label: '메뉴', icon: '🍱' },
+  { to: '/menus', label: '메뉴', icon: '🏷️' },
   { to: '/bi', label: 'BI', icon: '📊' },
   { to: '/account', label: '설정', icon: '⚙️' },
 ];

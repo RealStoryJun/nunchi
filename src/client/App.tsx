@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Recover from './pages/Recover';
 import Onboarding from './pages/Onboarding';
+import Tutorial from './pages/Tutorial';
 import Sales from './pages/Sales';
 import Menus from './pages/Menus';
 import BI from './pages/BI';
@@ -29,6 +30,14 @@ export default function App() {
         element={
           <Protected requireBusinessType={false}>
             <Onboarding />
+          </Protected>
+        }
+      />
+      <Route
+        path="/tutorial"
+        element={
+          <Protected>
+            <Tutorial />
           </Protected>
         }
       />

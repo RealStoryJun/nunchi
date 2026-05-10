@@ -24,7 +24,7 @@ export default function Onboarding() {
     try {
       await apiPost('/api/me/business-type', { businessType: selected });
       await refreshAuth();
-      navigate('/menus');
+      navigate('/tutorial');
     } catch (e) {
       setError(e instanceof Error ? e.message : '저장 실패');
       setSubmitting(false);

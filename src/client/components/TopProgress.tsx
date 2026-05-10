@@ -18,10 +18,10 @@ export default function TopProgress() {
     };
     if (count > 0) {
       setVisible(true);
-      // 시작 시 빠르게 30%, 그 다음 80%까지 점진 증가
-      setWidth((w) => (w < 30 ? 30 : w));
+      // 시작 시 즉시 18%로 점프 → 90%까지 점진 증가 (체감 빠름)
+      setWidth((w) => (w < 18 ? 18 : w));
       const tick = () => {
-        setWidth((w) => (w >= 80 ? w : w + (80 - w) * 0.06));
+        setWidth((w) => (w >= 90 ? w : w + (90 - w) * 0.045));
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);
@@ -32,21 +32,33 @@ export default function TopProgress() {
     const t = setTimeout(() => {
       setVisible(false);
       setWidth(0);
-    }, 220);
+    }, 280);
     return () => clearTimeout(t);
   }, [count]);
 
   return (
-    <div
-      aria-hidden
-      className={`fixed top-0 inset-x-0 h-[2px] z-50 pointer-events-none transition-opacity duration-200 ${
-        visible ? 'opacity-100' : 'opacity-0'
-      }`}
-    >
+    <>
       <div
-        className="h-full bg-accent transition-[width] duration-150 ease-out"
-        style={{ width: `${width}%` }}
-      />
-    </div>
+        aria-hidden
+        className={`fixed top-0 inset-x-0 h-[3px] z-50 pointer-events-none transition-opacity duration-200 ${
+          visible ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        <div
+          className="h-full bg-accent transition-[width] duration-150 ease-out shadow-[0_0_8px_rgba(27,67,50,0.35)]"
+          style={{ width: `${width}%` }}
+        />
+      </div>
+      <div
+        aria-hidden
+        className={`fixed top-1.5 right-3 z-50 num text-[11px] font-semibold text-accent leading-none pointer-events-none
+                    transition-opacity duration-200 tabular-nums ${
+                      visible && width < 100 ? 'opacity-90' : 'opacity-0'
+                    }`}
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
+        {Math.round(width)}%
+      </div>
+    </>
   );
 }

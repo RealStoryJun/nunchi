@@ -50,7 +50,8 @@ export default function Sales() {
   // 같은 메뉴 동시 클릭 차단 (useRef로 동기 체크 — React 렌더 비동기 race 회피)
   const inFlightRef = useRef<Set<number>>(new Set());
   // optimistic id 충돌 방지 카운터 (같은 ms 두 메뉴 탭 시 음수 id 중복 방지)
-  const optimisticCounterRef = useRef(0);
+  // 초기 시드 random — 두 탭이 같은 ms에 첫 클릭해도 카운터 시작점이 달라 충돌 ≈ 0
+  const optimisticCounterRef = useRef(Math.floor(Math.random() * 4096));
 
   const loadAll = useCallback(async () => {
     const now = new Date();

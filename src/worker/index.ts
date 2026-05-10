@@ -6,6 +6,18 @@ import { handleStats } from './stats';
 import { getSessionUser } from './session';
 
 export default {
+  // 일 1회(03:00 UTC) 만료된 세션·오래된 auth_attempts 정리
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    const now = Date.now();
+    const ATTEMPT_WINDOW = 60 * 60 * 1000; // 1시간 이상 지난 시도 행은 정리
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
+      env.DB.prepare('DELETE FROM auth_attempts WHERE attempted_at < ?').bind(
+        now - ATTEMPT_WINDOW,
+      ),
+    ]);
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;

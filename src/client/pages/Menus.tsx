@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { apiDelete, apiGet, apiPost, apiPut } from '../lib/api';
 import { won } from '../lib/format';
 import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
@@ -46,6 +46,9 @@ export default function Menus() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  const [reordering, setReordering] = useState(false);
+  // ref-guard: 같은 tick burst click도 동기 차단 (state는 disabled 스타일링용)
+  const reorderingRef = useRef(false);
 
   const load = async ({ force = false }: { force?: boolean } = {}) => {
     if (!force && isFresh(cacheKey, TTL_MENUS)) {
@@ -141,9 +144,17 @@ export default function Menus() {
   };
 
   const move = async (id: number, dir: 'up' | 'down') => {
-    await apiPost(`/api/menus/${id}/${dir}`);
-    invalidate(cacheKey);
-    await load({ force: true });
+    if (reorderingRef.current) return;
+    reorderingRef.current = true;
+    setReordering(true);
+    try {
+      await apiPost(`/api/menus/${id}/${dir}`);
+      invalidate(cacheKey);
+      await load({ force: true });
+    } finally {
+      reorderingRef.current = false;
+      setReordering(false);
+    }
   };
 
   return (
@@ -292,7 +303,7 @@ export default function Menus() {
                       <button
                         type="button"
                         onClick={() => move(m.id, 'up')}
-                        disabled={idx === 0}
+                        disabled={idx === 0 || reordering}
                         className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
                         aria-label="위로"
                       >
@@ -301,7 +312,7 @@ export default function Menus() {
                       <button
                         type="button"
                         onClick={() => move(m.id, 'down')}
-                        disabled={idx === items.length - 1}
+                        disabled={idx === items.length - 1 || reordering}
                         className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
                         aria-label="아래로"
                       >

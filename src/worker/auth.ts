@@ -166,7 +166,11 @@ export const handleAuth = async (
       return err('이메일 또는 비밀번호가 일치하지 않습니다.', 401);
     }
     // 성공 시 카운터 리셋 (이메일 한정 — IP는 다른 계정 시도 누적 유지)
-    await resetAttempts(env, emailKey);
+    // + 같은 사용자의 기존 활성 세션 모두 invalidate (탈취된 토큰 회수)
+    await Promise.all([
+      resetAttempts(env, emailKey),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run(),
+    ]);
     const { token, expiresAt } = await createSession(env, user.id);
     return ok(
       {

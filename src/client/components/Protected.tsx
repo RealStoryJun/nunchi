@@ -12,14 +12,17 @@ export default function Protected({
 }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  // splash가 0→100% 부드럽게 채워질 시간 보장 (LoadingScreen FILL_MS와 일치)
-  const [minHold, setMinHold] = useState(true);
+  // 진짜 로딩이 있을 때만 splash. 150ms 미만 짧은 로딩은 깜빡임 방지로 표시 안 함.
+  const [showSplash, setShowSplash] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => setMinHold(false), 850);
+    if (!loading) {
+      setShowSplash(false);
+      return;
+    }
+    const t = setTimeout(() => setShowSplash(true), 150);
     return () => clearTimeout(t);
-  }, []);
-  if (loading || minHold)
-    return <LoadingScreen label="가게 정보를 불러오는 중" />;
+  }, [loading]);
+  if (loading) return showSplash ? <LoadingScreen label="가게 정보를 불러오는 중" /> : null;
   if (!user) return <Navigate to="/login" replace />;
   if (
     requireBusinessType &&

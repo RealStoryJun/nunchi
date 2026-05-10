@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { apiDelete, apiGet, apiPost, apiPut } from '../lib/api';
 import { won } from '../lib/format';
-import { getCache, setCache } from '../lib/cache';
+import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
 import { Skeleton } from '../components/Skeleton';
 import NavIcon from '../components/NavIcon';
 import { useAuth } from '../hooks/useAuth';
@@ -33,6 +33,7 @@ export default function Menus() {
   const { user } = useAuth();
   const userId = user?.id ?? 0;
   const cacheKey = `menus:${userId}`;
+  const TTL_MENUS = 5 * 60 * 1000;
 
   const [menus, setMenus] = useState<Menu[]>(
     () => getCache<Menu[]>(cacheKey) ?? [],
@@ -46,7 +47,11 @@ export default function Menus() {
   const [submitting, setSubmitting] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
 
-  const load = async () => {
+  const load = async ({ force = false }: { force?: boolean } = {}) => {
+    if (!force && isFresh(cacheKey, TTL_MENUS)) {
+      setLoaded(true);
+      return;
+    }
     try {
       const data = await apiGet<{ menus: Menu[] }>('/api/menus');
       setMenus(data.menus);
@@ -117,7 +122,8 @@ export default function Menus() {
       } else {
         await apiPost('/api/menus', payload);
       }
-      await load();
+      invalidate(cacheKey);
+      await load({ force: true });
       closeForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : '저장 실패');
@@ -129,13 +135,15 @@ export default function Menus() {
   const archive = async (id: number) => {
     if (!confirm('이 메뉴를 보관(숨김)할까요? 과거 매출 기록은 유지됩니다.')) return;
     await apiDelete(`/api/menus/${id}`);
-    await load();
+    invalidate(cacheKey);
+    await load({ force: true });
     if (editing?.id === id) closeForm();
   };
 
   const move = async (id: number, dir: 'up' | 'down') => {
     await apiPost(`/api/menus/${id}/${dir}`);
-    await load();
+    invalidate(cacheKey);
+    await load({ force: true });
   };
 
   return (

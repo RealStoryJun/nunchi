@@ -5,7 +5,7 @@ import CountUp from '../components/CountUp';
 import { Skeleton } from '../components/Skeleton';
 import { apiDelete, apiGet, apiPost } from '../lib/api';
 import { startOfDay, endOfDay } from '../lib/format';
-import { getCache, setCache } from '../lib/cache';
+import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
 import { useAuth } from '../hooks/useAuth';
 
 interface Menu {
@@ -31,31 +31,51 @@ export default function Sales() {
   const { user } = useAuth();
   const userId = user?.id ?? 0;
   const menuCacheKey = `menus:${userId}`;
+  const salesCacheKey = `sales:today:${userId}`;
+  const TTL_MENUS = 5 * 60 * 1000; // 5분
+  const TTL_SALES = 30 * 1000; // 30초
 
-  // 메뉴는 캐시 즉시 렌더 → 백그라운드에서 갱신 (SWR)
+  // 메뉴는 캐시 즉시 렌더 → TTL 안 신선하면 백그라운드 갱신
   const [menus, setMenus] = useState<Menu[]>(
     () => getCache<Menu[]>(menuCacheKey) ?? [],
   );
   const [menusLoaded, setMenusLoaded] = useState<boolean>(
     () => (getCache<Menu[]>(menuCacheKey)?.length ?? 0) > 0,
   );
-  // 오늘 판매는 늘 fresh가 필요 (취소/추가가 빈번) — null=로딩 중
-  const [todaySales, setTodaySales] = useState<Sale[] | null>(null);
+  // 오늘 판매도 캐시 즉시 표시 + TTL 검사
+  const [todaySales, setTodaySales] = useState<Sale[] | null>(
+    () => getCache<Sale[]>(salesCacheKey),
+  );
   const [savingId, setSavingId] = useState<number | null>(null);
 
   const loadAll = useCallback(async () => {
     const now = new Date();
     const from = startOfDay(now).getTime();
     const to = endOfDay(now).getTime();
-    const [m, s] = await Promise.all([
-      apiGet<{ menus: Menu[] }>('/api/menus'),
-      apiGet<{ sales: Sale[] }>(`/api/sales?from=${from}&to=${to}&limit=200`),
-    ]);
-    setMenus(m.menus);
-    setCache(menuCacheKey, m.menus);
-    setMenusLoaded(true);
-    setTodaySales(s.sales);
-  }, [menuCacheKey]);
+    const tasks: Promise<void>[] = [];
+    if (!isFresh(menuCacheKey, TTL_MENUS)) {
+      tasks.push(
+        apiGet<{ menus: Menu[] }>('/api/menus').then((m) => {
+          setMenus(m.menus);
+          setCache(menuCacheKey, m.menus);
+          setMenusLoaded(true);
+        }),
+      );
+    } else {
+      setMenusLoaded(true);
+    }
+    if (!isFresh(salesCacheKey, TTL_SALES)) {
+      tasks.push(
+        apiGet<{ sales: Sale[] }>(
+          `/api/sales?from=${from}&to=${to}&limit=200`,
+        ).then((s) => {
+          setTodaySales(s.sales);
+          setCache(salesCacheKey, s.sales);
+        }),
+      );
+    }
+    await Promise.all(tasks);
+  }, [menuCacheKey, salesCacheKey, TTL_MENUS, TTL_SALES]);
   useEffect(() => {
     loadAll();
   }, [loadAll]);
@@ -81,6 +101,8 @@ export default function Sales() {
   }, [menus]);
 
   const sell = async (menu: Menu) => {
+    if (inFlightRef.current.has(menu.id)) return;
+    inFlightRef.current.add(menu.id);
     setSavingId(menu.id);
     // 낙관적 업데이트
     const optimistic: Sale = {
@@ -99,9 +121,13 @@ export default function Sales() {
         menuId: menu.id,
         quantity: 1,
       });
-      setTodaySales((prev) =>
-        (prev ?? []).map((s) => (s.id === optimistic.id ? data.sale : s)),
-      );
+      setTodaySales((prev) => {
+        const next = (prev ?? []).map((s) =>
+          s.id === optimistic.id ? data.sale : s,
+        );
+        setCache(salesCacheKey, next);
+        return next;
+      });
     } catch (e) {
       setTodaySales((prev) =>
         (prev ?? []).filter((s) => s.id !== optimistic.id),
@@ -109,22 +135,31 @@ export default function Sales() {
       alert(e instanceof Error ? e.message : '판매 저장 실패');
     } finally {
       setSavingId(null);
+      inFlightRef.current.delete(menu.id);
     }
   };
 
   const undo = async (sale: Sale) => {
-    if (sale.id < 0) return; // 아직 서버에 저장 안 됨
-    setTodaySales((prev) => (prev ?? []).filter((s) => s.id !== sale.id));
+    if (sale.id < 0) return;
+    setTodaySales((prev) => {
+      const next = (prev ?? []).filter((s) => s.id !== sale.id);
+      setCache(salesCacheKey, next);
+      return next;
+    });
     try {
       await apiDelete(`/api/sales/${sale.id}`);
     } catch (e) {
       alert(e instanceof Error ? e.message : '취소 실패');
+      invalidate(salesCacheKey);
       loadAll();
     }
   };
 
   const recent = (todaySales ?? []).slice(0, 5);
   const salesLoading = todaySales === null;
+
+  // 같은 메뉴 동시 클릭 차단 (useRef로 동기 체크 — React 렌더 비동기 race 회피)
+  const inFlightRef = useRef<Set<number>>(new Set());
 
   // 하단 고정 카드 실제 높이를 측정해 paddingBottom에 반영 (가려짐 방지)
   const footRef = useRef<HTMLDivElement>(null);
@@ -183,15 +218,13 @@ export default function Sales() {
               <h3 className="text-sm text-sub mb-2 px-1">{cat}</h3>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                 {items.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`min-w-0 ${savingId === m.id ? 'opacity-70' : ''}`}
-                  >
+                  <div key={m.id} className="min-w-0">
                     <MenuTile
                       emoji={m.emoji}
                       name={m.name}
                       price={m.price}
                       onTap={() => sell(m)}
+                      disabled={savingId === m.id}
                     />
                   </div>
                 ))}

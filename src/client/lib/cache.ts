@@ -17,6 +17,29 @@ export function getCache<T>(key: string): T | null {
   }
 }
 
+export function getCacheMeta<T>(key: string): Entry<T> | null {
+  try {
+    const raw = localStorage.getItem(PREFIX + key);
+    if (!raw) return null;
+    return JSON.parse(raw) as Entry<T>;
+  } catch {
+    return null;
+  }
+}
+
+export function isFresh(key: string, ttlMs: number): boolean {
+  const meta = getCacheMeta(key);
+  return !!meta && Date.now() - meta.ts < ttlMs;
+}
+
+export function invalidate(key: string): void {
+  try {
+    localStorage.removeItem(PREFIX + key);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function setCache<T>(key: string, v: T): void {
   try {
     localStorage.setItem(

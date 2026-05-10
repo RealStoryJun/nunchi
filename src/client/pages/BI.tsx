@@ -11,9 +11,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { Link } from 'react-router-dom';
 import StatCard from '../components/StatCard';
 import { Skeleton } from '../components/Skeleton';
 import { apiGet } from '../lib/api';
+import { getCache, setCache, isFresh } from '../lib/cache';
+import { useAuth } from '../hooks/useAuth';
 import {
   endOfDay,
   pct,
@@ -61,7 +64,11 @@ type Range = 'today' | 'week' | 'month' | 'custom';
 
 const PIE_COLORS = ['#1B4332', '#2D6A4F', '#52796F', '#C99D52', '#E76F51', '#767270'];
 
+const TTL_STATS = 30 * 1000;
+
 export default function BI() {
+  const { user } = useAuth();
+  const userId = user?.id ?? 0;
   const [range, setRange] = useState<Range>('today');
   const [from, setFrom] = useState<string>(ymd(new Date()));
   const [to, setTo] = useState<string>(ymd(new Date()));
@@ -84,17 +91,27 @@ export default function BI() {
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    const tz = -new Date().getTimezoneOffset(); // KST → 540
+    const cacheKey = `stats:${userId}:${fromMs}:${toMs}`;
+    const cached = getCache<Stats>(cacheKey);
+    if (cached) {
+      setStats(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+    if (isFresh(cacheKey, TTL_STATS)) return;
+    const tz = -new Date().getTimezoneOffset();
     apiGet<Stats>(`/api/stats?from=${fromMs}&to=${toMs}&tz=${tz}`)
       .then((d) => {
-        if (alive) setStats(d);
+        if (!alive) return;
+        setStats(d);
+        setCache(cacheKey, d);
       })
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [fromMs, toMs]);
+  }, [fromMs, toMs, userId]);
 
   const ranked = useMemo(() => {
     if (!stats) return [];
@@ -180,6 +197,18 @@ export default function BI() {
             </div>
           </div>
         </>
+      ) : stats.qty === 0 ? (
+        <div className="card p-8 text-center anim-fade">
+          <p className="text-3xl mb-3">🌱</p>
+          <p className="text-lg mb-1.5 font-semibold">아직 판매 기록이 없어요</p>
+          <p className="text-sub text-sm mb-5 break-keep">
+            메뉴를 등록하고 한 탭으로 판매를 입력하면<br />
+            매출과 인기 상품을 자동으로 분석해드릴게요.
+          </p>
+          <Link to="/menus" className="btn-primary inline-flex px-5">
+            메뉴 등록하러 가기 →
+          </Link>
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

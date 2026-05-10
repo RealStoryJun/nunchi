@@ -57,7 +57,7 @@ export default function Signup() {
           <Logo />
         </Link>
       </header>
-      <main className="flex-1 flex items-center justify-center px-6 pb-10">
+      <main className="flex-1 flex items-start md:items-center justify-center px-6 pt-4 pb-10 md:pt-0">
         <div className="w-full max-w-md">
           <h1 className="font-display text-3xl text-ink mb-1">눈치 시작하기</h1>
           <p className="text-sub mb-6">가게 이름과 이메일만 있으면 끝.</p>

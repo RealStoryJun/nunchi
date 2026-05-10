@@ -56,7 +56,7 @@ export default function Recover() {
           <Logo />
         </Link>
       </header>
-      <main className="flex-1 flex items-center justify-center px-6">
+      <main className="flex-1 flex items-start md:items-center justify-center px-6 pt-6 pb-10 md:pt-0">
         <div className="w-full max-w-sm">
           <h1 className="font-display text-3xl text-ink mb-1">비밀번호 찾기</h1>
           <p className="text-sub mb-6">

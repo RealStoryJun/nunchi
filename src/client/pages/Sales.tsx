@@ -182,7 +182,8 @@ export default function Sales() {
         </div>
       )}
 
-      {/* 하단 고정 카드: 오늘 매출 + 최근 입력 */}
+      {/* 하단 고정 카드: 오늘 매출 + 최근 입력 — 메뉴 0개 또는 오늘 판매 0건이면 숨김 */}
+      {menusLoaded && menus.length > 0 && (salesLoading || todayQty > 0) && (
       <div
         className="fixed md:static md:mt-8 inset-x-0 md:inset-x-auto px-3 md:px-0 z-20"
         style={{
@@ -235,8 +236,8 @@ export default function Sales() {
                     <button
                       type="button"
                       onClick={() => undo(s)}
-                      className="text-warm text-xs px-2 py-1 rounded-md hover:bg-warm/10 whitespace-nowrap"
-                      aria-label="취소"
+                      className="text-warm text-xs font-medium px-3 h-11 -my-1.5 rounded-md hover:bg-warm/10 whitespace-nowrap"
+                      aria-label="판매 기록 취소"
                     >
                       취소
                     </button>
@@ -248,6 +249,7 @@ export default function Sales() {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

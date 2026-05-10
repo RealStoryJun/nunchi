@@ -174,7 +174,7 @@ export default function Menus() {
                   key={e}
                   type="button"
                   onClick={() => setForm({ ...form, emoji: e })}
-                  className={`w-10 h-10 rounded-lg text-xl border ${
+                  className={`w-12 h-12 rounded-lg text-xl border ${
                     form.emoji === e
                       ? 'border-accent bg-accent/10'
                       : 'border-border bg-card'

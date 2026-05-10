@@ -2,13 +2,14 @@ import { ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import Logo from './Logo';
 import BottomNav from './BottomNav';
+import NavIcon, { IconName } from './NavIcon';
 import { useAuth, logout } from '../hooks/useAuth';
 
-const sideItems = [
-  { to: '/sales', label: '판매 입력', icon: '🧾' },
-  { to: '/menus', label: '메뉴 관리', icon: '🏷️' },
-  { to: '/bi', label: 'BI 대시보드', icon: '📊' },
-  { to: '/account', label: '계정 설정', icon: '⚙️' },
+const sideItems: { to: string; label: string; icon: IconName }[] = [
+  { to: '/sales', label: '판매 입력', icon: 'receipt' },
+  { to: '/menus', label: '메뉴 관리', icon: 'tag' },
+  { to: '/bi', label: 'BI 대시보드', icon: 'chart' },
+  { to: '/account', label: '계정 설정', icon: 'settings' },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -42,7 +43,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                 }`
               }
             >
-              <span>{it.icon}</span>
+              <NavIcon name={it.icon} size={18} />
               <span>{it.label}</span>
             </NavLink>
           ))}

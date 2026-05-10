@@ -44,6 +44,14 @@ Apply each item:
 12. **Form re-entry** — Menu edit in flight; user clicks elsewhere. State preserved or lost? Acceptable trade-off?
 13. **Tutorial / onboarding skip** — Once completed, never shown again unless user explicitly visits. Verify from `Onboarding`/`Tutorial` and `Protected` gating.
 
+14. **State-combination matrix** — Walk every interactive surface through orthogonal state pairs and confirm one consistent message. **Empty + open-form is the most common miss.** Required combos:
+    - Menus: `menus=0` with `formOpen=true` AND `formOpen=false` (the empty CTA must vanish when form is open).
+    - Menus: `menus>0` with `formOpen=true` (form should not duplicate above existing list spacing).
+    - Sales: `menus=0` (empty card visible) — ensure no leftover bottom card or skeleton.
+    - Sales: `menus>0, todayQty=0` (sales bottom card hidden, no orphan paddingBottom).
+    - Any page: `loading=true + cached=present` (do not show splash AND skeleton AND data simultaneously).
+    Reject the page if two distinct elements push the user toward the same action — that's a duplication smell.
+
 ## How to perform the review
 
 1. Read the changed files first; trace data flow start→end.

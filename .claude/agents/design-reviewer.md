@@ -44,6 +44,13 @@ Apply each item against the changes you're asked to review:
 
 8. **Korean copy tone** — Friendly, concise, Pretendard rhythm. Avoid technical English unless brand. Watch for awkward line breaks that change meaning.
 
+10. **State-combination coverage** — Always probe at least 2 orthogonal toggles per page. Do not declare a page clean from a single state. Required combinations on Nunchi:
+    - Menus: `(menus=0|>0) × (formOpen=true|false)` × `(reordering=on|off)` — empty+formOpen must NOT show the empty CTA card duplicated under the form.
+    - Sales: `(menus=0|>0) × (todayQty=0|>0)` × `(savingId set|null)`.
+    - BI: `(qty=0|>0) × (range=오늘|주|달|custom)`.
+    - All Protected pages: `(loading | cached | empty | error)` reachable independently.
+    Flag any combo where the same CTA, indicator, or message appears twice or contradicts itself.
+
 9. **Animation choreography** — Onboarding/Tutorial use `anim-rise`/`anim-slide-r` with stagger (35–60ms). New animations should follow ~300–500ms duration with cubic-bezier easing already defined in `index.css`. Don't introduce a 4th easing flavor without reason.
 
 ## How to perform the review

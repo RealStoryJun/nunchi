@@ -164,7 +164,7 @@ export default function Menus() {
           <h1 className="font-display text-2xl text-ink">메뉴 관리</h1>
           <span className="text-sub text-sm">{menus.length}개 활성</span>
         </div>
-        {!formOpen && (
+        {!formOpen && menus.length > 0 && (
           <button
             type="button"
             onClick={openNew}
@@ -265,7 +265,7 @@ export default function Menus() {
             <Skeleton key={i} className="h-16" />
           ))}
         </div>
-      ) : menus.length === 0 ? (
+      ) : menus.length === 0 && !formOpen ? (
         <div className="card p-10 text-center">
           <p className="text-sub mb-4">아직 메뉴가 없어요.</p>
           <button
@@ -276,7 +276,7 @@ export default function Menus() {
             + 첫 메뉴 추가하기
           </button>
         </div>
-      ) : (
+      ) : menus.length === 0 ? null : (
         <div className="space-y-6">
           {grouped.map(([cat, items]) => (
             <section key={cat}>

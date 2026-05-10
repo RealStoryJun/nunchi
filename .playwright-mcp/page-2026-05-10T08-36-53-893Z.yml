@@ -1,0 +1,73 @@
+- generic [ref=e36]:
+  - banner [ref=e37]:
+    - generic [ref=e38]:
+      - img [ref=e39]
+      - generic [ref=e44]: 눈치
+    - generic [ref=e45]: 눈치카페 신촌점
+  - main [ref=e46]:
+    - generic [ref=e47]:
+      - generic [ref=e48]:
+        - heading "메뉴 관리" [level=1] [ref=e49]
+        - generic [ref=e50]: 0개 활성
+      - generic [ref=e51]:
+        - heading "새 메뉴 추가" [level=2] [ref=e53]
+        - generic [ref=e54]:
+          - generic [ref=e55]:
+            - generic [ref=e56]: 이름
+            - 'textbox "예: 아메리카노" [ref=e57]'
+          - generic [ref=e58]:
+            - generic [ref=e59]: 분류 (선택)
+            - 'textbox "예: 음료" [ref=e60]'
+          - generic [ref=e61]:
+            - generic [ref=e62]: 이모지
+            - generic [ref=e63]:
+              - button "☕" [ref=e64] [cursor=pointer]
+              - button "🍵" [ref=e65] [cursor=pointer]
+              - button "🥤" [ref=e66] [cursor=pointer]
+              - button "🧃" [ref=e67] [cursor=pointer]
+              - button "🍰" [ref=e68] [cursor=pointer]
+              - button "🥐" [ref=e69] [cursor=pointer]
+              - button "🍞" [ref=e70] [cursor=pointer]
+              - button "🥪" [ref=e71] [cursor=pointer]
+              - button "🍔" [ref=e72] [cursor=pointer]
+              - button "🍟" [ref=e73] [cursor=pointer]
+              - button "🍕" [ref=e74] [cursor=pointer]
+              - button "🍝" [ref=e75] [cursor=pointer]
+              - button "🍜" [ref=e76] [cursor=pointer]
+              - button "🍱" [ref=e77] [cursor=pointer]
+              - button "🍣" [ref=e78] [cursor=pointer]
+              - button "🍙" [ref=e79] [cursor=pointer]
+              - button "🍦" [ref=e80] [cursor=pointer]
+              - button "🍩" [ref=e81] [cursor=pointer]
+              - button "🍪" [ref=e82] [cursor=pointer]
+              - button "📦" [ref=e83] [cursor=pointer]
+          - generic [ref=e84]:
+            - generic [ref=e85]: 원가 (원)
+            - spinbutton [ref=e86]
+          - generic [ref=e87]:
+            - generic [ref=e88]: 판매가 (원)
+            - spinbutton [ref=e89]
+        - button "메뉴 추가" [ref=e90] [cursor=pointer]
+      - generic [ref=e91]: 아직 메뉴가 없어요. 위에서 첫 메뉴를 추가해보세요.
+  - navigation [ref=e92]:
+    - list [ref=e93]:
+      - listitem [ref=e94]:
+        - link "🧾 판매" [ref=e95] [cursor=pointer]:
+          - /url: /sales
+          - generic [ref=e96]: 🧾
+          - generic [ref=e97]: 판매
+      - listitem [ref=e98]:
+        - link "🍱 메뉴" [ref=e99] [cursor=pointer]:
+          - /url: /menus
+          - generic [ref=e100]: 🍱
+          - generic [ref=e101]: 메뉴
+      - listitem [ref=e102]:
+        - link "📊 BI" [ref=e103] [cursor=pointer]:
+          - /url: /bi
+          - generic [ref=e104]: 📊
+          - generic [ref=e105]: BI
+      - listitem [ref=e106]:
+        - link "⚙️ 설정" [ref=e107] [cursor=pointer]:
+          - /url: /account
+          - generic [ref=e108]: ⚙️
+          - generic [ref=e109]: 설정

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import MenuTile from '../components/MenuTile';
 import CountUp from '../components/CountUp';
 import { apiDelete, apiGet, apiPost } from '../lib/api';
-import { formatDate, startOfDay, endOfDay } from '../lib/format';
+import { startOfDay, endOfDay } from '../lib/format';
 
 interface Menu {
   id: number;
@@ -113,10 +113,13 @@ export default function Sales() {
     return <div className="p-6 text-sub">불러오는 중…</div>;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0 pb-40 md:pb-0">
-      <div className="md:hidden mb-4">
+    <div
+      className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0 md:pb-0"
+      style={{ paddingBottom: 'calc(var(--sales-foot, 220px) + env(safe-area-inset-bottom))' }}
+    >
+      <div className="md:hidden mb-3">
         <h1 className="font-display text-2xl">판매 입력</h1>
-        <p className="text-sub text-sm">메뉴 한 번 탭 = 1개 판매 기록</p>
+        <p className="text-sub text-xs">메뉴 한 번 탭 = 1개 판매 기록</p>
       </div>
       <div className="hidden md:flex md:items-baseline md:justify-between mb-6">
         <h1 className="font-display text-3xl">판매 입력</h1>
@@ -140,7 +143,10 @@ export default function Sales() {
               <h3 className="text-sm text-sub mb-2 px-1">{cat}</h3>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                 {items.map((m) => (
-                  <div key={m.id} className={savingId === m.id ? 'opacity-70' : ''}>
+                  <div
+                    key={m.id}
+                    className={`min-w-0 ${savingId === m.id ? 'opacity-70' : ''}`}
+                  >
                     <MenuTile
                       emoji={m.emoji}
                       name={m.name}
@@ -157,42 +163,39 @@ export default function Sales() {
 
       {/* 하단 고정 카드: 오늘 매출 + 최근 입력 */}
       <div
-        className="fixed md:static bottom-16 md:bottom-auto inset-x-0 md:inset-x-auto
-                   md:mt-8 px-4 md:px-0 z-20"
+        className="fixed md:static md:mt-8 inset-x-0 md:inset-x-auto px-3 md:px-0 z-20"
+        style={{
+          bottom: 'calc(64px + env(safe-area-inset-bottom))',
+        }}
       >
         <div className="max-w-4xl mx-auto">
-          <div className="card p-4 md:p-5">
+          <div className="card p-3 md:p-5 shadow-soft">
             <div className="flex items-baseline justify-between">
-              <span className="text-sub text-sm">오늘의 매출</span>
+              <span className="text-sub text-xs md:text-sm">오늘의 매출</span>
               <span className="text-sub text-xs num">{todayQty}건</span>
             </div>
             <CountUp
               value={todayRevenue}
-              className="num text-3xl md:text-4xl font-bold text-accent block mt-1"
+              className="num text-2xl md:text-4xl font-bold text-accent block leading-tight mt-0.5"
             />
             {recent.length > 0 && (
-              <ul className="mt-3 space-y-1 text-sm">
+              <ul className="mt-2 md:mt-3 divide-y divide-border/60">
                 {recent.map((s) => (
                   <li
                     key={s.id}
-                    className="flex items-center gap-2 px-1 py-1.5 rounded-lg
-                               hover:bg-black/[0.02]"
+                    className="flex items-center gap-2 py-1.5 text-sm min-w-0"
                   >
-                    <span className="text-lg leading-none">
+                    <span className="text-base leading-none w-5 text-center">
                       {s.menu_emoji || '📦'}
                     </span>
-                    <span className="flex-1 truncate">{s.menu_name}</span>
-                    <span className="num text-sub text-xs">
-                      {formatDate(s.sold_at)}
-                    </span>
-                    <span className="num font-medium">
+                    <span className="flex-1 truncate min-w-0">{s.menu_name}</span>
+                    <span className="num font-medium whitespace-nowrap">
                       +{(s.price_at_sale * s.quantity).toLocaleString('ko-KR')}원
                     </span>
                     <button
                       type="button"
                       onClick={() => undo(s)}
-                      className="text-warm text-xs px-2 py-1 rounded-md
-                                 hover:bg-warm/10"
+                      className="text-warm text-xs px-2 py-1 rounded-md hover:bg-warm/10 whitespace-nowrap"
                       aria-label="취소"
                     >
                       취소

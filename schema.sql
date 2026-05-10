@@ -42,6 +42,13 @@ CREATE TABLE IF NOT EXISTS sales (
   FOREIGN KEY (menu_id) REFERENCES menus(id)
 );
 
+CREATE TABLE IF NOT EXISTS auth_attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL,
+  attempted_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sales_user_date ON sales(user_id, sold_at);
 CREATE INDEX IF NOT EXISTS idx_menus_user ON menus(user_id, archived);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_attempts ON auth_attempts(key, attempted_at);

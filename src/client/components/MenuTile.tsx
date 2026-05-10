@@ -22,15 +22,15 @@ export default function MenuTile({ emoji, name, price, onTap }: Props) {
         onTap();
       }}
       className={`card w-full min-w-0 flex flex-col items-center justify-center gap-1
-                  px-2 py-3 min-h-[104px] active:scale-[0.97] transition
+                  px-2 py-3 min-h-[112px] active:scale-[0.97] transition
                   focus:outline-none focus:ring-2 focus:ring-accent/40
                   ${pop ? 'anim-pop' : ''}`}
     >
       <span className="text-3xl leading-none">{emoji || '📦'}</span>
-      <span className="block w-full text-sm font-medium text-ink truncate text-center">
+      <span className="block w-full text-[13px] leading-snug font-medium text-ink clamp-2 text-center">
         {name}
       </span>
-      <span className="num text-xs text-sub">
+      <span className="num text-xs text-sub mt-auto">
         {price.toLocaleString('ko-KR')}원
       </span>
     </button>

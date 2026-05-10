@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MenuTile from '../components/MenuTile';
 import CountUp from '../components/CountUp';
@@ -126,10 +126,29 @@ export default function Sales() {
   const recent = (todaySales ?? []).slice(0, 5);
   const salesLoading = todaySales === null;
 
+  // 하단 고정 카드 실제 높이를 측정해 paddingBottom에 반영 (가려짐 방지)
+  const footRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = footRef.current;
+    const wrap = wrapperRef.current;
+    if (!el || !wrap) return;
+    const apply = () => {
+      const h = el.getBoundingClientRect().height;
+      // 하단 네비 64px + 카드 + 24px 여유
+      wrap.style.setProperty('--sales-foot', `${Math.ceil(h + 88)}px`);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [menusLoaded, todaySales, recent.length]);
+
   return (
     <div
+      ref={wrapperRef}
       className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0 md:pb-0"
-      style={{ paddingBottom: 'calc(var(--sales-foot, 220px) + env(safe-area-inset-bottom))' }}
+      style={{ paddingBottom: 'calc(var(--sales-foot, 340px) + env(safe-area-inset-bottom))' }}
     >
       <div className="md:hidden mb-3">
         <h1 className="font-display text-2xl">판매 입력</h1>
@@ -185,6 +204,7 @@ export default function Sales() {
       {/* 하단 고정 카드: 오늘 매출 + 최근 입력 — 메뉴 0개 또는 오늘 판매 0건이면 숨김 */}
       {menusLoaded && menus.length > 0 && (salesLoading || todayQty > 0) && (
       <div
+        ref={footRef}
         className="fixed md:static md:mt-8 inset-x-0 md:inset-x-auto px-3 md:px-0 z-20"
         style={{
           bottom: 'calc(64px + env(safe-area-inset-bottom))',

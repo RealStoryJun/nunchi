@@ -48,7 +48,7 @@ export default function Account() {
               <button
                 type="button"
                 onClick={() => setEditingType(true)}
-                className="text-xs text-accent font-medium hover:underline"
+                className="text-sm text-accent font-medium px-3 h-9 rounded-lg hover:bg-accent/10 -my-1"
               >
                 변경
               </button>

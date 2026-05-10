@@ -3,6 +3,7 @@ import { apiDelete, apiGet, apiPost, apiPut } from '../lib/api';
 import { won } from '../lib/format';
 import { getCache, setCache } from '../lib/cache';
 import { Skeleton } from '../components/Skeleton';
+import NavIcon from '../components/NavIcon';
 import { useAuth } from '../hooks/useAuth';
 
 interface Menu {
@@ -43,6 +44,7 @@ export default function Menus() {
   const [form, setForm] = useState({ ...empty });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
 
   const load = async () => {
     try {
@@ -68,10 +70,17 @@ export default function Menus() {
     return Array.from(map.entries());
   }, [menus]);
 
-  const startNew = () => {
+  const closeForm = () => {
     setEditing(null);
     setForm({ ...empty });
     setError(null);
+    setFormOpen(false);
+  };
+  const openNew = () => {
+    setEditing(null);
+    setForm({ ...empty });
+    setError(null);
+    setFormOpen(true);
   };
   const startEdit = (m: Menu) => {
     setEditing(m);
@@ -83,6 +92,7 @@ export default function Menus() {
       emoji: m.emoji || '📦',
     });
     setError(null);
+    setFormOpen(true);
   };
 
   const submit = async (e: FormEvent) => {
@@ -108,7 +118,7 @@ export default function Menus() {
         await apiPost('/api/menus', payload);
       }
       await load();
-      startNew();
+      closeForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : '저장 실패');
     } finally {
@@ -120,7 +130,7 @@ export default function Menus() {
     if (!confirm('이 메뉴를 보관(숨김)할까요? 과거 매출 기록은 유지됩니다.')) return;
     await apiDelete(`/api/menus/${id}`);
     await load();
-    if (editing?.id === id) startNew();
+    if (editing?.id === id) closeForm();
   };
 
   const move = async (id: number, dir: 'up' | 'down') => {
@@ -130,21 +140,36 @@ export default function Menus() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0">
-      <div className="flex items-baseline justify-between mb-4">
-        <h1 className="font-display text-2xl text-ink">메뉴 관리</h1>
-        <span className="text-sub text-sm">{menus.length}개 활성</span>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="font-display text-2xl text-ink">메뉴 관리</h1>
+          <span className="text-sub text-sm">{menus.length}개 활성</span>
+        </div>
+        {!formOpen && (
+          <button
+            type="button"
+            onClick={openNew}
+            className="btn-primary px-4 h-10 text-sm"
+          >
+            + 추가
+          </button>
+        )}
       </div>
 
-      <form onSubmit={submit} className="card p-5 mb-6 space-y-4">
+      {formOpen && (
+      <form onSubmit={submit} className="card p-5 mb-6 space-y-4 anim-fade">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">
             {editing ? `'${editing.name}' 수정` : '새 메뉴 추가'}
           </h2>
-          {editing && (
-            <button type="button" onClick={startNew} className="text-sm text-sub">
-              취소
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={closeForm}
+            className="text-sm text-sub px-2 py-1 rounded hover:bg-black/5"
+            aria-label="폼 닫기"
+          >
+            닫기
+          </button>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
@@ -157,7 +182,7 @@ export default function Menus() {
               placeholder="예: 아메리카노"
             />
           </div>
-          <div>
+          <div className="col-span-2">
             <label className="label">분류 (선택)</label>
             <input
               className="field"
@@ -165,25 +190,6 @@ export default function Menus() {
               onChange={(e) => setForm({ ...form, category: e.target.value })}
               placeholder="예: 음료"
             />
-          </div>
-          <div>
-            <label className="label">이모지</label>
-            <div className="flex flex-wrap gap-1">
-              {EMOJI_PRESETS.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => setForm({ ...form, emoji: e })}
-                  className={`w-12 h-12 rounded-lg text-xl border ${
-                    form.emoji === e
-                      ? 'border-accent bg-accent/10'
-                      : 'border-border bg-card'
-                  }`}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
           </div>
           <div>
             <label className="label">원가 (원)</label>
@@ -207,12 +213,32 @@ export default function Menus() {
               onChange={(e) => setForm({ ...form, price: e.target.value })}
             />
           </div>
+          <div className="col-span-2">
+            <label className="label">이모지</label>
+            <div className="flex flex-wrap gap-1.5">
+              {EMOJI_PRESETS.map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => setForm({ ...form, emoji: e })}
+                  className={`w-12 h-12 rounded-lg text-xl border ${
+                    form.emoji === e
+                      ? 'border-accent bg-accent/10'
+                      : 'border-border bg-card'
+                  }`}
+                >
+                  {e}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         {error && <p className="text-warm text-sm">{error}</p>}
         <button type="submit" disabled={submitting} className="btn-primary w-full">
           {submitting ? '저장 중…' : editing ? '수정 저장' : '메뉴 추가'}
         </button>
       </form>
+      )}
 
       {!loaded ? (
         <div className="space-y-2">
@@ -221,8 +247,15 @@ export default function Menus() {
           ))}
         </div>
       ) : menus.length === 0 ? (
-        <div className="card p-10 text-center text-sub">
-          아직 메뉴가 없어요. 위에서 첫 메뉴를 추가해보세요.
+        <div className="card p-10 text-center">
+          <p className="text-sub mb-4">아직 메뉴가 없어요.</p>
+          <button
+            type="button"
+            onClick={openNew}
+            className="btn-primary inline-flex px-5"
+          >
+            + 첫 메뉴 추가하기
+          </button>
         </div>
       ) : (
         <div className="space-y-6">
@@ -247,33 +280,34 @@ export default function Menus() {
                         type="button"
                         onClick={() => move(m.id, 'up')}
                         disabled={idx === 0 && grouped[0]?.[0] === cat}
-                        className="w-9 h-9 rounded-lg border border-border text-sub disabled:opacity-30"
+                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
                         aria-label="위로"
                       >
-                        ▲
+                        <NavIcon name="chevron-up" size={18} />
                       </button>
                       <button
                         type="button"
                         onClick={() => move(m.id, 'down')}
-                        className="w-9 h-9 rounded-lg border border-border text-sub"
+                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub"
                         aria-label="아래로"
                       >
-                        ▼
+                        <NavIcon name="chevron-down" size={18} />
                       </button>
                       <button
                         type="button"
                         onClick={() => startEdit(m)}
-                        className="w-9 h-9 rounded-lg border border-border text-sm"
+                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub"
+                        aria-label="수정"
                       >
-                        ✏️
+                        <NavIcon name="edit" size={16} />
                       </button>
                       <button
                         type="button"
                         onClick={() => archive(m.id)}
-                        className="w-9 h-9 rounded-lg border border-border text-sm"
-                        title="보관(숨김)"
+                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub"
+                        aria-label="보관"
                       >
-                        🗄
+                        <NavIcon name="archive" size={16} />
                       </button>
                     </div>
                   </li>

@@ -116,7 +116,7 @@ export default function BI() {
             key={r}
             type="button"
             onClick={() => setRange(r)}
-            className={`px-3 h-9 rounded-lg text-sm border transition ${
+            className={`px-3.5 h-10 rounded-lg text-sm border transition ${
               range === r
                 ? 'bg-accent text-white border-accent'
                 : 'bg-card text-ink border-border'
@@ -135,14 +135,14 @@ export default function BI() {
           <div className="flex items-center gap-2 ml-2">
             <input
               type="date"
-              className="field h-9 px-2 num text-sm"
+              className="field h-10 px-2 num text-sm"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
             />
             <span className="text-sub">~</span>
             <input
               type="date"
-              className="field h-9 px-2 num text-sm"
+              className="field h-10 px-2 num text-sm"
               value={to}
               onChange={(e) => setTo(e.target.value)}
             />
@@ -206,6 +206,15 @@ export default function BI() {
                 <p className="text-sub text-sm py-12 text-center">
                   이 기간에 판매 기록이 없습니다.
                 </p>
+              ) : stats.byDay.length === 1 ? (
+                <div className="py-8 text-center">
+                  <div className="num text-3xl md:text-4xl font-bold text-accent">
+                    {won(stats.byDay[0].revenue)}
+                  </div>
+                  <p className="text-sub text-xs mt-2">
+                    데이터가 더 쌓이면 일별 추이 차트로 보여드릴게요.
+                  </p>
+                </div>
               ) : (
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={stats.byDay}>
@@ -284,7 +293,7 @@ export default function BI() {
                     key={k}
                     type="button"
                     onClick={() => setRankBy(k)}
-                    className={`px-2.5 h-8 rounded-lg text-xs border ${
+                    className={`px-3 h-9 rounded-lg text-xs font-medium border ${
                       rankBy === k
                         ? 'bg-accent text-white border-accent'
                         : 'bg-card text-ink border-border'

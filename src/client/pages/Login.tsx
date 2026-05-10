@@ -66,11 +66,17 @@ export default function Login() {
             <button type="submit" disabled={pending} className="btn-primary w-full">
               {pending ? '로그인 중…' : '로그인'}
             </button>
-            <div className="flex justify-between text-sm">
-              <Link to="/recover" className="text-sub hover:text-ink">
+            <div className="flex justify-between text-sm -mx-2">
+              <Link
+                to="/recover"
+                className="text-sub hover:text-ink px-2 py-2.5 rounded-md"
+              >
                 비밀번호 찾기
               </Link>
-              <Link to="/signup" className="text-accent font-semibold">
+              <Link
+                to="/signup"
+                className="text-accent font-semibold px-2 py-2.5 rounded-md"
+              >
                 회원가입 →
               </Link>
             </div>

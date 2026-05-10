@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 import StatCard from '../components/StatCard';
+import { Skeleton } from '../components/Skeleton';
 import { apiGet } from '../lib/api';
 import {
   endOfDay,
@@ -150,7 +151,35 @@ export default function BI() {
       </div>
 
       {loading || !stats ? (
-        <p className="text-sub">불러오는 중…</p>
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="card p-4 md:p-5">
+                <Skeleton className="h-3 w-12" />
+                <Skeleton className="h-7 md:h-8 w-24 mt-2" />
+                <Skeleton className="h-3 w-16 mt-1.5" />
+              </div>
+            ))}
+          </div>
+          <div className="grid md:grid-cols-2 gap-4 mb-4">
+            <div className="card p-4">
+              <Skeleton className="h-4 w-28 mb-3" />
+              <Skeleton className="h-[200px] w-full" />
+            </div>
+            <div className="card p-4">
+              <Skeleton className="h-4 w-32 mb-3" />
+              <Skeleton className="h-[200px] w-full" />
+            </div>
+          </div>
+          <div className="card p-4">
+            <Skeleton className="h-4 w-24 mb-3" />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-9" />
+              ))}
+            </div>
+          </div>
+        </>
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

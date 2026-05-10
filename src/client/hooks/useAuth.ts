@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiPost, ApiError } from '../lib/api';
+import { clearAllCache } from '../lib/cache';
 
 export interface User {
   id: number;
@@ -36,6 +37,7 @@ export const refreshAuth = async () => {
 
 export const logout = async () => {
   await apiPost('/api/auth/logout', {});
+  clearAllCache();
   setState({ user: null, loading: false });
 };
 

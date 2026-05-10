@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MenuTile from '../components/MenuTile';
 import CountUp from '../components/CountUp';
+import { Skeleton } from '../components/Skeleton';
 import { apiDelete, apiGet, apiPost } from '../lib/api';
 import { startOfDay, endOfDay } from '../lib/format';
+import { getCache, setCache } from '../lib/cache';
+import { useAuth } from '../hooks/useAuth';
 
 interface Menu {
   id: number;
@@ -25,9 +28,19 @@ interface Sale {
 }
 
 export default function Sales() {
-  const [menus, setMenus] = useState<Menu[]>([]);
-  const [todaySales, setTodaySales] = useState<Sale[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const userId = user?.id ?? 0;
+  const menuCacheKey = `menus:${userId}`;
+
+  // 메뉴는 캐시 즉시 렌더 → 백그라운드에서 갱신 (SWR)
+  const [menus, setMenus] = useState<Menu[]>(
+    () => getCache<Menu[]>(menuCacheKey) ?? [],
+  );
+  const [menusLoaded, setMenusLoaded] = useState<boolean>(
+    () => (getCache<Menu[]>(menuCacheKey)?.length ?? 0) > 0,
+  );
+  // 오늘 판매는 늘 fresh가 필요 (취소/추가가 빈번) — null=로딩 중
+  const [todaySales, setTodaySales] = useState<Sale[] | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
 
   const loadAll = useCallback(async () => {
@@ -39,19 +52,21 @@ export default function Sales() {
       apiGet<{ sales: Sale[] }>(`/api/sales?from=${from}&to=${to}&limit=200`),
     ]);
     setMenus(m.menus);
+    setCache(menuCacheKey, m.menus);
+    setMenusLoaded(true);
     setTodaySales(s.sales);
-    setLoading(false);
-  }, []);
+  }, [menuCacheKey]);
   useEffect(() => {
     loadAll();
   }, [loadAll]);
 
   const todayRevenue = useMemo(
-    () => todaySales.reduce((s, r) => s + r.price_at_sale * r.quantity, 0),
+    () =>
+      (todaySales ?? []).reduce((s, r) => s + r.price_at_sale * r.quantity, 0),
     [todaySales],
   );
   const todayQty = useMemo(
-    () => todaySales.reduce((s, r) => s + r.quantity, 0),
+    () => (todaySales ?? []).reduce((s, r) => s + r.quantity, 0),
     [todaySales],
   );
 
@@ -78,17 +93,19 @@ export default function Sales() {
       menu_name: menu.name,
       menu_emoji: menu.emoji,
     };
-    setTodaySales((prev) => [optimistic, ...prev]);
+    setTodaySales((prev) => [optimistic, ...(prev ?? [])]);
     try {
       const data = await apiPost<{ sale: Sale }>('/api/sales', {
         menuId: menu.id,
         quantity: 1,
       });
       setTodaySales((prev) =>
-        prev.map((s) => (s.id === optimistic.id ? data.sale : s)),
+        (prev ?? []).map((s) => (s.id === optimistic.id ? data.sale : s)),
       );
     } catch (e) {
-      setTodaySales((prev) => prev.filter((s) => s.id !== optimistic.id));
+      setTodaySales((prev) =>
+        (prev ?? []).filter((s) => s.id !== optimistic.id),
+      );
       alert(e instanceof Error ? e.message : '판매 저장 실패');
     } finally {
       setSavingId(null);
@@ -97,20 +114,17 @@ export default function Sales() {
 
   const undo = async (sale: Sale) => {
     if (sale.id < 0) return; // 아직 서버에 저장 안 됨
-    setTodaySales((prev) => prev.filter((s) => s.id !== sale.id));
+    setTodaySales((prev) => (prev ?? []).filter((s) => s.id !== sale.id));
     try {
       await apiDelete(`/api/sales/${sale.id}`);
     } catch (e) {
-      // 실패 시 다시 로드
       alert(e instanceof Error ? e.message : '취소 실패');
       loadAll();
     }
   };
 
-  const recent = todaySales.slice(0, 5);
-
-  if (loading)
-    return <div className="p-6 text-sub">불러오는 중…</div>;
+  const recent = (todaySales ?? []).slice(0, 5);
+  const salesLoading = todaySales === null;
 
   return (
     <div
@@ -126,7 +140,14 @@ export default function Sales() {
         <p className="text-sub">메뉴 한 번 탭 = 1개 판매 기록</p>
       </div>
 
-      {menus.length === 0 ? (
+      {!menusLoaded ? (
+        // 캐시 없는 첫 진입 — 타일 스켈레톤
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-[104px] rounded-2xl" />
+          ))}
+        </div>
+      ) : menus.length === 0 ? (
         <div className="card p-10 text-center">
           <p className="text-lg mb-2">아직 등록한 메뉴가 없어요.</p>
           <p className="text-sub mb-6">
@@ -172,13 +193,32 @@ export default function Sales() {
           <div className="card p-3 md:p-5 shadow-soft">
             <div className="flex items-baseline justify-between">
               <span className="text-sub text-xs md:text-sm">오늘의 매출</span>
-              <span className="text-sub text-xs num">{todayQty}건</span>
+              {salesLoading ? (
+                <Skeleton className="h-3 w-10" />
+              ) : (
+                <span className="text-sub text-xs num">{todayQty}건</span>
+              )}
             </div>
-            <CountUp
-              value={todayRevenue}
-              className="num text-2xl md:text-4xl font-bold text-accent block leading-tight mt-0.5"
-            />
-            {recent.length > 0 && (
+            {salesLoading ? (
+              <Skeleton className="h-8 md:h-10 w-32 mt-1" />
+            ) : (
+              <CountUp
+                value={todayRevenue}
+                className="num text-2xl md:text-4xl font-bold text-accent block leading-tight mt-0.5"
+              />
+            )}
+            {salesLoading ? (
+              <ul className="mt-2 md:mt-3 space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <Skeleton className="h-4 w-4 rounded-full" />
+                    <Skeleton className="h-4 flex-1" />
+                    <Skeleton className="h-4 w-14" />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              recent.length > 0 && (
               <ul className="mt-2 md:mt-3 divide-y divide-border/60">
                 {recent.map((s) => (
                   <li
@@ -203,6 +243,7 @@ export default function Sales() {
                   </li>
                 ))}
               </ul>
+              )
             )}
           </div>
         </div>

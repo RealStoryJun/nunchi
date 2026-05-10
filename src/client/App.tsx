@@ -11,6 +11,7 @@ import BI from './pages/BI';
 import Account from './pages/Account';
 import Layout from './components/Layout';
 import Protected from './components/Protected';
+import TopProgress from './components/TopProgress';
 
 const protect = (el: React.ReactNode) => (
   <Protected>
@@ -20,6 +21,8 @@ const protect = (el: React.ReactNode) => (
 
 export default function App() {
   return (
+    <>
+      <TopProgress />
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
@@ -47,5 +50,6 @@ export default function App() {
       <Route path="/account" element={protect(<Account />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }

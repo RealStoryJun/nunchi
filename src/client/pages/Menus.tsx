@@ -1,6 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { apiDelete, apiGet, apiPost, apiPut } from '../lib/api';
 import { won } from '../lib/format';
+import { getCache, setCache } from '../lib/cache';
+import { Skeleton } from '../components/Skeleton';
+import { useAuth } from '../hooks/useAuth';
 
 interface Menu {
   id: number;
@@ -26,24 +29,33 @@ const empty = {
 };
 
 export default function Menus() {
-  const [menus, setMenus] = useState<Menu[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const userId = user?.id ?? 0;
+  const cacheKey = `menus:${userId}`;
+
+  const [menus, setMenus] = useState<Menu[]>(
+    () => getCache<Menu[]>(cacheKey) ?? [],
+  );
+  const [loaded, setLoaded] = useState<boolean>(
+    () => (getCache<Menu[]>(cacheKey)?.length ?? 0) > 0,
+  );
   const [editing, setEditing] = useState<Menu | null>(null);
   const [form, setForm] = useState({ ...empty });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const load = async () => {
-    setLoading(true);
     try {
       const data = await apiGet<{ menus: Menu[] }>('/api/menus');
       setMenus(data.menus);
+      setCache(cacheKey, data.menus);
     } finally {
-      setLoading(false);
+      setLoaded(true);
     }
   };
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const grouped = useMemo(() => {
@@ -202,8 +214,12 @@ export default function Menus() {
         </button>
       </form>
 
-      {loading ? (
-        <p className="text-sub">불러오는 중…</p>
+      {!loaded ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-16" />
+          ))}
+        </div>
       ) : menus.length === 0 ? (
         <div className="card p-10 text-center text-sub">
           아직 메뉴가 없어요. 위에서 첫 메뉴를 추가해보세요.

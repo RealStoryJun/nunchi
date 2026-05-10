@@ -8,26 +8,33 @@ export class ApiError extends Error {
   }
 }
 
+import { trackStart, trackEnd } from './progress';
+
 export async function api<T>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const res = await fetch(path, {
-    credentials: 'include',
-    ...init,
-    headers: {
-      'content-type': 'application/json',
-      ...(init.headers || {}),
-    },
-  });
-  let body: ApiResult<T>;
+  trackStart();
   try {
-    body = (await res.json()) as ApiResult<T>;
-  } catch {
-    throw new ApiError(res.status, '서버 응답을 읽을 수 없습니다.');
+    const res = await fetch(path, {
+      credentials: 'include',
+      ...init,
+      headers: {
+        'content-type': 'application/json',
+        ...(init.headers || {}),
+      },
+    });
+    let body: ApiResult<T>;
+    try {
+      body = (await res.json()) as ApiResult<T>;
+    } catch {
+      throw new ApiError(res.status, '서버 응답을 읽을 수 없습니다.');
+    }
+    if (!body.ok) throw new ApiError(res.status, body.error);
+    return body.data;
+  } finally {
+    trackEnd();
   }
-  if (!body.ok) throw new ApiError(res.status, body.error);
-  return body.data;
 }
 
 export const apiGet = <T>(path: string) => api<T>(path);

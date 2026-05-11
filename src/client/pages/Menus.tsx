@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { apiDelete, apiGet, apiPost, apiPut } from '../lib/api';
+import { api, apiDelete, apiGet, apiPost, apiPut } from '../lib/api';
 import { won } from '../lib/format';
 import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
 import { inferEmoji } from '../lib/emojiLookup';
@@ -45,6 +45,16 @@ export default function Menus() {
   const [reordering, setReordering] = useState(false);
   // ref-guard: 같은 tick burst click도 동기 차단 (state는 disabled 스타일링용)
   const reorderingRef = useRef(false);
+  // 이름→이모지 AI 폴백 (클라 사전 미스 시 debounce 후 /api/infer-emoji)
+  const emojiTimerRef = useRef<number | null>(null);
+  const emojiAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      if (emojiTimerRef.current) window.clearTimeout(emojiTimerRef.current);
+      emojiAbortRef.current?.abort();
+    },
+    [],
+  );
 
   const load = async ({ force = false }: { force?: boolean } = {}) => {
     if (!force && isFresh(cacheKey, TTL_MENUS)) {
@@ -97,6 +107,33 @@ export default function Menus() {
     });
     setError(null);
     setFormOpen(true);
+  };
+
+  // 이름 변경 시: 즉시 클라 사전 추론 → 미스(📦)면 debounce 후 AI 폴백
+  const onNameChange = (name: string) => {
+    const local = inferEmoji(name);
+    setForm((prev) => ({ ...prev, name, emoji: local }));
+    if (emojiTimerRef.current) window.clearTimeout(emojiTimerRef.current);
+    emojiAbortRef.current?.abort();
+    emojiAbortRef.current = null;
+    if (local === '📦' && name.trim().length >= 2) {
+      emojiTimerRef.current = window.setTimeout(() => {
+        const ctrl = new AbortController();
+        emojiAbortRef.current = ctrl;
+        api<{ emoji: string; source: string }>(
+          `/api/infer-emoji?name=${encodeURIComponent(name)}`,
+          { signal: ctrl.signal },
+        )
+          .then((data) => {
+            setForm((prev) =>
+              prev.name === name ? { ...prev, emoji: data.emoji } : prev,
+            );
+          })
+          .catch(() => {
+            /* abort 또는 실패 — 📦 유지 */
+          });
+      }, 600);
+    }
   };
 
   const submit = async (e: FormEvent) => {
@@ -204,16 +241,8 @@ export default function Menus() {
               required
               className="field"
               value={form.name}
-              onChange={(e) => {
-                const name = e.target.value;
-                setForm((prev) => ({
-                  ...prev,
-                  name,
-                  // 사용자가 수정 중인 행이라도 이름 바꾸면 자동 재추론
-                  emoji: inferEmoji(name),
-                }));
-              }}
-              placeholder="예: 아메리카노, 청바지, 장미꽃다발…"
+              onChange={(e) => onNameChange(e.target.value)}
+              placeholder="예: 아메리카노, 트레이닝복, 장미꽃다발…"
             />
           </div>
           <div className="col-span-2">
@@ -249,7 +278,7 @@ export default function Menus() {
           </div>
         </div>
         <p className="text-xs text-sub -mt-2">
-          아이콘은 이름에 따라 자동으로 선택돼요.
+          아이콘은 이름에 따라 자동으로 선택돼요. (처음 보는 이름은 잠깐 분석해요)
         </p>
         {error && <p className="text-warm text-sm">{error}</p>}
         <button type="submit" disabled={submitting} className="btn-primary w-full">

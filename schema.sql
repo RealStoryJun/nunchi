@@ -49,6 +49,14 @@ CREATE TABLE IF NOT EXISTS auth_attempts (
   attempted_at INTEGER NOT NULL
 );
 
+-- 이모지 추론 글로벌 캐시 (이모지는 공개 데이터 — 사용자 격리 불필요)
+CREATE TABLE IF NOT EXISTS emoji_cache (
+  key TEXT PRIMARY KEY,
+  emoji TEXT NOT NULL,
+  source TEXT,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sales_user_date ON sales(user_id, sold_at);
 CREATE INDEX IF NOT EXISTS idx_menus_user ON menus(user_id, archived);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

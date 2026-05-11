@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  GROQ_API_KEY?: string;
 }
 
 export interface SessionUser {

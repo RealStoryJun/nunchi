@@ -97,8 +97,11 @@ export default function BI() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [insights, setInsights] = useState<string[] | null>(null);
+  const [insightsBump, setInsightsBump] = useState(0);
   // 현재 `stats`가 어느 기간 키의 데이터인지 추적 — insights effect가 stale stats로 호출하는 걸 막음
   const statsKeyRef = useRef<string | null>(null);
+  // 수정 모달 안에서 판매가 바뀌었는지 — 닫을 때 인사이트 1회만 재호출(매 −/＋ 마다 X)
+  const editDirtyRef = useRef(false);
 
   const [fromMs, toMs] = useMemo(() => {
     const now = new Date();
@@ -181,7 +184,7 @@ export default function BI() {
     );
     try {
       await apiPut(`/api/sales/${sale.id}`, { quantity: q });
-      invalidate(`insights:${userId}:${fromMs}:${toMs}`);
+      editDirtyRef.current = true;
       await refetchStats();
     } catch (e) {
       alert(e instanceof Error ? e.message : '수정 실패');
@@ -197,13 +200,28 @@ export default function BI() {
     setSales((prev) => (prev ? prev.filter((x) => x.id !== sale.id) : prev));
     try {
       await apiDelete(`/api/sales/${sale.id}`);
-      invalidate(`insights:${userId}:${fromMs}:${toMs}`);
+      editDirtyRef.current = true;
       await refetchStats();
     } catch (e) {
       alert(e instanceof Error ? e.message : '취소 실패');
       await Promise.all([refetchStats(), refetchSales()]);
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const closeEdit = async () => {
+    setEditOpen(false);
+    try {
+      await refetchSales();
+    } catch {
+      /* 목록 갱신 실패는 무시 — 인사이트 재호출은 계속 진행 */
+    }
+    if (editDirtyRef.current) {
+      editDirtyRef.current = false;
+      setInsights(null);
+      invalidate(`insights:${userId}:${fromMs}:${toMs}`);
+      setInsightsBump((n) => n + 1);
     }
   };
 
@@ -279,7 +297,8 @@ export default function BI() {
       .then((d) => {
         if (!alive) return;
         setInsights(d.insights);
-        setCache(key, d.insights);
+        // 빈 결과(groq-fail / no-key)는 캐시하지 않음 — Groq 복구되면 다음 방문에 재시도
+        if (d.insights.length > 0) setCache(key, d.insights);
       })
       .catch(() => {
         if (alive) setInsights([]);
@@ -288,7 +307,7 @@ export default function BI() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stats, peakHour, userId, fromMs, toMs]);
+  }, [stats, peakHour, userId, fromMs, toMs, insightsBump]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
@@ -397,7 +416,7 @@ export default function BI() {
 
           {/* AI 인사이트 — Groq 분석 (키 없거나 빈 결과면 카드 안 보임) */}
           {insights === null ? (
-            <div className="card p-4 mb-6">
+            <div className="card p-4 mb-4">
               <div className="flex items-center gap-1.5 mb-3">
                 <span className="text-base">💡</span>
                 <Skeleton className="h-4 w-20" />
@@ -406,7 +425,7 @@ export default function BI() {
               <Skeleton className="h-4 w-5/6" />
             </div>
           ) : insights.length > 0 ? (
-            <div className="card p-4 mb-6 border-accent/25 bg-accent/[0.03]">
+            <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03]">
               <div className="flex items-center gap-1.5 mb-2.5">
                 <span className="text-base leading-none">💡</span>
                 <h3 className="font-semibold text-accent">AI 인사이트</h3>
@@ -672,10 +691,7 @@ export default function BI() {
             <h2 className="font-semibold">판매 내역 수정</h2>
             <button
               type="button"
-              onClick={async () => {
-                setEditOpen(false);
-                await refetchSales();
-              }}
+              onClick={closeEdit}
               className="text-sm text-sub px-3 h-9 rounded-lg hover:bg-black/5"
             >
               닫기

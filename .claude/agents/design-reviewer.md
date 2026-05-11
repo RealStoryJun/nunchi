@@ -37,6 +37,8 @@ Apply each item against the changes you're asked to review:
 
 6. **Spacing rhythm** — Reuse Tailwind scale. `gap-1/2/3`, `p-3/4/5`, `space-y-*` etc. Flag arbitrary `px-[13px]` style values without justification.
 
+   **6b. Form-control width adequacy (measure every input!).** For each text/number `<input>` and `<select>`, read its rendered `getBoundingClientRect().width`. A numeric/currency input must be wide enough to show a realistic value (≥120px). A common bug: an input sharing a CSS-grid track sized for something else (e.g. a `grid-cols-[64px_1fr]` grid built for an icon box, with a price input accidentally placed in the 64px column). Compare sibling inputs in the same form — if one is 64px and its peer is 200px, that's a layout bug. Always probe the form *opened* (formOpen=true) and report each input's width.
+
 7. **Affordance & state clarity** —
    - Selected state on tiles uses `ring-2 ring-accent` + scale + check badge (per `Onboarding.tsx`).
    - Disabled state visibly different (opacity, bg-border).

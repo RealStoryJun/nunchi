@@ -223,19 +223,19 @@ export default function Menus() {
             닫기
           </button>
         </div>
-        <div className="grid grid-cols-[64px_1fr] gap-3 items-end">
-          <div className="row-span-1">
+        {/* 아이콘(자동) + 이름 */}
+        <div className="flex gap-3 items-end">
+          <div className="w-16 shrink-0">
             <label className="label">아이콘</label>
             <div
               className="h-12 rounded-xl border border-border bg-bg
-                         flex items-center justify-center text-3xl leading-none
-                         transition"
+                         flex items-center justify-center text-3xl leading-none"
               aria-label="자동 추론 이모지"
             >
               {form.emoji}
             </div>
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <label className="label">이름</label>
             <input
               required
@@ -245,15 +245,19 @@ export default function Menus() {
               placeholder="예: 아메리카노, 트레이닝복, 장미꽃다발…"
             />
           </div>
-          <div className="col-span-2">
-            <label className="label">분류 (선택)</label>
-            <input
-              className="field"
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              placeholder="예: 음료 / 의류 / 디저트"
-            />
-          </div>
+        </div>
+        {/* 분류 */}
+        <div>
+          <label className="label">분류 (선택)</label>
+          <input
+            className="field"
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+            placeholder="예: 음료 / 의류 / 디저트"
+          />
+        </div>
+        {/* 원가 + 판매가 — 각 50% 균등 */}
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">원가 (원)</label>
             <input

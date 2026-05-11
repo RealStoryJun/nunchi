@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Logo from './Logo';
-import { subscribe } from '../lib/progress';
+import { subscribe, setSplashActive } from '../lib/progress';
 
 interface Props {
   label?: string;
@@ -15,6 +15,11 @@ export default function LoadingScreen({ label = '잠시만요' }: Props) {
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => subscribe(setCount), []);
+  // 이 splash가 떠 있는 동안 TopProgress 중앙 카드 숨김
+  useEffect(() => {
+    setSplashActive(true);
+    return () => setSplashActive(false);
+  }, []);
 
   useEffect(() => {
     const cancel = () => {

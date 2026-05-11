@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { subscribe } from '../lib/progress';
+import { subscribe, subscribeSplash } from '../lib/progress';
 
 // 페이지 내 데이터 갱신 시 화면 정중앙에 작은 로딩 카드.
 // 첫 진입(auth) 풀스크린 splash는 LoadingScreen이 담당 — 이건 그 외 갱신용.
@@ -9,11 +9,13 @@ export default function TopProgress() {
   const [count, setCount] = useState(0);
   const [width, setWidth] = useState(0);
   const [visible, setVisible] = useState(false);
+  const [splashActive, setSplashActive] = useState(false);
   const rafRef = useRef<number | null>(null);
   const showTimerRef = useRef<number | null>(null);
   const hideTimerRef = useRef<number | null>(null);
 
   useEffect(() => subscribe(setCount), []);
+  useEffect(() => subscribeSplash(setSplashActive), []);
 
   useEffect(() => {
     const clearRaf = () => {
@@ -72,7 +74,7 @@ export default function TopProgress() {
     [],
   );
 
-  if (!visible) return null;
+  if (!visible || splashActive) return null;
   return (
     <div
       role="status"

@@ -51,6 +51,11 @@ interface ByCat {
   cost: number;
   profit: number;
 }
+interface ByHour {
+  hour: number;
+  revenue: number;
+  qty: number;
+}
 interface Stats {
   revenue: number;
   cost: number;
@@ -59,6 +64,7 @@ interface Stats {
   qty: number;
   byMenu: ByMenu[];
   byDay: ByDay[];
+  byHour: ByHour[];
   byCategory: ByCat[];
 }
 interface Sale {
@@ -207,6 +213,25 @@ export default function BI() {
           [k, items.slice().sort((a, b) => b.sold_at - a.sold_at)] as const,
       );
   }, [sales]);
+
+  // 시간대 0~23 슬롯 채우기 + 피크타임
+  // (byHour는 신규 필드 — 옛 캐시 stats엔 없을 수 있어 ?? [] 가드)
+  const hourly = useMemo(() => {
+    const arr = Array.from({ length: 24 }, (_, h) => ({
+      hour: h,
+      revenue: 0,
+      qty: 0,
+    }));
+    for (const b of stats?.byHour ?? []) if (arr[b.hour]) arr[b.hour] = b;
+    return arr;
+  }, [stats]);
+  const peakHour = useMemo(() => {
+    let best: { hour: number; revenue: number } | null = null;
+    for (const h of hourly)
+      if (h.revenue > 0 && (!best || h.revenue > best.revenue))
+        best = { hour: h.hour, revenue: h.revenue };
+    return best;
+  }, [hourly]);
 
   const ranked = useMemo(() => {
     if (!stats) return [];
@@ -358,7 +383,7 @@ export default function BI() {
                       formatter={(v: number) => won(v)}
                       labelFormatter={(l) => l}
                     />
-                    <Bar dataKey="revenue" fill="#1B4332" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="revenue" name="매출" fill="#1B4332" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               )}
@@ -406,6 +431,46 @@ export default function BI() {
                 ))}
               </ul>
             </div>
+          </div>
+
+          {/* 시간대별 매출 — "언제 붐비나" */}
+          <div className="card p-4 mb-4">
+            <div className="flex items-baseline justify-between mb-3">
+              <h3 className="font-semibold">시간대별 매출</h3>
+              {peakHour && (
+                <span className="text-xs text-sub num">
+                  가장 바쁜 시간 {peakHour.hour}시 · {won(peakHour.revenue)}
+                </span>
+              )}
+            </div>
+            {!peakHour ? (
+              <p className="text-sub text-sm py-12 text-center">
+                이 기간에 판매 기록이 없습니다.
+              </p>
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={hourly}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5DFD3" />
+                  <XAxis
+                    dataKey="hour"
+                    tick={{ fontSize: 11, fill: '#767270' }}
+                    interval={0}
+                    tickFormatter={(h: number) => (h % 4 === 0 ? `${h}시` : '')}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: '#767270' }}
+                    tickFormatter={(v: number) =>
+                      v >= 10000 ? `${Math.round(v / 1000)}k` : `${v}`
+                    }
+                  />
+                  <Tooltip
+                    formatter={(v: number) => won(v)}
+                    labelFormatter={(h: number) => `${h}시`}
+                  />
+                  <Bar dataKey="revenue" name="매출" fill="#1B4332" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           <div className="card p-4">

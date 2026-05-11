@@ -22,6 +22,11 @@ interface ByCatRow {
   cost: number;
   profit: number;
 }
+interface ByHourRow {
+  hour: number;
+  revenue: number;
+  qty: number;
+}
 interface TotalRow {
   revenue: number | null;
   cost: number | null;
@@ -96,6 +101,19 @@ export const handleStats = async (
     .bind(tzSec, ...args)
     .all<ByDayRow>();
 
+  // 시간대별 (0~23시, tz 보정) — "언제 붐비나"
+  const byHour = await env.DB.prepare(
+    `SELECT CAST(strftime('%H', datetime((sold_at/1000) + ?, 'unixepoch')) AS INTEGER) AS hour,
+            SUM(price_at_sale * quantity) AS revenue,
+            SUM(quantity) AS qty
+     FROM sales
+     WHERE ${where}
+     GROUP BY hour
+     ORDER BY hour ASC`,
+  )
+    .bind(tzSec, ...args)
+    .all<ByHourRow>();
+
   // 분류별
   const byCategory = await env.DB.prepare(
     `SELECT COALESCE(m.category, '미분류') AS category,
@@ -118,6 +136,7 @@ export const handleStats = async (
     qty: total?.qty ?? 0,
     byMenu: byMenu.results,
     byDay: byDay.results,
+    byHour: byHour.results,
     byCategory: byCategory.results,
   });
 };

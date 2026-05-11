@@ -7,4 +7,8 @@ dist
 *.tsbuildinfo
 .playwright-mcp/
 /*.png
+/*-snap*.md
+/bi-*.md
+/menus-*.md
+/sales-*.md
 graphify-out/

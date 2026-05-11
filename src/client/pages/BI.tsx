@@ -18,12 +18,13 @@ import { apiGet, apiPut, apiDelete } from '../lib/api';
 import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
 import { useAuth } from '../hooks/useAuth';
 import {
+  dayLabel,
   endOfDay,
-  formatDate,
   pct,
   startOfDay,
   startOfMonth,
   startOfWeek,
+  timeHM,
   won,
   ymd,
 } from '../lib/format';
@@ -88,6 +89,7 @@ export default function BI() {
   const [rankBy, setRankBy] = useState<'qty' | 'revenue'>('revenue');
   const [sales, setSales] = useState<Sale[] | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const [fromMs, toMs] = useMemo(() => {
     const now = new Date();
@@ -188,6 +190,23 @@ export default function BI() {
       setBusyId(null);
     }
   };
+
+  // 날짜별 그룹 (카드 사용내역 스타일) — 최신 날짜 먼저, 날짜 내 최신 시각 먼저
+  const salesByDay = useMemo(() => {
+    if (!sales) return [];
+    const map = new Map<string, Sale[]>();
+    for (const s of sales) {
+      const k = ymd(new Date(s.sold_at));
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(s);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(
+        ([k, items]) =>
+          [k, items.slice().sort((a, b) => b.sold_at - a.sold_at)] as const,
+      );
+  }, [sales]);
 
   const ranked = useMemo(() => {
     if (!stats) return [];
@@ -433,12 +452,21 @@ export default function BI() {
             )}
           </div>
 
-          {/* 판매 내역 — 개별 기록 취소·수량 수정 */}
+          {/* 판매 내역 — 카드 사용내역 스타일 날짜별 그룹 (읽기 전용) */}
           <div className="card p-4 mt-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">
                 판매 내역{sales ? ` (${sales.length}건)` : ''}
               </h3>
+              {sales && sales.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(true)}
+                  className="text-sm text-accent font-medium px-3 h-9 rounded-lg hover:bg-accent/10"
+                >
+                  수정
+                </button>
+              )}
             </div>
             {sales === null ? (
               <div className="space-y-2">
@@ -451,63 +479,139 @@ export default function BI() {
                 이 기간에 판매 기록이 없습니다.
               </p>
             ) : (
-              <ul className="divide-y divide-border max-h-[440px] overflow-y-auto">
-                {sales.map((s) => (
-                  <li
-                    key={s.id}
-                    className={`py-2.5 flex flex-col md:flex-row md:items-center gap-2 md:gap-3 ${
-                      busyId === s.id ? 'opacity-60' : ''
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <span className="text-xl w-7 text-center shrink-0">
-                        {s.menu_emoji || '📦'}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">{s.menu_name}</div>
-                        <div className="text-sub text-xs num">
-                          {formatDate(s.sold_at)} ·{' '}
-                          {won(s.price_at_sale * s.quantity)}
-                        </div>
+              <div className="max-h-[480px] overflow-y-auto -mx-1">
+                {salesByDay.map(([day, items]) => {
+                  const dayTotal = items.reduce(
+                    (sum, x) => sum + x.price_at_sale * x.quantity,
+                    0,
+                  );
+                  return (
+                    <div key={day} className="mb-3 last:mb-0">
+                      <div className="flex items-baseline justify-between text-xs text-sub font-medium px-1 mb-1">
+                        <span>{dayLabel(items[0].sold_at)}</span>
+                        <span className="num">{won(dayTotal)}</span>
                       </div>
+                      <ul className="divide-y divide-border/60">
+                        {items.map((s) => (
+                          <li
+                            key={s.id}
+                            className="flex items-center gap-2 py-2 px-1"
+                          >
+                            <span className="text-lg w-6 text-center shrink-0">
+                              {s.menu_emoji || '📦'}
+                            </span>
+                            <span className="flex-1 truncate">
+                              {s.menu_name}
+                              {s.quantity > 1 && (
+                                <span className="text-sub"> ×{s.quantity}</span>
+                              )}
+                            </span>
+                            <span className="num text-xs text-sub shrink-0">
+                              {timeHM(s.sold_at)}
+                            </span>
+                            <span className="num font-medium w-20 text-right shrink-0 text-sm">
+                              {won(s.price_at_sale * s.quantity)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                    <div className="flex items-center gap-1 self-end md:self-auto shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => changeQty(s, s.quantity - 1)}
-                        disabled={s.quantity <= 1 || busyId === s.id}
-                        className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
-                        aria-label="수량 감소"
-                      >
-                        −
-                      </button>
-                      <span className="num w-7 text-center text-sm">
-                        {s.quantity}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => changeQty(s, s.quantity + 1)}
-                        disabled={busyId === s.id}
-                        className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
-                        aria-label="수량 증가"
-                      >
-                        +
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeSale(s)}
-                        disabled={busyId === s.id}
-                        className="text-warm text-xs font-medium px-3 h-9 rounded-md hover:bg-warm/10 disabled:opacity-40 ml-1"
-                      >
-                        취소
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                  );
+                })}
+              </div>
             )}
           </div>
         </>
+      )}
+
+      {/* 판매 내역 수정 — 별도 풀스크린 화면 */}
+      {editOpen && (
+        <div className="fixed inset-0 z-50 bg-bg flex flex-col">
+          <header className="px-4 h-14 flex items-center justify-between border-b border-border bg-card shrink-0">
+            <h2 className="font-semibold">판매 내역 수정</h2>
+            <button
+              type="button"
+              onClick={async () => {
+                setEditOpen(false);
+                await refetchSales();
+              }}
+              className="text-sm text-sub px-3 h-9 rounded-lg hover:bg-black/5"
+            >
+              닫기
+            </button>
+          </header>
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div className="max-w-2xl mx-auto w-full pb-8">
+              {salesByDay.length === 0 ? (
+                <p className="text-sub text-sm py-12 text-center">
+                  수정할 기록이 없습니다.
+                </p>
+              ) : (
+                salesByDay.map(([day, items]) => (
+                  <div key={day} className="mb-4">
+                    <div className="text-xs text-sub font-medium mb-2 px-1">
+                      {dayLabel(items[0].sold_at)}
+                    </div>
+                    <ul className="card divide-y divide-border">
+                      {items.map((s) => (
+                        <li
+                          key={s.id}
+                          className={`py-2.5 px-4 flex flex-col gap-2 ${
+                            busyId === s.id ? 'opacity-60' : ''
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-lg w-6 text-center shrink-0">
+                              {s.menu_emoji || '📦'}
+                            </span>
+                            <span className="flex-1 truncate font-medium">
+                              {s.menu_name}
+                            </span>
+                            <span className="num text-xs text-sub shrink-0">
+                              {timeHM(s.sold_at)} ·{' '}
+                              {won(s.price_at_sale * s.quantity)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 self-end">
+                            <button
+                              type="button"
+                              onClick={() => changeQty(s, s.quantity - 1)}
+                              disabled={s.quantity <= 1 || busyId === s.id}
+                              className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
+                              aria-label="수량 감소"
+                            >
+                              −
+                            </button>
+                            <span className="num w-7 text-center text-sm">
+                              {s.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => changeQty(s, s.quantity + 1)}
+                              disabled={busyId === s.id}
+                              className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
+                              aria-label="수량 증가"
+                            >
+                              +
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeSale(s)}
+                              disabled={busyId === s.id}
+                              className="text-warm text-xs font-medium px-3 h-9 rounded-md hover:bg-warm/10 disabled:opacity-40 ml-1"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

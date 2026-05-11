@@ -41,3 +41,24 @@ export const startOfMonth = (d: Date) => {
   x.setDate(1);
   return x;
 };
+
+// 날짜 그룹 헤더: "오늘" / "어제" / "5월 9일" / 연도 다르면 "2025년 1월 3일"
+export const dayLabel = (ms: number): string => {
+  const d = new Date(ms);
+  const today = new Date();
+  if (ymd(d) === ymd(today)) return '오늘';
+  const yest = new Date(today);
+  yest.setDate(yest.getDate() - 1);
+  if (ymd(d) === ymd(yest)) return '어제';
+  const sameYear = d.getFullYear() === today.getFullYear();
+  return sameYear
+    ? `${d.getMonth() + 1}월 ${d.getDate()}일`
+    : `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
+};
+
+export const timeHM = (ms: number): string => {
+  const d = new Date(ms);
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${h}:${m}`;
+};

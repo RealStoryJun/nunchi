@@ -19,6 +19,9 @@ export default function Layout({ children }: { children: ReactNode }) {
     await logout();
     navigate('/login');
   };
+  const navItems = user?.is_admin
+    ? [...sideItems, { to: '/admin', label: '계정 관리', icon: 'shield' as IconName }]
+    : sideItems;
   return (
     <div className="min-h-screen md:flex">
       {/* 데스크톱 사이드바 */}
@@ -31,7 +34,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
         )}
         <nav className="flex flex-col gap-1">
-          {sideItems.map((it) => (
+          {navItems.map((it) => (
             <NavLink
               key={it.to}
               to={it.to}

@@ -8,7 +8,10 @@ type IconName =
   | 'chevron-down'
   | 'edit'
   | 'archive'
-  | 'plus';
+  | 'plus'
+  | 'shield'
+  | 'search'
+  | 'trash';
 
 const PATHS: Record<IconName, JSX.Element> = {
   receipt: (
@@ -58,6 +61,26 @@ const PATHS: Record<IconName, JSX.Element> = {
     <>
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M12 3l8 3v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-3z" />
+      <path d="M9.5 12l1.8 1.8 3.7-3.8" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M6 6l1 14h10l1-14" />
+      <path d="M10 11v6M14 11v6" />
     </>
   ),
 };

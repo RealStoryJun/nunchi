@@ -5,6 +5,7 @@ import { handleSales } from './sales';
 import { handleStats } from './stats';
 import { handleInferEmoji } from './emoji';
 import { handleInsights } from './insights';
+import { handleAdmin } from './admin';
 import { getSessionUser } from './session';
 
 export default {
@@ -42,6 +43,16 @@ export default {
       }
 
       if (!session) return err('로그인이 필요합니다.', 401);
+
+      if (path === '/api/admin' || path.startsWith('/api/admin/')) {
+        return await handleAdmin(
+          request,
+          env,
+          session.user,
+          path.replace('/api/admin', ''),
+          url,
+        );
+      }
 
       if (path === '/api/infer-emoji' && request.method === 'GET') {
         const name = url.searchParams.get('name') ?? '';

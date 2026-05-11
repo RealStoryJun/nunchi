@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { logout, refreshAuth, useAuth } from '../hooks/useAuth';
 import {
   BUSINESS_TYPES,
   businessTypeLabel,
 } from '../lib/businessTypes';
 import { apiPost } from '../lib/api';
+import NavIcon from '../components/NavIcon';
 
 export default function Account() {
   const { user } = useAuth();
@@ -97,6 +98,25 @@ export default function Account() {
           로그아웃
         </button>
       </div>
+
+      {user.is_admin && (
+        <Link
+          to="/admin"
+          className="card p-4 mt-4 flex items-center gap-3 hover:border-accent/40 transition group"
+        >
+          <span className="w-9 h-9 rounded-lg bg-accent/10 text-accent flex items-center justify-center shrink-0">
+            <NavIcon name="shield" size={18} />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="font-medium block">계정 관리 (관리자)</span>
+            <span className="text-sub text-sm block break-keep">
+              가입 계정 검색 · 가입일 조회 · 일괄 삭제
+            </span>
+          </span>
+          <span className="text-sub group-hover:text-accent transition">→</span>
+        </Link>
+      )}
+
       <p className="text-sub text-sm mt-4 text-center">
         AI 분석, 다크모드, 직원 추가 등은 다음 단계에서 추가될 예정입니다.
       </p>

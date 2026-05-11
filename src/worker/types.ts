@@ -9,6 +9,7 @@ export interface SessionUser {
   email: string;
   business_name: string;
   business_type: string | null;
+  is_admin: boolean;
 }
 
 export interface UserRow {
@@ -20,6 +21,7 @@ export interface UserRow {
   recovery_question: string;
   recovery_answer_hash: string;
   created_at: number;
+  is_admin: number;
 }
 
 export const BUSINESS_TYPE_IDS = [

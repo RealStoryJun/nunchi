@@ -42,7 +42,7 @@ export const getSessionUser = async (
   const token = parseCookie(request.headers.get('cookie'), COOKIE);
   if (!token) return null;
   const row = await env.DB.prepare(
-    `SELECT u.id, u.email, u.business_name, u.business_type, s.expires_at
+    `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, s.expires_at
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ?`,
   )
@@ -52,6 +52,7 @@ export const getSessionUser = async (
       email: string;
       business_name: string;
       business_type: string | null;
+      is_admin: number;
       expires_at: number;
     }>();
   if (!row) return null;
@@ -66,6 +67,7 @@ export const getSessionUser = async (
       email: row.email,
       business_name: row.business_name,
       business_type: row.business_type,
+      is_admin: !!row.is_admin,
     },
   };
 };

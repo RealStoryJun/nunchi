@@ -121,6 +121,7 @@ export const handleAuth = async (
           email,
           business_name: businessName,
           business_type: null,
+          is_admin: false,
         },
       },
       { headers: { 'set-cookie': sessionCookie(token, expiresAt) } },
@@ -146,13 +147,18 @@ export const handleAuth = async (
     if (!ipRl.ok) return tooMany(ipRl.retryAfterMs);
 
     const user = await env.DB.prepare(
-      'SELECT id, email, password_hash, business_name, business_type FROM users WHERE email = ?',
+      'SELECT id, email, password_hash, business_name, business_type, is_admin FROM users WHERE email = ?',
     )
       .bind(email)
       .first<
         Pick<
           UserRow,
-          'id' | 'email' | 'password_hash' | 'business_name' | 'business_type'
+          | 'id'
+          | 'email'
+          | 'password_hash'
+          | 'business_name'
+          | 'business_type'
+          | 'is_admin'
         >
       >();
     // 사용자 존재 여부와 무관하게 PBKDF2 한 번 돌려서 timing 균형
@@ -179,6 +185,7 @@ export const handleAuth = async (
           email: user.email,
           business_name: user.business_name,
           business_type: user.business_type,
+          is_admin: !!user.is_admin,
         },
       },
       { headers: { 'set-cookie': sessionCookie(token, expiresAt) } },

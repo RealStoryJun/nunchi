@@ -9,6 +9,7 @@ import Sales from './pages/Sales';
 import Menus from './pages/Menus';
 import BI from './pages/BI';
 import Account from './pages/Account';
+import Admin from './pages/Admin';
 import Layout from './components/Layout';
 import Protected from './components/Protected';
 import TopProgress from './components/TopProgress';
@@ -48,6 +49,7 @@ export default function App() {
       <Route path="/menus" element={protect(<Menus />)} />
       <Route path="/bi" element={protect(<BI />)} />
       <Route path="/account" element={protect(<Account />)} />
+      <Route path="/admin" element={protect(<Admin />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
     </>

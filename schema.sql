@@ -6,8 +6,12 @@ CREATE TABLE IF NOT EXISTS users (
   business_type TEXT,
   recovery_question TEXT NOT NULL,
   recovery_answer_hash TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  is_admin INTEGER NOT NULL DEFAULT 0
 );
+
+-- 기존 DB 마이그레이션: 컬럼 없으면 추가
+-- ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,

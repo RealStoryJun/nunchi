@@ -191,7 +191,7 @@ export default function Menus() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0">
+    <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="font-display text-2xl text-ink">메뉴 관리</h1>
@@ -256,8 +256,8 @@ export default function Menus() {
             placeholder="예: 음료 / 의류 / 디저트"
           />
         </div>
-        {/* 원가 + 판매가 — 각 50% 균등 */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* 원가 + 판매가 — 각 50% 균등, 데스크탑에선 과하게 넓어지지 않게 */}
+        <div className="grid grid-cols-2 gap-3 md:max-w-sm">
           <div>
             <label className="label">원가 (원)</label>
             <input

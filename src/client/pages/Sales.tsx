@@ -103,7 +103,7 @@ export default function Sales() {
           메뉴 한 번 탭 = 1개 기록 · 매출·취소·수정은 BI에서
         </p>
       </div>
-      <div className="hidden md:flex md:items-baseline md:justify-between mb-6">
+      <div className="hidden md:flex md:items-baseline md:gap-3 mb-6">
         <h1 className="font-display text-3xl">판매 입력</h1>
         <p className="text-sub">메뉴 한 번 탭 = 1개 기록 · 매출·취소·수정은 BI에서</p>
       </div>
@@ -141,10 +141,10 @@ export default function Sales() {
         </div>
       )}
 
-      {/* 입력 확인 토스트 — 1.5초 후 자동 사라짐 */}
+      {/* 입력 확인 토스트 — 1.5초 후 자동 사라짐. 모바일은 하단 탭 위, 데스크탑은 상단 */}
       {toast && (
         <div
-          className="fixed left-1/2 -translate-x-1/2 z-40 pointer-events-none"
+          className="fixed left-1/2 -translate-x-1/2 z-40 pointer-events-none md:!top-20 md:!bottom-auto"
           style={{ bottom: 'calc(80px + env(safe-area-inset-bottom))' }}
         >
           <div

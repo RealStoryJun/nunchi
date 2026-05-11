@@ -310,7 +310,7 @@ export default function BI() {
   }, [stats, peakHour, userId, fromMs, toMs, insightsBump]);
 
   return (
-    <div className="max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
+    <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
       <div className="flex items-baseline justify-between mb-4">
         <h1 className="font-display text-2xl md:text-3xl">BI 대시보드</h1>
       </div>
@@ -568,6 +568,7 @@ export default function BI() {
             )}
           </div>
 
+          <div className="grid md:grid-cols-2 gap-4 md:items-start">
           <div className="card p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">품목별 순위</h3>
@@ -613,7 +614,7 @@ export default function BI() {
           </div>
 
           {/* 판매 내역 — 카드 사용내역 스타일 날짜별 그룹 (읽기 전용) */}
-          <div className="card p-4 mt-4">
+          <div className="card p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">
                 판매 내역{sales ? ` (${sales.length}건)` : ''}
@@ -681,24 +682,26 @@ export default function BI() {
               </div>
             )}
           </div>
+          </div>
         </>
       )}
 
-      {/* 판매 내역 수정 — 별도 풀스크린 화면 */}
+      {/* 판매 내역 수정 — 모바일은 풀스크린, 데스크탑은 중앙 다이얼로그 */}
       {editOpen && (
-        <div className="fixed inset-0 z-50 bg-bg flex flex-col">
-          <header className="px-4 h-14 flex items-center justify-between border-b border-border bg-card shrink-0">
-            <h2 className="font-semibold">판매 내역 수정</h2>
-            <button
-              type="button"
-              onClick={closeEdit}
-              className="text-sm text-sub px-3 h-9 rounded-lg hover:bg-black/5"
-            >
-              닫기
-            </button>
-          </header>
-          <div className="flex-1 overflow-y-auto px-4 py-4">
-            <div className="max-w-2xl mx-auto w-full pb-8">
+        <div className="fixed inset-0 z-50 flex flex-col bg-bg md:items-center md:justify-center md:bg-black/40 md:p-6">
+          <div className="flex flex-col flex-1 min-h-0 w-full bg-bg overflow-hidden md:flex-none md:max-w-2xl md:max-h-[85vh] md:rounded-2xl md:border md:border-border md:shadow-2xl">
+            <header className="px-4 h-14 flex items-center justify-between border-b border-border bg-card shrink-0">
+              <h2 className="font-semibold">판매 내역 수정</h2>
+              <button
+                type="button"
+                onClick={closeEdit}
+                className="text-sm text-sub px-3 h-9 rounded-lg hover:bg-black/5"
+              >
+                닫기
+              </button>
+            </header>
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+              <div className="max-w-2xl mx-auto w-full pb-8">
               {salesByDay.length === 0 ? (
                 <p className="text-sub text-sm py-12 text-center">
                   수정할 기록이 없습니다.
@@ -766,6 +769,7 @@ export default function BI() {
                   </div>
                 ))
               )}
+              </div>
             </div>
           </div>
         </div>

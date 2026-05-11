@@ -38,7 +38,7 @@ export default function Onboarding() {
         <span className="text-sub text-sm">1 / 1</span>
       </header>
 
-      <main className="flex-1 max-w-2xl mx-auto w-full px-5 pt-4 pb-32">
+      <main className="flex-1 max-w-2xl mx-auto w-full px-5 pt-4 pb-32 md:flex md:flex-col md:justify-center md:pt-0 md:pb-24">
         <div
           className="anim-rise"
           style={{ animationDelay: '40ms' }}
@@ -54,7 +54,7 @@ export default function Onboarding() {
           </p>
         </div>
 
-        <ul className="grid grid-cols-3 gap-2 mt-6">
+        <ul className="grid grid-cols-3 md:grid-cols-4 gap-2 mt-6">
           {BUSINESS_TYPES.map((t, i) => {
             const active = selected === t.id;
             return (

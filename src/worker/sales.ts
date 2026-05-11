@@ -85,6 +85,24 @@ export const handleSales = async (
     });
   }
 
+  // PUT /api/sales/:id — 수량 수정 (cost/price 스냅샷은 유지)
+  const mPut = rest.match(/^\/(\d+)$/);
+  if (mPut && request.method === 'PUT') {
+    const id = Number(mPut[1]);
+    const body = await safeJson<{ quantity: number }>(request);
+    if (!body) return err('잘못된 요청입니다.');
+    const quantity = body.quantity;
+    if (!Number.isInteger(quantity) || quantity < 1)
+      return err('수량은 1 이상의 정수여야 합니다.');
+    const r = await env.DB.prepare(
+      'UPDATE sales SET quantity = ? WHERE id = ? AND user_id = ?',
+    )
+      .bind(quantity, id, user.id)
+      .run();
+    if (!r.meta.changes) return err('판매 기록을 찾을 수 없습니다.', 404);
+    return ok({});
+  }
+
   // DELETE /api/sales/:id
   const m = rest.match(/^\/(\d+)$/);
   if (m && request.method === 'DELETE') {

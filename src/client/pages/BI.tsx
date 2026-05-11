@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -14,11 +14,12 @@ import {
 import { Link } from 'react-router-dom';
 import StatCard from '../components/StatCard';
 import { Skeleton } from '../components/Skeleton';
-import { apiGet } from '../lib/api';
-import { getCache, setCache, isFresh } from '../lib/cache';
+import { apiGet, apiPut, apiDelete } from '../lib/api';
+import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
 import { useAuth } from '../hooks/useAuth';
 import {
   endOfDay,
+  formatDate,
   pct,
   startOfDay,
   startOfMonth,
@@ -59,6 +60,16 @@ interface Stats {
   byDay: ByDay[];
   byCategory: ByCat[];
 }
+interface Sale {
+  id: number;
+  menu_id: number;
+  quantity: number;
+  cost_at_sale: number;
+  price_at_sale: number;
+  sold_at: number;
+  menu_name: string;
+  menu_emoji: string | null;
+}
 
 type Range = 'today' | 'week' | 'month' | 'custom';
 
@@ -75,6 +86,8 @@ export default function BI() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [rankBy, setRankBy] = useState<'qty' | 'revenue'>('revenue');
+  const [sales, setSales] = useState<Sale[] | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
 
   const [fromMs, toMs] = useMemo(() => {
     const now = new Date();
@@ -89,29 +102,92 @@ export default function BI() {
     ];
   }, [range, from, to]);
 
+  const statsCacheKey = `stats:${userId}:${fromMs}:${toMs}`;
+  const tzOffset = -new Date().getTimezoneOffset();
+
+  const refetchStats = useCallback(async () => {
+    invalidate(statsCacheKey);
+    const d = await apiGet<Stats>(
+      `/api/stats?from=${fromMs}&to=${toMs}&tz=${tzOffset}`,
+    );
+    setStats(d);
+    setCache(statsCacheKey, d);
+  }, [statsCacheKey, fromMs, toMs, tzOffset]);
+
+  const refetchSales = useCallback(async () => {
+    const d = await apiGet<{ sales: Sale[] }>(
+      `/api/sales?from=${fromMs}&to=${toMs}&limit=300`,
+    );
+    setSales(d.sales);
+  }, [fromMs, toMs]);
+
   useEffect(() => {
     let alive = true;
-    const cacheKey = `stats:${userId}:${fromMs}:${toMs}`;
-    const cached = getCache<Stats>(cacheKey);
+    const cached = getCache<Stats>(statsCacheKey);
     if (cached) {
       setStats(cached);
       setLoading(false);
     } else {
       setLoading(true);
     }
-    if (isFresh(cacheKey, TTL_STATS)) return;
-    const tz = -new Date().getTimezoneOffset();
-    apiGet<Stats>(`/api/stats?from=${fromMs}&to=${toMs}&tz=${tz}`)
-      .then((d) => {
-        if (!alive) return;
-        setStats(d);
-        setCache(cacheKey, d);
-      })
-      .finally(() => alive && setLoading(false));
+    setSales(null);
+    const tasks: Promise<unknown>[] = [];
+    if (!isFresh(statsCacheKey, TTL_STATS)) {
+      tasks.push(
+        apiGet<Stats>(`/api/stats?from=${fromMs}&to=${toMs}&tz=${tzOffset}`).then(
+          (d) => {
+            if (!alive) return;
+            setStats(d);
+            setCache(statsCacheKey, d);
+          },
+        ),
+      );
+    }
+    tasks.push(
+      apiGet<{ sales: Sale[] }>(
+        `/api/sales?from=${fromMs}&to=${toMs}&limit=300`,
+      ).then((d) => {
+        if (alive) setSales(d.sales);
+      }),
+    );
+    Promise.all(tasks).finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromMs, toMs, userId]);
+
+  const changeQty = async (sale: Sale, q: number) => {
+    if (q < 1 || busyId === sale.id) return;
+    setBusyId(sale.id);
+    setSales((prev) =>
+      prev ? prev.map((x) => (x.id === sale.id ? { ...x, quantity: q } : x)) : prev,
+    );
+    try {
+      await apiPut(`/api/sales/${sale.id}`, { quantity: q });
+      await refetchStats();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '수정 실패');
+      await Promise.all([refetchStats(), refetchSales()]);
+    } finally {
+      setBusyId(null);
+    }
+  };
+  const removeSale = async (sale: Sale) => {
+    if (busyId === sale.id) return;
+    if (!confirm(`'${sale.menu_name}' 판매 기록을 취소할까요?`)) return;
+    setBusyId(sale.id);
+    setSales((prev) => (prev ? prev.filter((x) => x.id !== sale.id) : prev));
+    try {
+      await apiDelete(`/api/sales/${sale.id}`);
+      await refetchStats();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '취소 실패');
+      await Promise.all([refetchStats(), refetchSales()]);
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const ranked = useMemo(() => {
     if (!stats) return [];
@@ -351,6 +427,81 @@ export default function BI() {
                     <span className="num font-semibold w-28 text-right">
                       {won(m.revenue)}
                     </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* 판매 내역 — 개별 기록 취소·수량 수정 */}
+          <div className="card p-4 mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">
+                판매 내역{sales ? ` (${sales.length}건)` : ''}
+              </h3>
+            </div>
+            {sales === null ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12" />
+                ))}
+              </div>
+            ) : sales.length === 0 ? (
+              <p className="text-sub text-sm py-8 text-center">
+                이 기간에 판매 기록이 없습니다.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border max-h-[440px] overflow-y-auto">
+                {sales.map((s) => (
+                  <li
+                    key={s.id}
+                    className={`py-2.5 flex flex-col md:flex-row md:items-center gap-2 md:gap-3 ${
+                      busyId === s.id ? 'opacity-60' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="text-xl w-7 text-center shrink-0">
+                        {s.menu_emoji || '📦'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{s.menu_name}</div>
+                        <div className="text-sub text-xs num">
+                          {formatDate(s.sold_at)} ·{' '}
+                          {won(s.price_at_sale * s.quantity)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 self-end md:self-auto shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => changeQty(s, s.quantity - 1)}
+                        disabled={s.quantity <= 1 || busyId === s.id}
+                        className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
+                        aria-label="수량 감소"
+                      >
+                        −
+                      </button>
+                      <span className="num w-7 text-center text-sm">
+                        {s.quantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => changeQty(s, s.quantity + 1)}
+                        disabled={busyId === s.id}
+                        className="w-9 h-9 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
+                        aria-label="수량 증가"
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeSale(s)}
+                        disabled={busyId === s.id}
+                        className="text-warm text-xs font-medium px-3 h-9 rounded-md hover:bg-warm/10 disabled:opacity-40 ml-1"
+                      >
+                        취소
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

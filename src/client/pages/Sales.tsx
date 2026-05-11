@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MenuTile from '../components/MenuTile';
-import CountUp from '../components/CountUp';
 import { Skeleton } from '../components/Skeleton';
-import { apiDelete, apiGet, apiPost } from '../lib/api';
-import { startOfDay, endOfDay } from '../lib/format';
-import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
+import { apiGet, apiPost } from '../lib/api';
+import { getCache, setCache, isFresh } from '../lib/cache';
 import { useAuth } from '../hooks/useAuth';
 
 interface Menu {
@@ -16,83 +14,44 @@ interface Menu {
   price: number;
   emoji: string | null;
 }
-interface Sale {
-  id: number;
-  menu_id: number;
-  quantity: number;
-  cost_at_sale: number;
-  price_at_sale: number;
-  sold_at: number;
-  menu_name: string;
-  menu_emoji: string | null;
-}
 
 export default function Sales() {
   const { user } = useAuth();
   const userId = user?.id ?? 0;
   const menuCacheKey = `menus:${userId}`;
-  const salesCacheKey = `sales:today:${userId}`;
-  const TTL_MENUS = 5 * 60 * 1000; // 5분
-  const TTL_SALES = 30 * 1000; // 30초
+  const TTL_MENUS = 5 * 60 * 1000;
 
-  // 메뉴는 캐시 즉시 렌더 → TTL 안 신선하면 백그라운드 갱신
   const [menus, setMenus] = useState<Menu[]>(
     () => getCache<Menu[]>(menuCacheKey) ?? [],
   );
   const [menusLoaded, setMenusLoaded] = useState<boolean>(
     () => (getCache<Menu[]>(menuCacheKey)?.length ?? 0) > 0,
   );
-  // 오늘 판매도 캐시 즉시 표시 + TTL 검사
-  const [todaySales, setTodaySales] = useState<Sale[] | null>(
-    () => getCache<Sale[]>(salesCacheKey),
-  );
   const [savingId, setSavingId] = useState<number | null>(null);
-  // 같은 메뉴 동시 클릭 차단 (useRef로 동기 체크 — React 렌더 비동기 race 회피)
+  // 같은 메뉴 동시 클릭 차단 (동기)
   const inFlightRef = useRef<Set<number>>(new Set());
-  // optimistic id 충돌 방지 카운터 (같은 ms 두 메뉴 탭 시 음수 id 중복 방지)
-  // 초기 시드 random — 두 탭이 같은 ms에 첫 클릭해도 카운터 시작점이 달라 충돌 ≈ 0
-  const optimisticCounterRef = useRef(Math.floor(Math.random() * 4096));
+  // 입력 확인 토스트
+  const [toast, setToast] = useState<{ emoji: string; name: string; key: number } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
-  const loadAll = useCallback(async () => {
-    const now = new Date();
-    const from = startOfDay(now).getTime();
-    const to = endOfDay(now).getTime();
-    const tasks: Promise<void>[] = [];
-    if (!isFresh(menuCacheKey, TTL_MENUS)) {
-      tasks.push(
-        apiGet<{ menus: Menu[] }>('/api/menus').then((m) => {
-          setMenus(m.menus);
-          setCache(menuCacheKey, m.menus);
-          setMenusLoaded(true);
-        }),
-      );
-    } else {
+  const load = useCallback(async () => {
+    if (isFresh(menuCacheKey, TTL_MENUS)) {
       setMenusLoaded(true);
+      return;
     }
-    if (!isFresh(salesCacheKey, TTL_SALES)) {
-      tasks.push(
-        apiGet<{ sales: Sale[] }>(
-          `/api/sales?from=${from}&to=${to}&limit=200`,
-        ).then((s) => {
-          setTodaySales(s.sales);
-          setCache(salesCacheKey, s.sales);
-        }),
-      );
-    }
-    await Promise.all(tasks);
-  }, [menuCacheKey, salesCacheKey, TTL_MENUS, TTL_SALES]);
+    const m = await apiGet<{ menus: Menu[] }>('/api/menus');
+    setMenus(m.menus);
+    setCache(menuCacheKey, m.menus);
+    setMenusLoaded(true);
+  }, [menuCacheKey, TTL_MENUS]);
   useEffect(() => {
-    loadAll();
-  }, [loadAll]);
-
-  const todayRevenue = useMemo(
-    () =>
-      (todaySales ?? []).reduce((s, r) => s + r.price_at_sale * r.quantity, 0),
-    [todaySales],
-  );
-  const todayQty = useMemo(
-    () => (todaySales ?? []).reduce((s, r) => s + r.quantity, 0),
-    [todaySales],
+    load();
+  }, [load]);
+  useEffect(
+    () => () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    },
+    [],
   );
 
   const groupedMenus = useMemo(() => {
@@ -109,35 +68,14 @@ export default function Sales() {
     if (inFlightRef.current.has(menu.id)) return;
     inFlightRef.current.add(menu.id);
     setSavingId(menu.id);
-    // 낙관적 업데이트 — id는 카운터 + ms로 충돌 방지 (같은 ms 동시 탭 안전)
-    optimisticCounterRef.current = (optimisticCounterRef.current + 1) & 0xfff;
-    const optimistic: Sale = {
-      id: -(Date.now() * 4096 + optimisticCounterRef.current),
-      menu_id: menu.id,
-      quantity: 1,
-      cost_at_sale: menu.cost,
-      price_at_sale: menu.price,
-      sold_at: Date.now(),
-      menu_name: menu.name,
-      menu_emoji: menu.emoji,
-    };
-    setTodaySales((prev) => [optimistic, ...(prev ?? [])]);
+    // 토스트 즉시 (입력 확인용 — 매출/취소는 BI)
+    setToast({ emoji: menu.emoji || '📦', name: menu.name, key: Date.now() });
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 1500);
     try {
-      const data = await apiPost<{ sale: Sale }>('/api/sales', {
-        menuId: menu.id,
-        quantity: 1,
-      });
-      setTodaySales((prev) => {
-        const next = (prev ?? []).map((s) =>
-          s.id === optimistic.id ? data.sale : s,
-        );
-        setCache(salesCacheKey, next);
-        return next;
-      });
+      await apiPost('/api/sales', { menuId: menu.id, quantity: 1 });
     } catch (e) {
-      setTodaySales((prev) =>
-        (prev ?? []).filter((s) => s.id !== optimistic.id),
-      );
+      setToast(null);
       alert(e instanceof Error ? e.message : '판매 저장 실패');
     } finally {
       setSavingId(null);
@@ -145,66 +83,32 @@ export default function Sales() {
     }
   };
 
-  const undo = async (sale: Sale) => {
-    if (sale.id < 0) return;
-    setTodaySales((prev) => {
-      const next = (prev ?? []).filter((s) => s.id !== sale.id);
-      setCache(salesCacheKey, next);
-      return next;
-    });
-    try {
-      await apiDelete(`/api/sales/${sale.id}`);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : '취소 실패');
-      invalidate(salesCacheKey);
-      loadAll();
-    }
-  };
-
-  const recent = (todaySales ?? []).slice(0, 5);
-  const salesLoading = todaySales === null;
-
-  // 하단 고정 카드 실제 높이를 측정해 paddingBottom에 반영 (가려짐 방지)
-  const footRef = useRef<HTMLDivElement>(null);
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = footRef.current;
-    const wrap = wrapperRef.current;
-    if (!el || !wrap) return;
-    const apply = () => {
-      const h = el.getBoundingClientRect().height;
-      // 하단 네비 64px + 카드 + 24px 여유
-      wrap.style.setProperty('--sales-foot', `${Math.ceil(h + 88)}px`);
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [menusLoaded, todaySales, recent.length]);
+  if (!menusLoaded) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0">
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-[112px] rounded-2xl" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div
-      ref={wrapperRef}
-      className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0 md:pb-0"
-      style={{ paddingBottom: 'calc(var(--sales-foot, 340px) + env(safe-area-inset-bottom))' }}
-    >
+    <div className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0">
       <div className="md:hidden mb-3">
         <h1 className="font-display text-2xl">판매 입력</h1>
-        <p className="text-sub text-xs">메뉴 한 번 탭 = 1개 판매 기록</p>
+        <p className="text-sub text-xs">
+          메뉴 한 번 탭 = 1개 기록 · 매출·취소·수정은 BI에서
+        </p>
       </div>
       <div className="hidden md:flex md:items-baseline md:justify-between mb-6">
         <h1 className="font-display text-3xl">판매 입력</h1>
-        <p className="text-sub">메뉴 한 번 탭 = 1개 판매 기록</p>
+        <p className="text-sub">메뉴 한 번 탭 = 1개 기록 · 매출·취소·수정은 BI에서</p>
       </div>
 
-      {!menusLoaded ? (
-        // 캐시 없는 첫 진입 — 타일 스켈레톤
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-[104px] rounded-2xl" />
-          ))}
-        </div>
-      ) : menus.length === 0 ? (
+      {menus.length === 0 ? (
         <div className="card p-10 text-center">
           <p className="text-lg mb-2">아직 등록한 메뉴가 없어요.</p>
           <p className="text-sub mb-6">
@@ -237,74 +141,21 @@ export default function Sales() {
         </div>
       )}
 
-      {/* 하단 고정 카드: 오늘 매출 + 최근 입력 — 메뉴 0개 또는 오늘 판매 0건이면 숨김 */}
-      {menusLoaded && menus.length > 0 && (salesLoading || todayQty > 0) && (
-      <div
-        ref={footRef}
-        className="fixed md:static md:mt-8 inset-x-0 md:inset-x-auto px-3 md:px-0 z-20"
-        style={{
-          bottom: 'calc(64px + env(safe-area-inset-bottom))',
-        }}
-      >
-        <div className="max-w-4xl mx-auto">
-          <div className="card p-3 md:p-5 shadow-soft">
-            <div className="flex items-baseline justify-between">
-              <span className="text-sub text-xs md:text-sm">오늘의 매출</span>
-              {salesLoading ? (
-                <Skeleton className="h-3 w-10" />
-              ) : (
-                <span className="text-sub text-xs num">{todayQty}건</span>
-              )}
-            </div>
-            {salesLoading ? (
-              <Skeleton className="h-8 md:h-10 w-32 mt-1" />
-            ) : (
-              <CountUp
-                value={todayRevenue}
-                className="num text-2xl md:text-4xl font-bold text-accent block leading-tight mt-0.5"
-              />
-            )}
-            {salesLoading ? (
-              <ul className="mt-2 md:mt-3 space-y-2">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <Skeleton className="h-4 w-4 rounded-full" />
-                    <Skeleton className="h-4 flex-1" />
-                    <Skeleton className="h-4 w-14" />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              recent.length > 0 && (
-              <ul className="mt-2 md:mt-3 divide-y divide-border/60">
-                {recent.map((s) => (
-                  <li
-                    key={s.id}
-                    className="flex items-center gap-2 py-1.5 text-sm min-w-0"
-                  >
-                    <span className="text-base leading-none w-5 text-center">
-                      {s.menu_emoji || '📦'}
-                    </span>
-                    <span className="flex-1 truncate min-w-0">{s.menu_name}</span>
-                    <span className="num font-medium whitespace-nowrap">
-                      +{(s.price_at_sale * s.quantity).toLocaleString('ko-KR')}원
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => undo(s)}
-                      className="text-warm text-xs font-medium px-3 h-11 -my-1.5 rounded-md hover:bg-warm/10 whitespace-nowrap"
-                      aria-label="판매 기록 취소"
-                    >
-                      취소
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              )
-            )}
+      {/* 입력 확인 토스트 — 1.5초 후 자동 사라짐 */}
+      {toast && (
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-40 pointer-events-none"
+          style={{ bottom: 'calc(80px + env(safe-area-inset-bottom))' }}
+        >
+          <div
+            key={toast.key}
+            className="anim-toast bg-accent text-white rounded-full px-4 py-2
+                       text-sm font-medium shadow-soft flex items-center gap-2 whitespace-nowrap"
+          >
+            <span className="text-base leading-none">{toast.emoji}</span>
+            <span>{toast.name} 기록됨</span>
           </div>
         </div>
-      </div>
       )}
     </div>
   );

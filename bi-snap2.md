@@ -1,0 +1,256 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - img [ref=e6]
+      - generic [ref=e11]: 눈치
+    - generic [ref=e12]:
+      - generic [ref=e13]: 가게 이름
+      - generic [ref=e14]: 이음 커피
+    - navigation [ref=e15]:
+      - link "판매 입력" [ref=e16] [cursor=pointer]:
+        - /url: /sales
+        - img [ref=e17]
+        - generic [ref=e19]: 판매 입력
+      - link "메뉴 관리" [ref=e20] [cursor=pointer]:
+        - /url: /menus
+        - img [ref=e21]
+        - generic [ref=e24]: 메뉴 관리
+      - link "BI 대시보드" [ref=e25] [cursor=pointer]:
+        - /url: /bi
+        - img [ref=e26]
+        - generic [ref=e30]: BI 대시보드
+      - link "계정 설정" [ref=e31] [cursor=pointer]:
+        - /url: /account
+        - img [ref=e32]
+        - generic [ref=e35]: 계정 설정
+    - button "로그아웃" [ref=e37] [cursor=pointer]
+  - main [ref=e38]:
+    - generic [ref=e39]:
+      - heading "BI 대시보드" [level=1] [ref=e41]
+      - generic [ref=e42]:
+        - button "오늘" [ref=e43] [cursor=pointer]
+        - button "이번 주" [ref=e44] [cursor=pointer]
+        - button "이번 달" [ref=e45] [cursor=pointer]
+        - button "사용자 지정" [ref=e46] [cursor=pointer]
+      - generic [ref=e47]:
+        - generic [ref=e48]:
+          - generic [ref=e49]: 총매출
+          - generic [ref=e50]: 84,500원
+        - generic [ref=e51]:
+          - generic [ref=e52]: 총원가
+          - generic [ref=e53]: 17,900원
+        - generic [ref=e54]:
+          - generic [ref=e55]: 순이익
+          - generic [ref=e56]: 66,600원
+        - generic [ref=e57]:
+          - generic [ref=e58]: 마진율
+          - generic [ref=e59]: 78.8%
+          - generic [ref=e60]: 17건 판매
+      - generic [ref=e61]:
+        - generic [ref=e62]:
+          - heading "일별 매출 추이" [level=3] [ref=e64]
+          - generic [ref=e65]:
+            - generic [ref=e66]: 84,500원
+            - paragraph [ref=e67]: 데이터가 더 쌓이면 일별 추이 차트로 보여드릴게요.
+        - generic [ref=e68]:
+          - heading "분류별 매출 비중" [level=3] [ref=e70]
+          - img [ref=e73]:
+            - generic [ref=e74]:
+              - img [ref=e76]
+              - img [ref=e78]
+          - list [ref=e79]:
+            - listitem [ref=e80]:
+              - generic [ref=e82]: 커피
+              - generic [ref=e83]: 79,000원
+            - listitem [ref=e84]:
+              - generic [ref=e86]: 에이드
+              - generic [ref=e87]: 5,500원
+      - generic [ref=e88]:
+        - generic [ref=e89]:
+          - heading "품목별 순위" [level=3] [ref=e90]
+          - generic [ref=e91]:
+            - button "매출 기준" [ref=e92] [cursor=pointer]
+            - button "수량 기준" [ref=e93] [cursor=pointer]
+        - list [ref=e94]:
+          - listitem [ref=e95]:
+            - generic [ref=e96]: "1"
+            - generic [ref=e97]: ☕️
+            - generic [ref=e98]: 아메리카노
+            - generic [ref=e99]: 5개
+            - generic [ref=e100]: 22,500원
+          - listitem [ref=e101]:
+            - generic [ref=e102]: "2"
+            - generic [ref=e103]: ☕️
+            - generic [ref=e104]: 콜드브루
+            - generic [ref=e105]: 4개
+            - generic [ref=e106]: 20,000원
+          - listitem [ref=e107]:
+            - generic [ref=e108]: "3"
+            - generic [ref=e109]: ☕️
+            - generic [ref=e110]: 바닐라라떼
+            - generic [ref=e111]: 3개
+            - generic [ref=e112]: 16,500원
+          - listitem [ref=e113]:
+            - generic [ref=e114]: "4"
+            - generic [ref=e115]: ☕️
+            - generic [ref=e116]: 카페라떼
+            - generic [ref=e117]: 3개
+            - generic [ref=e118]: 15,000원
+          - listitem [ref=e119]:
+            - generic [ref=e120]: "5"
+            - generic [ref=e121]: 🍊
+            - generic [ref=e122]: 자몽에이드
+            - generic [ref=e123]: 1개
+            - generic [ref=e124]: 5,500원
+          - listitem [ref=e125]:
+            - generic [ref=e126]: "6"
+            - generic [ref=e127]: ☕️
+            - generic [ref=e128]: 카푸치노
+            - generic [ref=e129]: 1개
+            - generic [ref=e130]: 5,000원
+      - generic [ref=e131]:
+        - heading "판매 내역 (13건)" [level=3] [ref=e133]
+        - list [ref=e134]:
+          - listitem [ref=e135]:
+            - generic [ref=e136]: ☕️
+            - generic [ref=e137]:
+              - generic [ref=e138]: 바닐라라떼
+              - generic [ref=e139]: 05.11 18:08
+            - generic [ref=e140]:
+              - button "수량 감소" [ref=e141] [cursor=pointer]: −
+              - generic [ref=e142]: "2"
+              - button "수량 증가" [ref=e143] [cursor=pointer]: +
+            - generic [ref=e144]: 11,000원
+            - button "취소" [ref=e145] [cursor=pointer]
+          - listitem [ref=e146]:
+            - generic [ref=e147]: ☕️
+            - generic [ref=e148]:
+              - generic [ref=e149]: 카페라떼
+              - generic [ref=e150]: 05.11 18:08
+            - generic [ref=e151]:
+              - button "수량 감소" [disabled] [ref=e152]: −
+              - generic [ref=e153]: "1"
+              - button "수량 증가" [ref=e154] [cursor=pointer]: +
+            - generic [ref=e155]: 5,000원
+            - button "취소" [ref=e156] [cursor=pointer]
+          - listitem [ref=e157]:
+            - generic [ref=e158]: ☕️
+            - generic [ref=e159]:
+              - generic [ref=e160]: 바닐라라떼
+              - generic [ref=e161]: 05.11 18:08
+            - generic [ref=e162]:
+              - button "수량 감소" [disabled] [ref=e163]: −
+              - generic [ref=e164]: "1"
+              - button "수량 증가" [ref=e165] [cursor=pointer]: +
+            - generic [ref=e166]: 5,500원
+            - button "취소" [ref=e167] [cursor=pointer]
+          - listitem [ref=e168]:
+            - generic [ref=e169]: 🍊
+            - generic [ref=e170]:
+              - generic [ref=e171]: 자몽에이드
+              - generic [ref=e172]: 05.11 18:08
+            - generic [ref=e173]:
+              - button "수량 감소" [disabled] [ref=e174]: −
+              - generic [ref=e175]: "1"
+              - button "수량 증가" [ref=e176] [cursor=pointer]: +
+            - generic [ref=e177]: 5,500원
+            - button "취소" [ref=e178] [cursor=pointer]
+          - listitem [ref=e179]:
+            - generic [ref=e180]: ☕️
+            - generic [ref=e181]:
+              - generic [ref=e182]: 아메리카노
+              - generic [ref=e183]: 05.11 18:08
+            - generic [ref=e184]:
+              - button "수량 감소" [disabled] [ref=e185]: −
+              - generic [ref=e186]: "1"
+              - button "수량 증가" [ref=e187] [cursor=pointer]: +
+            - generic [ref=e188]: 4,500원
+            - button "취소" [ref=e189] [cursor=pointer]
+          - listitem [ref=e190]:
+            - generic [ref=e191]: ☕️
+            - generic [ref=e192]:
+              - generic [ref=e193]: 아메리카노
+              - generic [ref=e194]: 05.11 18:08
+            - generic [ref=e195]:
+              - button "수량 감소" [disabled] [ref=e196]: −
+              - generic [ref=e197]: "1"
+              - button "수량 증가" [ref=e198] [cursor=pointer]: +
+            - generic [ref=e199]: 4,500원
+            - button "취소" [ref=e200] [cursor=pointer]
+          - listitem [ref=e201]:
+            - generic [ref=e202]: ☕️
+            - generic [ref=e203]:
+              - generic [ref=e204]: 카페라떼
+              - generic [ref=e205]: 05.11 18:07
+            - generic [ref=e206]:
+              - button "수량 감소" [disabled] [ref=e207]: −
+              - generic [ref=e208]: "1"
+              - button "수량 증가" [ref=e209] [cursor=pointer]: +
+            - generic [ref=e210]: 5,000원
+            - button "취소" [ref=e211] [cursor=pointer]
+          - listitem [ref=e212]:
+            - generic [ref=e213]: ☕️
+            - generic [ref=e214]:
+              - generic [ref=e215]: 아메리카노
+              - generic [ref=e216]: 05.11 18:07
+            - generic [ref=e217]:
+              - button "수량 감소" [disabled] [ref=e218]: −
+              - generic [ref=e219]: "1"
+              - button "수량 증가" [ref=e220] [cursor=pointer]: +
+            - generic [ref=e221]: 4,500원
+            - button "취소" [ref=e222] [cursor=pointer]
+          - listitem [ref=e223]:
+            - generic [ref=e224]: ☕️
+            - generic [ref=e225]:
+              - generic [ref=e226]: 아메리카노
+              - generic [ref=e227]: 05.11 18:07
+            - generic [ref=e228]:
+              - button "수량 감소" [disabled] [ref=e229]: −
+              - generic [ref=e230]: "1"
+              - button "수량 증가" [ref=e231] [cursor=pointer]: +
+            - generic [ref=e232]: 4,500원
+            - button "취소" [ref=e233] [cursor=pointer]
+          - listitem [ref=e234]:
+            - generic [ref=e235]: ☕️
+            - generic [ref=e236]:
+              - generic [ref=e237]: 콜드브루
+              - generic [ref=e238]: 05.11 11:07
+            - generic [ref=e239]:
+              - button "수량 감소" [ref=e240] [cursor=pointer]: −
+              - generic [ref=e241]: "4"
+              - button "수량 증가" [ref=e242] [cursor=pointer]: +
+            - generic [ref=e243]: 20,000원
+            - button "취소" [ref=e244] [cursor=pointer]
+          - listitem [ref=e245]:
+            - generic [ref=e246]: ☕️
+            - generic [ref=e247]:
+              - generic [ref=e248]: 아메리카노
+              - generic [ref=e249]: 05.11 07:08
+            - generic [ref=e250]:
+              - button "수량 감소" [disabled] [ref=e251]: −
+              - generic [ref=e252]: "1"
+              - button "수량 증가" [ref=e253] [cursor=pointer]: +
+            - generic [ref=e254]: 4,500원
+            - button "취소" [ref=e255] [cursor=pointer]
+          - listitem [ref=e256]:
+            - generic [ref=e257]: ☕️
+            - generic [ref=e258]:
+              - generic [ref=e259]: 카푸치노
+              - generic [ref=e260]: 05.11 06:57
+            - generic [ref=e261]:
+              - button "수량 감소" [disabled] [ref=e262]: −
+              - generic [ref=e263]: "1"
+              - button "수량 증가" [ref=e264] [cursor=pointer]: +
+            - generic [ref=e265]: 5,000원
+            - button "취소" [ref=e266] [cursor=pointer]
+          - listitem [ref=e267]:
+            - generic [ref=e268]: ☕️
+            - generic [ref=e269]:
+              - generic [ref=e270]: 카페라떼
+              - generic [ref=e271]: 05.11 02:33
+            - generic [ref=e272]:
+              - button "수량 감소" [disabled] [ref=e273]: −
+              - generic [ref=e274]: "1"
+              - button "수량 증가" [ref=e275] [cursor=pointer]: +
+            - generic [ref=e276]: 5,000원
+            - button "취소" [ref=e277] [cursor=pointer]

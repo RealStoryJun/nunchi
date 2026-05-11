@@ -111,3 +111,10 @@
   100% { transform: translateY(0); }
 }
 .anim-float { animation: heroFloat 3.6s ease-in-out infinite; }
+
+@keyframes toastInOut {
+  0%        { opacity: 0; transform: translateY(12px); }
+  12%, 80%  { opacity: 1; transform: translateY(0); }
+  100%      { opacity: 0; transform: translateY(6px); }
+}
+.anim-toast { animation: toastInOut 1500ms ease-out forwards; }

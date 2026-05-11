@@ -7,3 +7,4 @@ dist
 *.tsbuildinfo
 .playwright-mcp/
 /*.png
+graphify-out/

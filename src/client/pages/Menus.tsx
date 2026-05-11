@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { apiDelete, apiGet, apiPost, apiPut } from '../lib/api';
 import { won } from '../lib/format';
 import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
+import { inferEmoji } from '../lib/emojiLookup';
 import { Skeleton } from '../components/Skeleton';
 import NavIcon from '../components/NavIcon';
 import { useAuth } from '../hooks/useAuth';
@@ -16,17 +17,12 @@ interface Menu {
   display_order: number;
 }
 
-const EMOJI_PRESETS = [
-  '☕', '🍵', '🥤', '🧃', '🍰', '🥐', '🍞', '🥪', '🍔', '🍟',
-  '🍕', '🍝', '🍜', '🍱', '🍣', '🍙', '🍦', '🍩', '🍪', '📦',
-];
-
 const empty = {
   name: '',
   category: '',
   cost: '',
   price: '',
-  emoji: '☕',
+  emoji: '📦',
 };
 
 export default function Menus() {
@@ -190,15 +186,34 @@ export default function Menus() {
             닫기
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
+        <div className="grid grid-cols-[64px_1fr] gap-3 items-end">
+          <div className="row-span-1">
+            <label className="label">아이콘</label>
+            <div
+              className="h-12 rounded-xl border border-border bg-bg
+                         flex items-center justify-center text-3xl leading-none
+                         transition"
+              aria-label="자동 추론 이모지"
+            >
+              {form.emoji}
+            </div>
+          </div>
+          <div>
             <label className="label">이름</label>
             <input
               required
               className="field"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="예: 아메리카노"
+              onChange={(e) => {
+                const name = e.target.value;
+                setForm((prev) => ({
+                  ...prev,
+                  name,
+                  // 사용자가 수정 중인 행이라도 이름 바꾸면 자동 재추론
+                  emoji: inferEmoji(name),
+                }));
+              }}
+              placeholder="예: 아메리카노, 청바지, 장미꽃다발…"
             />
           </div>
           <div className="col-span-2">
@@ -207,7 +222,7 @@ export default function Menus() {
               className="field"
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
-              placeholder="예: 음료"
+              placeholder="예: 음료 / 의류 / 디저트"
             />
           </div>
           <div>
@@ -232,26 +247,10 @@ export default function Menus() {
               onChange={(e) => setForm({ ...form, price: e.target.value })}
             />
           </div>
-          <div className="col-span-2">
-            <label className="label">이모지</label>
-            <div className="flex flex-wrap gap-1.5">
-              {EMOJI_PRESETS.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => setForm({ ...form, emoji: e })}
-                  className={`w-12 h-12 rounded-lg text-xl border ${
-                    form.emoji === e
-                      ? 'border-accent bg-accent/10'
-                      : 'border-border bg-card'
-                  }`}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
+        <p className="text-xs text-sub -mt-2">
+          아이콘은 이름에 따라 자동으로 선택돼요.
+        </p>
         {error && <p className="text-warm text-sm">{error}</p>}
         <button type="submit" disabled={submitting} className="btn-primary w-full">
           {submitting ? '저장 중…' : editing ? '수정 저장' : '메뉴 추가'}

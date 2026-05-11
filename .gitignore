@@ -7,6 +7,8 @@ dist
 *.tsbuildinfo
 .playwright-mcp/
 /*.png
+/*.jpg
+/*.jpeg
 /*-snap*.md
 /bi-*.md
 /menus-*.md

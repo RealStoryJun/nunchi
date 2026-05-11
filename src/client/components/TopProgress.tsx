@@ -3,7 +3,8 @@ import { subscribe, subscribeSplash } from '../lib/progress';
 
 // "중앙 로딩바" — 화면 정중앙 작은 로딩 카드(% + accent 바).
 // 규칙: "풀스크린 눈치 로딩바"(LoadingScreen)가 떠 있으면(splashActive) 절대 안 뜸.
-//   splash 사라진 후 페이지 내 데이터 갱신 시에만 표시. 짧은 fetch(200ms 미만)도 안 뜸.
+//   splash 사라진 후 페이지 내 데이터 갱신 시에만 표시.
+//   "누가 봐도 기다린다"는 상황에서만 — fetch가 1초 미만이면 아예 안 뜸.
 
 export default function TopProgress() {
   const [count, setCount] = useState(0);
@@ -49,12 +50,12 @@ export default function TopProgress() {
         showTimerRef.current = window.setTimeout(() => {
           setVisible(true);
           showTimerRef.current = null;
-        }, 200);
+        }, 1000);
       }
-      // 새 cycle(직전에 100% 채워둔 상태)이면 18로 리셋, 진행 중이면 유지
-      setWidth((w) => (w >= 95 ? 18 : Math.max(w, 18)));
+      // 새 cycle(직전에 100% 채워둔 상태)이면 28로 리셋, 진행 중이면 유지
+      setWidth((w) => (w >= 95 ? 28 : Math.max(w, 28)));
       const tick = () => {
-        setWidth((w) => (w >= 90 ? w : w + (90 - w) * 0.06));
+        setWidth((w) => (w >= 92 ? w : w + (92 - w) * 0.12));
         rafRef.current = requestAnimationFrame(tick);
       };
       rafRef.current = requestAnimationFrame(tick);

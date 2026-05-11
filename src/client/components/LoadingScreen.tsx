@@ -6,11 +6,13 @@ interface Props {
   label?: string;
 }
 
-const FILL_MS = 800; // 0 → 100 채워지는 데 걸리는 기준 시간
+// 실제 /api/me fetch(~400~500ms)에 맞춰 빠르게 채움 — fetch가 끝나는 시점에
+// progress가 거의 다 차 있어서 100% 점프 거리가 작도록.
+const FILL_MS = 420;
 
 export default function LoadingScreen({ label = '잠시만요' }: Props) {
   const [count, setCount] = useState(0);
-  const [width, setWidth] = useState(0);
+  const [width, setWidth] = useState(12); // 즉시 12% 점프 — 시작이 늦어 보이지 않게
   const startRef = useRef(performance.now());
   const rafRef = useRef<number | null>(null);
 

@@ -12,14 +12,14 @@ export default function Protected({
 }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  // 진짜 로딩이 있을 때만 splash. 150ms 미만 짧은 로딩은 깜빡임 방지로 표시 안 함.
+  // "누가 봐도 기다린다"는 상황에서만 splash. 1초 미만 로딩은 안 보임.
   const [showSplash, setShowSplash] = useState(false);
   useEffect(() => {
     if (!loading) {
       setShowSplash(false);
       return;
     }
-    const t = setTimeout(() => setShowSplash(true), 150);
+    const t = setTimeout(() => setShowSplash(true), 1000);
     return () => clearTimeout(t);
   }, [loading]);
   if (loading) return showSplash ? <LoadingScreen label="가게 정보를 불러오는 중" /> : null;

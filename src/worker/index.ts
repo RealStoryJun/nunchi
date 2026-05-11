@@ -84,6 +84,23 @@ export default {
         return ok({ business_type: bt });
       }
 
+      if (path === '/api/me/business-name' && request.method === 'POST') {
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return err('잘못된 요청입니다.');
+        }
+        const raw = (body as { businessName?: unknown })?.businessName;
+        const name = typeof raw === 'string' ? raw.trim() : '';
+        if (!name) return err('가게 이름을 입력해주세요.');
+        if (name.length > 40) return err('가게 이름은 40자 이내로 입력해주세요.');
+        await env.DB.prepare('UPDATE users SET business_name = ? WHERE id = ?')
+          .bind(name, session.user.id)
+          .run();
+        return ok({ business_name: name });
+      }
+
       if (path === '/api/menus' || path.startsWith('/api/menus/')) {
         return await handleMenus(
           request,

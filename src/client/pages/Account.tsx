@@ -13,6 +13,10 @@ export default function Account() {
   const navigate = useNavigate();
   const [editingType, setEditingType] = useState(false);
   const [pending, setPending] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [nameErr, setNameErr] = useState<string | null>(null);
 
   const onLogout = async () => {
     await logout();
@@ -28,6 +32,30 @@ export default function Account() {
       setPending(false);
     }
   };
+  const startEditName = () => {
+    setNameInput(user?.business_name ?? '');
+    setNameErr(null);
+    setEditingName(true);
+  };
+  const saveName = async () => {
+    if (savingName) return;
+    const v = nameInput.trim();
+    if (!v) {
+      setNameErr('가게 이름을 입력해주세요.');
+      return;
+    }
+    setSavingName(true);
+    setNameErr(null);
+    try {
+      await apiPost('/api/me/business-name', { businessName: v });
+      await refreshAuth();
+      setEditingName(false);
+    } catch (e) {
+      setNameErr(e instanceof Error ? e.message : '변경에 실패했습니다.');
+    } finally {
+      setSavingName(false);
+    }
+  };
   if (!user) return null;
   const current = BUSINESS_TYPES.find((t) => t.id === user.business_type);
   return (
@@ -35,8 +63,54 @@ export default function Account() {
       <h1 className="font-display text-2xl md:text-3xl mb-4">계정 설정</h1>
       <div className="card p-5 space-y-4">
         <div>
-          <div className="text-sub text-sm">가게 이름</div>
-          <div className="text-lg font-semibold">{user.business_name}</div>
+          <div className="flex items-center justify-between mb-1">
+            <div className="text-sub text-sm">가게 이름</div>
+            {!editingName && (
+              <button
+                type="button"
+                onClick={startEditName}
+                className="text-sm text-accent font-medium px-3 h-9 rounded-lg hover:bg-accent/10 -my-1"
+              >
+                변경
+              </button>
+            )}
+          </div>
+          {!editingName ? (
+            <div className="text-lg font-semibold">{user.business_name}</div>
+          ) : (
+            <div className="space-y-2 anim-fade">
+              <input
+                autoFocus
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                maxLength={40}
+                className="field"
+                placeholder="가게 이름"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveName();
+                  if (e.key === 'Escape') setEditingName(false);
+                }}
+              />
+              {nameErr && <p className="text-warm text-sm">{nameErr}</p>}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={saveName}
+                  disabled={savingName}
+                  className="btn-primary px-4 h-9 text-sm disabled:opacity-50"
+                >
+                  {savingName ? '저장 중…' : '저장'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingName(false)}
+                  className="btn-outline px-4 h-9 text-sm"
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <div className="text-sub text-sm">이메일</div>

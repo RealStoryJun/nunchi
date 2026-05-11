@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { subscribe, subscribeSplash } from '../lib/progress';
 
-// 페이지 내 데이터 갱신 시 화면 정중앙에 작은 로딩 카드.
-// 첫 진입(auth) 풀스크린 splash는 LoadingScreen이 담당 — 이건 그 외 갱신용.
-// 짧은 fetch는 200ms 미만이면 표시하지 않음(깜빡임 방지). 완료 시 100% 채우고 페이드.
+// "중앙 로딩바" — 화면 정중앙 작은 로딩 카드(% + accent 바).
+// 규칙: "풀스크린 눈치 로딩바"(LoadingScreen)가 떠 있으면(splashActive) 절대 안 뜸.
+//   splash 사라진 후 페이지 내 데이터 갱신 시에만 표시. 짧은 fetch(200ms 미만)도 안 뜸.
 
 export default function TopProgress() {
   const [count, setCount] = useState(0);
@@ -24,6 +24,21 @@ export default function TopProgress() {
         rafRef.current = null;
       }
     };
+    // 풀스크린 눈치 로딩바가 떠 있으면 중앙 로딩바는 아예 동작 안 함 (한 프레임 겹침도 방지)
+    if (splashActive) {
+      clearRaf();
+      if (showTimerRef.current !== null) {
+        window.clearTimeout(showTimerRef.current);
+        showTimerRef.current = null;
+      }
+      if (hideTimerRef.current !== null) {
+        window.clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      setVisible(false);
+      setWidth(0);
+      return clearRaf;
+    }
     if (count > 0) {
       // 표시 예약 (200ms 후에도 진행 중이면)
       if (hideTimerRef.current) {
@@ -63,7 +78,7 @@ export default function TopProgress() {
     }
     return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [count]);
+  }, [count, splashActive]);
 
   useEffect(
     () => () => {

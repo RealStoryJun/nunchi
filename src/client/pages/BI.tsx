@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -14,7 +14,7 @@ import {
 import { Link } from 'react-router-dom';
 import StatCard from '../components/StatCard';
 import { Skeleton } from '../components/Skeleton';
-import { apiGet, apiPut, apiDelete } from '../lib/api';
+import { apiGet, apiPost, apiPut, apiDelete } from '../lib/api';
 import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -96,6 +96,9 @@ export default function BI() {
   const [sales, setSales] = useState<Sale[] | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [insights, setInsights] = useState<string[] | null>(null);
+  // 현재 `stats`가 어느 기간 키의 데이터인지 추적 — insights effect가 stale stats로 호출하는 걸 막음
+  const statsKeyRef = useRef<string | null>(null);
 
   const [fromMs, toMs] = useMemo(() => {
     const now = new Date();
@@ -118,6 +121,7 @@ export default function BI() {
     const d = await apiGet<Stats>(
       `/api/stats?from=${fromMs}&to=${toMs}&tz=${tzOffset}`,
     );
+    statsKeyRef.current = statsCacheKey;
     setStats(d);
     setCache(statsCacheKey, d);
   }, [statsCacheKey, fromMs, toMs, tzOffset]);
@@ -133,9 +137,12 @@ export default function BI() {
     let alive = true;
     const cached = getCache<Stats>(statsCacheKey);
     if (cached) {
+      statsKeyRef.current = statsCacheKey;
       setStats(cached);
       setLoading(false);
     } else {
+      // 캐시 미스 — 이전 기간 stats는 화면에 잠깐 더 두되(깜빡임 방지),
+      // statsKeyRef는 갱신하지 않음 → insights effect가 stale stats로 호출 안 함.
       setLoading(true);
     }
     setSales(null);
@@ -145,6 +152,7 @@ export default function BI() {
         apiGet<Stats>(`/api/stats?from=${fromMs}&to=${toMs}&tz=${tzOffset}`).then(
           (d) => {
             if (!alive) return;
+            statsKeyRef.current = statsCacheKey;
             setStats(d);
             setCache(statsCacheKey, d);
           },
@@ -173,6 +181,7 @@ export default function BI() {
     );
     try {
       await apiPut(`/api/sales/${sale.id}`, { quantity: q });
+      invalidate(`insights:${userId}:${fromMs}:${toMs}`);
       await refetchStats();
     } catch (e) {
       alert(e instanceof Error ? e.message : '수정 실패');
@@ -188,6 +197,7 @@ export default function BI() {
     setSales((prev) => (prev ? prev.filter((x) => x.id !== sale.id) : prev));
     try {
       await apiDelete(`/api/sales/${sale.id}`);
+      invalidate(`insights:${userId}:${fromMs}:${toMs}`);
       await refetchStats();
     } catch (e) {
       alert(e instanceof Error ? e.message : '취소 실패');
@@ -240,6 +250,45 @@ export default function BI() {
     );
     return sorted.slice(0, 10);
   }, [stats, rankBy]);
+
+  // AI 인사이트 — stats 받으면 /api/insights 호출 (캐시 5분)
+  useEffect(() => {
+    if (!stats) {
+      setInsights(null);
+      return;
+    }
+    // stats가 아직 이전 기간 것이면(기간 토글 직후) 호출하지 않음 — 새 stats 도착하면 effect 재실행됨
+    if (statsKeyRef.current !== statsCacheKey) return;
+    let alive = true;
+    const key = `insights:${userId}:${fromMs}:${toMs}`;
+    const cached = getCache<string[]>(key);
+    if (cached) setInsights(cached);
+    if (isFresh(key, 5 * 60 * 1000)) return;
+    const rangeLabel =
+      range === 'today'
+        ? '오늘'
+        : range === 'week'
+        ? '이번 주'
+        : range === 'month'
+        ? '이번 달'
+        : '사용자 지정 기간';
+    apiPost<{ insights: string[] }>('/api/insights', {
+      stats: { ...stats, peakHour: peakHour?.hour ?? null },
+      rangeLabel,
+    })
+      .then((d) => {
+        if (!alive) return;
+        setInsights(d.insights);
+        setCache(key, d.insights);
+      })
+      .catch(() => {
+        if (alive) setInsights([]);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stats, peakHour, userId, fromMs, toMs]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
@@ -345,6 +394,33 @@ export default function BI() {
               hint={`${stats.qty}건 판매`}
             />
           </div>
+
+          {/* AI 인사이트 — Groq 분석 (키 없거나 빈 결과면 카드 안 보임) */}
+          {insights === null ? (
+            <div className="card p-4 mb-6">
+              <div className="flex items-center gap-1.5 mb-3">
+                <span className="text-base">💡</span>
+                <Skeleton className="h-4 w-20" />
+              </div>
+              <Skeleton className="h-4 w-full mb-2" />
+              <Skeleton className="h-4 w-5/6" />
+            </div>
+          ) : insights.length > 0 ? (
+            <div className="card p-4 mb-6 border-accent/25 bg-accent/[0.03]">
+              <div className="flex items-center gap-1.5 mb-2.5">
+                <span className="text-base leading-none">💡</span>
+                <h3 className="font-semibold text-accent">AI 인사이트</h3>
+              </div>
+              <ul className="space-y-2 text-sm leading-relaxed">
+                {insights.map((t, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="text-accent/50 shrink-0 select-none">•</span>
+                    <span className="text-ink/90">{t}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="grid md:grid-cols-2 gap-4 mb-4">
             <div className="card p-4">

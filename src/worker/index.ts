@@ -4,6 +4,7 @@ import { handleMenus } from './menus';
 import { handleSales } from './sales';
 import { handleStats } from './stats';
 import { handleInferEmoji } from './emoji';
+import { handleInsights } from './insights';
 import { getSessionUser } from './session';
 
 export default {
@@ -45,6 +46,16 @@ export default {
       if (path === '/api/infer-emoji' && request.method === 'GET') {
         const name = url.searchParams.get('name') ?? '';
         return await handleInferEmoji(env, session.user.id, name);
+      }
+
+      if (path === '/api/insights' && request.method === 'POST') {
+        let body: unknown;
+        try {
+          body = await request.json();
+        } catch {
+          return err('잘못된 요청입니다.');
+        }
+        return await handleInsights(env, session.user.id, body);
       }
 
       if (path === '/api/me/business-type' && request.method === 'POST') {

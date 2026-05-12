@@ -83,6 +83,7 @@ type Range = 'today' | 'week' | 'month' | 'custom';
 const PIE_COLORS = ['#1B4332', '#2D6A4F', '#52796F', '#C99D52', '#E76F51', '#767270'];
 
 const TTL_STATS = 30 * 1000;
+const TTL_INSIGHTS = 60 * 60 * 1000; // AI 인사이트는 "이번 달" 고정 — 1시간 캐시면 충분
 
 export default function BI() {
   const { user } = useAuth();
@@ -96,6 +97,8 @@ export default function BI() {
   const [sales, setSales] = useState<Sale[] | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  // AI 인사이트 — 기간 선택과 무관하게 항상 "이번 달" 기준 (오늘/사용자지정은 분석 의미가 약하고 호출만 늘어남)
+  const [monthStats, setMonthStats] = useState<Stats | null>(null);
   const [insights, setInsights] = useState<string[] | null>(null);
   const [insightsBump, setInsightsBump] = useState(0);
   // 메뉴 등록 여부 — BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
@@ -103,8 +106,6 @@ export default function BI() {
     const c = getCache<{ id: number }[]>(`menus:${userId}`);
     return c ? c.length : null;
   });
-  // 현재 `stats`가 어느 기간 키의 데이터인지 추적 — insights effect가 stale stats로 호출하는 걸 막음
-  const statsKeyRef = useRef<string | null>(null);
   // 수정 모달 안에서 판매가 바뀌었는지 — 닫을 때 인사이트 1회만 재호출(매 −/＋ 마다 X)
   const editDirtyRef = useRef(false);
 
@@ -121,6 +122,14 @@ export default function BI() {
     ];
   }, [range, from, to]);
 
+  // 이번 달 윈도우 (세션 동안 고정) — "이번 달" 기간 선택과 동일한 from/to라 stats 캐시도 공유
+  const [monthFromMs, monthToMs] = useMemo(() => {
+    const now = new Date();
+    return [startOfMonth(now).getTime(), endOfDay(now).getTime()];
+  }, []);
+  const monthStatsCacheKey = `stats:${userId}:${monthFromMs}:${monthToMs}`;
+  const monthInsightsKey = `insights:${userId}:${monthFromMs}:${monthToMs}`;
+
   const statsCacheKey = `stats:${userId}:${fromMs}:${toMs}`;
   const tzOffset = -new Date().getTimezoneOffset();
 
@@ -129,10 +138,18 @@ export default function BI() {
     const d = await apiGet<Stats>(
       `/api/stats?from=${fromMs}&to=${toMs}&tz=${tzOffset}`,
     );
-    statsKeyRef.current = statsCacheKey;
     setStats(d);
     setCache(statsCacheKey, d);
   }, [statsCacheKey, fromMs, toMs, tzOffset]);
+
+  const refetchMonthStats = useCallback(async () => {
+    invalidate(monthStatsCacheKey);
+    const d = await apiGet<Stats>(
+      `/api/stats?from=${monthFromMs}&to=${monthToMs}&tz=${tzOffset}`,
+    );
+    setMonthStats(d);
+    setCache(monthStatsCacheKey, d);
+  }, [monthStatsCacheKey, monthFromMs, monthToMs, tzOffset]);
 
   const refetchSales = useCallback(async () => {
     const d = await apiGet<{ sales: Sale[] }>(
@@ -145,12 +162,10 @@ export default function BI() {
     let alive = true;
     const cached = getCache<Stats>(statsCacheKey);
     if (cached) {
-      statsKeyRef.current = statsCacheKey;
       setStats(cached);
       setLoading(false);
     } else {
-      // 캐시 미스 — 이전 기간 stats는 화면에 잠깐 더 두되(깜빡임 방지),
-      // statsKeyRef는 갱신하지 않음 → insights effect가 stale stats로 호출 안 함.
+      // 캐시 미스 — 이전 기간 stats를 화면에 잠깐 더 둠(깜빡임 방지)
       setLoading(true);
     }
     setSales(null);
@@ -160,7 +175,6 @@ export default function BI() {
         apiGet<Stats>(`/api/stats?from=${fromMs}&to=${toMs}&tz=${tzOffset}`).then(
           (d) => {
             if (!alive) return;
-            statsKeyRef.current = statsCacheKey;
             setStats(d);
             setCache(statsCacheKey, d);
           },
@@ -199,6 +213,24 @@ export default function BI() {
       alive = false;
     };
   }, [userId]);
+
+  // 이번 달 stats (AI 인사이트 전용 — 기간 선택과 별개). "이번 달" 기간 선택 시 메인 effect가 채워둔 캐시와 공유.
+  useEffect(() => {
+    const cached = getCache<Stats>(monthStatsCacheKey);
+    if (cached) setMonthStats(cached);
+    if (isFresh(monthStatsCacheKey, TTL_STATS)) return;
+    let alive = true;
+    apiGet<Stats>(`/api/stats?from=${monthFromMs}&to=${monthToMs}&tz=${tzOffset}`)
+      .then((d) => {
+        if (!alive) return;
+        setMonthStats(d);
+        setCache(monthStatsCacheKey, d);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [monthStatsCacheKey, monthFromMs, monthToMs, tzOffset]);
 
   const changeQty = async (sale: Sale, q: number) => {
     if (q < 1 || busyId === sale.id) return;
@@ -239,12 +271,17 @@ export default function BI() {
     try {
       await refetchSales();
     } catch {
-      /* 목록 갱신 실패는 무시 — 인사이트 재호출은 계속 진행 */
+      /* 목록 갱신 실패는 무시 */
     }
     if (editDirtyRef.current) {
       editDirtyRef.current = false;
+      try {
+        await refetchMonthStats(); // 수정이 이번 달에 반영됐을 수 있음
+      } catch {
+        /* 무시 — 인사이트 재호출은 계속 진행 */
+      }
       setInsights(null);
-      invalidate(`insights:${userId}:${fromMs}:${toMs}`);
+      invalidate(monthInsightsKey);
       setInsightsBump((n) => n + 1);
     }
   };
@@ -285,6 +322,15 @@ export default function BI() {
     return best;
   }, [hourly]);
 
+  // 이번 달 피크 시간대 (인사이트 프롬프트용)
+  const monthPeakHour = useMemo(() => {
+    let best: { hour: number; revenue: number } | null = null;
+    for (const b of monthStats?.byHour ?? [])
+      if (b.revenue > 0 && (!best || b.revenue > best.revenue))
+        best = { hour: b.hour, revenue: b.revenue };
+    return best;
+  }, [monthStats]);
+
   const ranked = useMemo(() => {
     if (!stats) return [];
     const sorted = [...stats.byMenu].sort((a, b) =>
@@ -293,36 +339,30 @@ export default function BI() {
     return sorted.slice(0, 10);
   }, [stats, rankBy]);
 
-  // AI 인사이트 — stats 받으면 /api/insights 호출 (캐시 5분)
+  // AI 인사이트 — 항상 "이번 달" 기준 (기간 선택과 무관). 캐시 키가 이달로 고정이라 호출이 거의 안 늘어남.
   useEffect(() => {
-    if (!stats) {
+    if (!monthStats) {
       setInsights(null);
       return;
     }
-    // stats가 아직 이전 기간 것이면(기간 토글 직후) 호출하지 않음 — 새 stats 도착하면 effect 재실행됨
-    if (statsKeyRef.current !== statsCacheKey) return;
+    if (monthStats.qty < 5) {
+      // 이번 달 데이터가 빈약하면 카드 숨김 (Groq 호출 안 함)
+      setInsights([]);
+      return;
+    }
     let alive = true;
-    const key = `insights:${userId}:${fromMs}:${toMs}`;
-    const cached = getCache<string[]>(key);
+    const cached = getCache<string[]>(monthInsightsKey);
     if (cached) setInsights(cached);
-    if (isFresh(key, 5 * 60 * 1000)) return;
-    const rangeLabel =
-      range === 'today'
-        ? '오늘'
-        : range === 'week'
-        ? '이번 주'
-        : range === 'month'
-        ? '이번 달'
-        : '사용자 지정 기간';
+    if (isFresh(monthInsightsKey, TTL_INSIGHTS)) return;
     apiPost<{ insights: string[] }>('/api/insights', {
-      stats: { ...stats, peakHour: peakHour?.hour ?? null },
-      rangeLabel,
+      stats: { ...monthStats, peakHour: monthPeakHour?.hour ?? null },
+      rangeLabel: '이번 달',
     })
       .then((d) => {
         if (!alive) return;
         setInsights(d.insights);
         // 빈 결과(groq-fail / no-key)는 캐시하지 않음 — Groq 복구되면 다음 방문에 재시도
-        if (d.insights.length > 0) setCache(key, d.insights);
+        if (d.insights.length > 0) setCache(monthInsightsKey, d.insights);
       })
       .catch(() => {
         if (alive) setInsights([]);
@@ -331,7 +371,7 @@ export default function BI() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stats, peakHour, userId, fromMs, toMs, insightsBump]);
+  }, [monthStats, monthPeakHour, monthInsightsKey, insightsBump]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
@@ -378,6 +418,34 @@ export default function BI() {
           </div>
         )}
       </div>
+
+      {/* AI 인사이트 — 항상 "이번 달" 기준 (기간 선택과 무관) */}
+      {monthStats !== null &&
+        (insights === null ? (
+          <div className="card p-4 mb-4">
+            <div className="flex items-center gap-1.5 mb-3">
+              <span className="text-base">💡</span>
+              <Skeleton className="h-4 w-28" />
+            </div>
+            <Skeleton className="h-4 w-full mb-2" />
+            <Skeleton className="h-4 w-5/6" />
+          </div>
+        ) : insights.length > 0 ? (
+          <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03] anim-fade">
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <span className="text-base leading-none">💡</span>
+              <h3 className="font-semibold text-accent">이번 달 AI 분석</h3>
+            </div>
+            <ul className="space-y-2 text-sm leading-relaxed">
+              {insights.map((t, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="text-accent/50 shrink-0 select-none">•</span>
+                  <span className="text-ink/90">{t}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null)}
 
       {loading || !stats ? (
         <>
@@ -461,33 +529,6 @@ export default function BI() {
               hint={`${stats.qty}건 판매`}
             />
           </div>
-
-          {/* AI 인사이트 — Groq 분석 (키 없거나 빈 결과면 카드 안 보임) */}
-          {insights === null ? (
-            <div className="card p-4 mb-4">
-              <div className="flex items-center gap-1.5 mb-3">
-                <span className="text-base">💡</span>
-                <Skeleton className="h-4 w-20" />
-              </div>
-              <Skeleton className="h-4 w-full mb-2" />
-              <Skeleton className="h-4 w-5/6" />
-            </div>
-          ) : insights.length > 0 ? (
-            <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03]">
-              <div className="flex items-center gap-1.5 mb-2.5">
-                <span className="text-base leading-none">💡</span>
-                <h3 className="font-semibold text-accent">AI 인사이트</h3>
-              </div>
-              <ul className="space-y-2 text-sm leading-relaxed">
-                {insights.map((t, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-accent/50 shrink-0 select-none">•</span>
-                    <span className="text-ink/90">{t}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
 
           <div className="grid md:grid-cols-2 gap-4 mb-4">
             <div className="card p-4">

@@ -78,12 +78,62 @@ interface Sale {
   menu_emoji: string | null;
 }
 
+interface NeedsStats {
+  total: number;
+  gender: Record<string, number>;
+  ageBand: Record<string, number>;
+  withChild: Record<string, number>;
+  purpose: Record<string, number>;
+  residence: Record<string, number>;
+  topMenus: { menuId: number; name: string | null; emoji: string | null; count: number }[];
+}
+
 type Range = 'today' | 'week' | 'month' | 'custom';
 
 const PIE_COLORS = ['#1B4332', '#2D6A4F', '#52796F', '#C99D52', '#E76F51', '#767270'];
 
 const TTL_STATS = 30 * 1000;
 const TTL_INSIGHTS = 60 * 60 * 1000; // AI 인사이트는 "이번 달" 고정 — 1시간 캐시면 충분
+
+// 고객 니즈 한 항목(성별/연령대/...)의 분포를 가로 막대 + 범례로
+function NeedsDim({
+  title,
+  items,
+}: {
+  title: string;
+  items: { label: string; count: number }[];
+}) {
+  const sum = items.reduce((s, x) => s + x.count, 0);
+  if (sum === 0) return null;
+  return (
+    <div>
+      <div className="text-sm font-medium mb-1.5">{title}</div>
+      <div className="h-2.5 rounded-full overflow-hidden flex bg-border/40">
+        {items.map((x, i) => (
+          <div
+            key={i}
+            style={{
+              width: `${(x.count / sum) * 100}%`,
+              background: PIE_COLORS[i % PIE_COLORS.length],
+            }}
+          />
+        ))}
+      </div>
+      <div className="text-[11px] text-sub mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5">
+        {items.map((x, i) => (
+          <span key={i} className="inline-flex items-center gap-1">
+            <span
+              className="w-2 h-2 rounded-full inline-block shrink-0"
+              style={{ background: PIE_COLORS[i % PIE_COLORS.length] }}
+            />
+            {x.label} <span className="num">{x.count}</span> ·{' '}
+            {Math.round((x.count / sum) * 100)}%
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function BI() {
   const { user } = useAuth();
@@ -97,6 +147,7 @@ export default function BI() {
   const [sales, setSales] = useState<Sale[] | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [needsStats, setNeedsStats] = useState<NeedsStats | null>(null);
   // AI 인사이트 — 기간 선택과 무관하게 항상 "이번 달" 기준 (오늘/사용자지정은 분석 의미가 약하고 호출만 늘어남)
   const [monthStats, setMonthStats] = useState<Stats | null>(null);
   const [insights, setInsights] = useState<string[] | null>(null);
@@ -231,6 +282,38 @@ export default function BI() {
       alive = false;
     };
   }, [monthStatsCacheKey, monthFromMs, monthToMs, tzOffset]);
+
+  // 고객 니즈 집계 (선택 기간) — /needs 페이지와 별개, BI에 요약 카드로
+  useEffect(() => {
+    let alive = true;
+    const key = `needsStats:${userId}:${fromMs}:${toMs}`;
+    const cached = getCache<NeedsStats>(key);
+    if (cached) setNeedsStats(cached);
+    else setNeedsStats(null); // 기간 바뀌면 일단 비움 → 스켈레톤
+    if (isFresh(key, TTL_STATS)) return;
+    apiGet<NeedsStats>(`/api/needs/stats?from=${fromMs}&to=${toMs}`)
+      .then((d) => {
+        if (!alive) return;
+        setNeedsStats(d);
+        setCache(key, d);
+      })
+      .catch(() => {
+        if (alive)
+          setNeedsStats((p) => p ?? {
+            total: 0,
+            gender: {},
+            ageBand: {},
+            withChild: {},
+            purpose: {},
+            residence: {},
+            topMenus: [],
+          });
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromMs, toMs, userId]);
 
   const changeQty = async (sale: Sale, q: number) => {
     if (q < 1 || busyId === sale.id) return;
@@ -656,6 +739,109 @@ export default function BI() {
               </ResponsiveContainer>
             )}
           </div>
+
+          {/* 고객 니즈 — /needs 기록 요약 (선택 기간) */}
+          {needsStats === null ? (
+            <div className="card p-4 mb-4">
+              <Skeleton className="h-4 w-20 mb-3" />
+              <div className="grid sm:grid-cols-2 gap-4">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i}>
+                    <Skeleton className="h-3 w-16 mb-2" />
+                    <Skeleton className="h-2.5 w-full" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : needsStats.total === 0 ? null : (
+            <div className="card p-4 mb-4">
+              <div className="flex items-baseline justify-between mb-3 gap-2">
+                <h3 className="font-semibold">
+                  고객 니즈{' '}
+                  <span className="text-sub font-normal text-sm num">
+                    {needsStats.total}건
+                  </span>
+                </h3>
+                <Link
+                  to="/needs"
+                  className="text-xs text-accent hover:underline shrink-0"
+                >
+                  기록하기 →
+                </Link>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-x-5 gap-y-4">
+                <NeedsDim
+                  title="성별"
+                  items={[
+                    { label: '여성', count: needsStats.gender.female ?? 0 },
+                    { label: '남성', count: needsStats.gender.male ?? 0 },
+                  ]}
+                />
+                <NeedsDim
+                  title="연령대"
+                  items={[
+                    { label: '10–20대', count: needsStats.ageBand['10s_20s'] ?? 0 },
+                    { label: '30–40대', count: needsStats.ageBand['30s_40s'] ?? 0 },
+                    { label: '50대+', count: needsStats.ageBand['50plus'] ?? 0 },
+                  ]}
+                />
+                <NeedsDim
+                  title="자녀 동반"
+                  items={[
+                    { label: '동반', count: needsStats.withChild.yes ?? 0 },
+                    { label: '미동반', count: needsStats.withChild.no ?? 0 },
+                  ]}
+                />
+                <NeedsDim
+                  title="목적"
+                  items={[
+                    { label: '식사대용', count: needsStats.purpose.meal_replacement ?? 0 },
+                    { label: '선물용', count: needsStats.purpose.gift ?? 0 },
+                    { label: '자녀 간식용', count: needsStats.purpose.kids_snack ?? 0 },
+                  ]}
+                />
+                <NeedsDim
+                  title="거주지"
+                  items={[
+                    { label: '부산', count: needsStats.residence.busan ?? 0 },
+                    { label: '부산 외', count: needsStats.residence.outside ?? 0 },
+                  ]}
+                />
+              </div>
+              {needsStats.topMenus.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-border">
+                  <div className="text-sm font-medium mb-2">자주 언급된 제품</div>
+                  <ul className="space-y-1.5">
+                    {needsStats.topMenus.map((m) => {
+                      const max = needsStats.topMenus[0].count || 1;
+                      return (
+                        <li
+                          key={m.menuId}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <span className="text-base shrink-0">
+                            {m.emoji || '📦'}
+                          </span>
+                          <span className="flex-1 min-w-0 truncate">
+                            {m.name ?? '(삭제된 메뉴)'}
+                          </span>
+                          <div className="w-20 sm:w-32 h-2 rounded-full bg-border/40 overflow-hidden shrink-0">
+                            <div
+                              className="h-full bg-accent rounded-full"
+                              style={{ width: `${(m.count / max) * 100}%` }}
+                            />
+                          </div>
+                          <span className="num text-sub text-xs w-6 text-right shrink-0">
+                            {m.count}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:items-start">
           <div className="card p-4">

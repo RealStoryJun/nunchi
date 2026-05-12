@@ -119,6 +119,10 @@ export async function handleNeeds(
       return err('한 가지 이상 선택해주세요.');
     }
 
+    const createdAt =
+      typeof body?.createdAt === 'number' && Number.isFinite(body.createdAt)
+        ? body.createdAt
+        : Date.now();
     const r = await env.DB.prepare(
       `INSERT INTO customer_needs (user_id, gender, age_band, with_child, purpose, residence, menu_ids, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -131,10 +135,88 @@ export async function handleNeeds(
         purpose,
         residence,
         menuIds.length ? JSON.stringify(menuIds) : null,
-        Date.now(),
+        createdAt,
       )
       .run();
     return ok({ id: Number(r.meta.last_row_id) });
+  }
+
+  // GET /api/needs/stats?from=&to= — 기간별 집계 (BI용)
+  if (rest === '/stats' && request.method === 'GET') {
+    const fromQ = url.searchParams.get('from');
+    const toQ = url.searchParams.get('to');
+    const conds = ['user_id = ?'];
+    const args: (string | number)[] = [user.id];
+    if (fromQ) {
+      conds.push('created_at >= ?');
+      args.push(Number(fromQ));
+    }
+    if (toQ) {
+      conds.push('created_at <= ?');
+      args.push(Number(toQ));
+    }
+    const { results } = await env.DB.prepare(
+      `SELECT gender, age_band, with_child, purpose, residence, menu_ids
+       FROM customer_needs WHERE ${conds.join(' AND ')}`,
+    )
+      .bind(...args)
+      .all<Pick<NeedRow, 'gender' | 'age_band' | 'with_child' | 'purpose' | 'residence' | 'menu_ids'>>();
+
+    const tally = () => {
+      const m: Record<string, number> = {};
+      return {
+        add: (v: string | null) => {
+          if (v != null) m[v] = (m[v] ?? 0) + 1;
+        },
+        out: m,
+      };
+    };
+    const gender = tally();
+    const ageBand = tally();
+    const withChild: Record<string, number> = {};
+    const purpose = tally();
+    const residence = tally();
+    const menuCounts: Record<number, number> = {};
+    for (const r of results) {
+      gender.add(r.gender);
+      ageBand.add(r.age_band);
+      if (r.with_child != null) {
+        const k = r.with_child ? 'yes' : 'no';
+        withChild[k] = (withChild[k] ?? 0) + 1;
+      }
+      purpose.add(r.purpose);
+      residence.add(r.residence);
+      for (const id of parseMenuIds(r.menu_ids)) menuCounts[id] = (menuCounts[id] ?? 0) + 1;
+    }
+    const ranked = Object.entries(menuCounts)
+      .map(([id, count]) => ({ menuId: Number(id), count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+    let topMenus: { menuId: number; name: string | null; emoji: string | null; count: number }[] =
+      ranked.map((r) => ({ ...r, name: null, emoji: null }));
+    if (ranked.length > 0) {
+      const ph = ranked.map(() => '?').join(',');
+      const { results: ms } = await env.DB.prepare(
+        `SELECT id, name, emoji FROM menus WHERE id IN (${ph})`,
+      )
+        .bind(...ranked.map((r) => r.menuId))
+        .all<{ id: number; name: string; emoji: string | null }>();
+      const byId = new Map(ms.map((m) => [m.id, m]));
+      topMenus = ranked.map((r) => {
+        const m = byId.get(r.menuId);
+        return { menuId: r.menuId, name: m?.name ?? null, emoji: m?.emoji ?? null, count: r.count };
+      });
+    }
+
+    return ok({
+      total: results.length,
+      gender: gender.out,
+      ageBand: ageBand.out,
+      withChild,
+      purpose: purpose.out,
+      residence: residence.out,
+      topMenus,
+    });
   }
 
   // DELETE /api/needs/:id — 기록 삭제

@@ -46,20 +46,22 @@ export async function handleNeeds(
   rest: string,
   url: URL,
 ): Promise<Response> {
-  // GET /api/needs?limit=N — 최근 기록
+  // GET /api/needs?limit=N — 최근 기록 (limit+1 조회해서 hasMore 판단)
   if (rest === '' && request.method === 'GET') {
-    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 20), 1), 100);
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 20), 1), 500);
     const { results } = await env.DB.prepare(
       `SELECT id, gender, age_band, with_child, purpose, residence, menu_ids, created_at
        FROM customer_needs
        WHERE user_id = ?
-       ORDER BY created_at DESC
+       ORDER BY created_at DESC, id DESC
        LIMIT ?`,
     )
-      .bind(user.id, limit)
+      .bind(user.id, limit + 1)
       .all<NeedRow>();
+    const hasMore = results.length > limit;
+    const page = hasMore ? results.slice(0, limit) : results;
     return ok({
-      needs: results.map((r) => ({
+      needs: page.map((r) => ({
         id: r.id,
         gender: r.gender,
         ageBand: r.age_band,
@@ -69,6 +71,7 @@ export async function handleNeeds(
         menuIds: parseMenuIds(r.menu_ids),
         createdAt: r.created_at,
       })),
+      hasMore,
     });
   }
 

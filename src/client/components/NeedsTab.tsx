@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { apiGet, apiPost, apiDelete } from '../lib/api';
 import { Skeleton } from './Skeleton';
-import { dayLabel, timeHM } from '../lib/format';
+import { dayLabel, timeHM, ymd } from '../lib/format';
+
+const RECENT_PAGE = 30; // 한 번에 보여줄 최근 기록 수 ("더 보기"로 +30, 최대 ~500)
 
 interface MenuLite {
   id: number;
@@ -138,23 +141,52 @@ export default function NeedsTab({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [recent, setRecent] = useState<NeedEntry[] | null>(null);
+  const [recentLimit, setRecentLimit] = useState(RECENT_PAGE);
+  const [hasMore, setHasMore] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  // 최근 기록 — recentLimit 만큼 (기록 후/“더 보기” 시 재조회)
   useEffect(() => {
     let alive = true;
-    apiGet<{ needs: NeedEntry[] }>('/api/needs?limit=20')
-      .then((d) => alive && setRecent(d.needs))
-      .catch(() => alive && setRecent([]));
+    apiGet<{ needs: NeedEntry[]; hasMore: boolean }>(`/api/needs?limit=${recentLimit}`)
+      .then((d) => {
+        if (!alive) return;
+        setRecent(d.needs);
+        setHasMore(d.hasMore);
+      })
+      .catch(() => alive && setRecent((p) => p ?? []));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [recentLimit]);
+  const reloadRecent = async () => {
+    try {
+      const d = await apiGet<{ needs: NeedEntry[]; hasMore: boolean }>(
+        `/api/needs?limit=${recentLimit}&_ts=${Date.now()}`,
+      );
+      setRecent(d.needs);
+      setHasMore(d.hasMore);
+    } catch {
+      /* 무시 */
+    }
+  };
 
   // 선택된 메뉴 (등록 순서대로)
   const selectedMenus = useMemo(
     () => menus.filter((m) => menuIds.includes(m.id)),
     [menus, menuIds],
   );
+  // 최근 기록을 날짜별로 그룹 (최신 날짜 먼저). recent는 이미 created_at DESC.
+  const recentByDay = useMemo(() => {
+    if (!recent) return [];
+    const map = new Map<string, NeedEntry[]>();
+    for (const n of recent) {
+      const k = ymd(new Date(n.createdAt));
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(n);
+    }
+    return Array.from(map.entries());
+  }, [recent]);
   const toggleMenu = (id: number) =>
     setMenuIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -183,8 +215,7 @@ export default function NeedsTab({
         residence,
         menuIds,
       });
-      const d = await apiGet<{ needs: NeedEntry[] }>('/api/needs?limit=20');
-      setRecent(d.needs);
+      await reloadRecent();
       reset();
       setToast('고객 니즈 기록됐어요');
       window.setTimeout(() => setToast(null), 2200);
@@ -276,9 +307,19 @@ export default function NeedsTab({
         </div>
       </div>
 
-      {/* 최근 기록 */}
+      {/* 최근 기록 — 고정 높이 스크롤 박스 + 날짜별 그룹, 전체 분포는 BI */}
       <div className="mt-6">
-        <h3 className="font-semibold mb-2">최근 기록</h3>
+        <div className="flex items-baseline justify-between mb-2 gap-2">
+          <h3 className="font-semibold">
+            최근 기록
+            {recent && recent.length > 0 && (
+              <span className="text-sub font-normal text-sm num"> {recent.length}건</span>
+            )}
+          </h3>
+          <Link to="/bi" className="text-xs text-accent hover:underline shrink-0">
+            전체 분포 → BI
+          </Link>
+        </div>
         {recent === null ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -290,35 +331,55 @@ export default function NeedsTab({
             아직 기록이 없어요. 위에서 손님 특성을 골라 기록해보세요.
           </div>
         ) : (
-          <ul className="card divide-y divide-border overflow-hidden">
-            {recent.map((n) => (
-              <li key={n.id} className="px-4 py-3 flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap gap-1.5">
-                    {chips(n, menus).map((c, i) => (
-                      <span
-                        key={i}
-                        className="text-xs bg-bg border border-border rounded-full px-2 py-0.5 text-ink/80"
-                      >
-                        {c}
-                      </span>
+          <>
+            <div className="card overflow-hidden max-h-[28rem] overflow-y-auto">
+              {recentByDay.map(([day, items]) => (
+                <div key={day}>
+                  <div className="sticky top-0 z-10 bg-bg/95 backdrop-blur px-4 py-1.5 text-xs text-sub font-medium border-b border-border">
+                    {dayLabel(items[0].createdAt)} · {items.length}건
+                  </div>
+                  <ul className="divide-y divide-border">
+                    {items.map((n) => (
+                      <li key={n.id} className="px-4 py-3 flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex flex-wrap gap-1.5">
+                            {chips(n, menus).map((c, i) => (
+                              <span
+                                key={i}
+                                className="text-xs bg-bg border border-border rounded-full px-2 py-0.5 text-ink/80"
+                              >
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="text-sub text-[11px] mt-1 num">
+                            {timeHM(n.createdAt)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeEntry(n.id)}
+                          className="text-warm w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-warm/10 shrink-0"
+                          aria-label="삭제"
+                        >
+                          ✕
+                        </button>
+                      </li>
                     ))}
-                  </div>
-                  <div className="text-sub text-[11px] mt-1 num">
-                    {dayLabel(n.createdAt)} {timeHM(n.createdAt)}
-                  </div>
+                  </ul>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => removeEntry(n.id)}
-                  className="text-warm w-7 h-7 inline-flex items-center justify-center rounded-md hover:bg-warm/10 shrink-0"
-                  aria-label="삭제"
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
+              ))}
+            </div>
+            {hasMore && (
+              <button
+                type="button"
+                onClick={() => setRecentLimit((l) => Math.min(l + RECENT_PAGE, 500))}
+                className="btn-outline w-full mt-2 h-9 text-sm"
+              >
+                이전 기록 더 보기
+              </button>
+            )}
+          </>
         )}
       </div>
 

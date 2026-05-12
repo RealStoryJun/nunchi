@@ -98,6 +98,11 @@ export default function BI() {
   const [editOpen, setEditOpen] = useState(false);
   const [insights, setInsights] = useState<string[] | null>(null);
   const [insightsBump, setInsightsBump] = useState(0);
+  // 메뉴 등록 여부 — BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
+  const [menuCount, setMenuCount] = useState<number | null>(() => {
+    const c = getCache<{ id: number }[]>(`menus:${userId}`);
+    return c ? c.length : null;
+  });
   // 현재 `stats`가 어느 기간 키의 데이터인지 추적 — insights effect가 stale stats로 호출하는 걸 막음
   const statsKeyRef = useRef<string | null>(null);
   // 수정 모달 안에서 판매가 바뀌었는지 — 닫을 때 인사이트 1회만 재호출(매 −/＋ 마다 X)
@@ -175,6 +180,25 @@ export default function BI() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromMs, toMs, userId]);
+
+  // 메뉴 개수 (빈 상태 분기용) — Sales/Menus와 동일한 menus:<userId> SWR 캐시 재사용
+  useEffect(() => {
+    const key = `menus:${userId}`;
+    const cached = getCache<{ id: number }[]>(key);
+    if (cached) setMenuCount(cached.length);
+    if (isFresh(key, 5 * 60 * 1000)) return;
+    let alive = true;
+    apiGet<{ menus: { id: number }[] }>('/api/menus')
+      .then((d) => {
+        if (!alive) return;
+        setMenuCount(d.menus.length);
+        setCache(key, d.menus);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [userId]);
 
   const changeQty = async (sale: Sale, q: number) => {
     if (q < 1 || busyId === sale.id) return;
@@ -386,17 +410,41 @@ export default function BI() {
           </div>
         </>
       ) : stats.qty === 0 ? (
-        <div className="card p-8 text-center anim-fade">
-          <p className="text-3xl mb-3">🌱</p>
-          <p className="text-lg mb-1.5 font-semibold">아직 판매 기록이 없어요</p>
-          <p className="text-sub text-sm mb-5 break-keep">
-            메뉴를 등록하고 한 탭으로 판매를 입력하면<br />
-            매출과 인기 상품을 자동으로 분석해드릴게요.
-          </p>
-          <Link to="/menus" className="btn-primary inline-flex px-5">
-            메뉴 등록하러 가기 →
-          </Link>
-        </div>
+        menuCount === 0 ? (
+          // 메뉴가 아예 없는 신규 사용자
+          <div className="card p-8 text-center anim-fade">
+            <p className="text-3xl mb-3">🌱</p>
+            <p className="text-lg mb-1.5 font-semibold">아직 시작 전이에요</p>
+            <p className="text-sub text-sm mb-5 break-keep">
+              메뉴를 등록하고 한 탭으로 판매를 기록하면<br />
+              매출과 인기 상품을 자동으로 분석해드릴게요.
+            </p>
+            <Link to="/menus" className="btn-primary inline-flex px-5">
+              메뉴 등록하러 가기 →
+            </Link>
+          </div>
+        ) : (
+          // 메뉴는 있는데 이 기간엔 판매가 없음
+          <div className="card p-8 text-center anim-fade">
+            <p className="text-3xl mb-3">🗓️</p>
+            <p className="text-lg mb-1.5 font-semibold">
+              이 기간엔 판매 기록이 없어요
+            </p>
+            <p className="text-sub text-sm mb-5 break-keep">
+              {range === 'today'
+                ? '오늘 들어온 판매가 아직 없어요. 판매를 입력하면 여기에 바로 집계돼요.'
+                : '선택한 기간에 판매 기록이 없어요. 위에서 다른 기간을 선택해보세요.'}
+            </p>
+            <Link
+              to="/sales"
+              className={`inline-flex px-5 ${
+                range === 'today' ? 'btn-primary' : 'btn-outline'
+              }`}
+            >
+              {range === 'today' ? '판매 입력하러 가기 →' : '판매 입력'}
+            </Link>
+          </div>
+        )
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">

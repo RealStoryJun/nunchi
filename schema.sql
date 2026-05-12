@@ -61,7 +61,22 @@ CREATE TABLE IF NOT EXISTS emoji_cache (
   updated_at INTEGER NOT NULL
 );
 
+-- 고객 니즈 간이 조사 (판매 시점에 손님 특성을 가볍게 기록 — 모두 선택 항목)
+CREATE TABLE IF NOT EXISTS customer_needs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  gender TEXT,         -- 'female' | 'male' | NULL
+  age_band TEXT,       -- '10s_20s' | '30s_40s' | '50plus' | NULL
+  with_child INTEGER,  -- 1 | 0 | NULL
+  purpose TEXT,        -- 'gift' | 'kids_snack' | 'meal_replacement' | NULL
+  residence TEXT,      -- 'busan' | 'outside' | NULL
+  menu_id INTEGER,     -- 판매제품 (등록 메뉴) — NULL 가능
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_sales_user_date ON sales(user_id, sold_at);
 CREATE INDEX IF NOT EXISTS idx_menus_user ON menus(user_id, archived);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_attempts ON auth_attempts(key, attempted_at);
+CREATE INDEX IF NOT EXISTS idx_needs_user ON customer_needs(user_id, created_at);

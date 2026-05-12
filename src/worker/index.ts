@@ -6,6 +6,7 @@ import { handleStats } from './stats';
 import { handleInferEmoji } from './emoji';
 import { handleInsights } from './insights';
 import { handleAdmin } from './admin';
+import { handleNeeds } from './needs';
 import { getSessionUser } from './session';
 
 export default {
@@ -67,6 +68,16 @@ export default {
           return err('잘못된 요청입니다.');
         }
         return await handleInsights(env, session.user.id, body);
+      }
+
+      if (path === '/api/needs' || path.startsWith('/api/needs/')) {
+        return await handleNeeds(
+          request,
+          env,
+          session.user,
+          path.replace('/api/needs', ''),
+          url,
+        );
       }
 
       if (path === '/api/me/business-type' && request.method === 'POST') {

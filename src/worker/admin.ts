@@ -68,6 +68,7 @@ export async function handleAdmin(
     // 자식 행 → 사용자 순으로 삭제 (FK CASCADE가 있어도 명시적으로)
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM sales WHERE user_id IN (${ph})`).bind(...ids),
+      env.DB.prepare(`DELETE FROM customer_needs WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM menus WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM sessions WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM users WHERE id IN (${ph})`).bind(...ids),

@@ -46,17 +46,29 @@ export async function handleNeeds(
   rest: string,
   url: URL,
 ): Promise<Response> {
-  // GET /api/needs?limit=N — 최근 기록 (limit+1 조회해서 hasMore 판단)
+  // GET /api/needs?from=&to=&limit=N — 기록 목록 (from/to로 기간 필터, limit+1로 hasMore 판단)
   if (rest === '' && request.method === 'GET') {
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 20), 1), 500);
+    const conds = ['user_id = ?'];
+    const args: (string | number)[] = [user.id];
+    const fromQ = url.searchParams.get('from');
+    const toQ = url.searchParams.get('to');
+    if (fromQ) {
+      conds.push('created_at >= ?');
+      args.push(Number(fromQ));
+    }
+    if (toQ) {
+      conds.push('created_at <= ?');
+      args.push(Number(toQ));
+    }
     const { results } = await env.DB.prepare(
       `SELECT id, gender, age_band, with_child, purpose, residence, menu_ids, created_at
        FROM customer_needs
-       WHERE user_id = ?
+       WHERE ${conds.join(' AND ')}
        ORDER BY created_at DESC, id DESC
        LIMIT ?`,
     )
-      .bind(user.id, limit + 1)
+      .bind(...args, limit + 1)
       .all<NeedRow>();
     const hasMore = results.length > limit;
     const page = hasMore ? results.slice(0, limit) : results;

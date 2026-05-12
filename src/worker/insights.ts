@@ -30,11 +30,37 @@ interface StatsPayload {
   byCategory?: ByCat[];
   peakHour?: number | null;
 }
+interface NeedsAgg {
+  total: number;
+  gender: Record<string, number>;
+  ageBand: Record<string, number>;
+  withChild: Record<string, number>;
+  purpose: Record<string, number>;
+  residence: Record<string, number>;
+  topMenus: { name: string; count: number }[];
+}
 interface InsightsBody {
   stats?: StatsPayload;
   prevStats?: { revenue: number; profit: number; qty: number } | null;
   rangeLabel?: string;
+  needs?: NeedsAgg | null;
 }
+
+// 니즈 항목 코드 → 한글 라벨 (프롬프트용)
+const NEEDS_LABEL: Record<string, string> = {
+  female: '여성',
+  male: '남성',
+  '10s_20s': '10·20대',
+  '30s_40s': '30·40대',
+  '50plus': '50대 이상',
+  yes: '자녀 동반',
+  no: '미동반',
+  gift: '선물용',
+  kids_snack: '자녀 간식용',
+  meal_replacement: '식사대용',
+  busan: '부산',
+  outside: '부산 외',
+};
 
 const won = (n: number) => `${Math.round(n).toLocaleString('en-US')}원`;
 const pctStr = (r: number) => `${(r * 100).toFixed(1)}%`;
@@ -85,6 +111,35 @@ const sanitizeStats = (s: unknown): StatsPayload | null => {
   };
 };
 
+// Record<string,number> — 키 ≤30자, 최대 12개, 값은 음수 아닌 정수
+const sanitizeCounts = (v: unknown): Record<string, number> => {
+  if (!v || typeof v !== 'object') return {};
+  const out: Record<string, number> = {};
+  let n = 0;
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (n++ >= 12) break;
+    const c = num(val);
+    if (c > 0) out[k.slice(0, 30)] = Math.round(c);
+  }
+  return out;
+};
+const sanitizeNeeds = (v: unknown): NeedsAgg | null => {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  return {
+    total: Math.round(num(o.total)),
+    gender: sanitizeCounts(o.gender),
+    ageBand: sanitizeCounts(o.ageBand),
+    withChild: sanitizeCounts(o.withChild),
+    purpose: sanitizeCounts(o.purpose),
+    residence: sanitizeCounts(o.residence),
+    topMenus: mapArr(o.topMenus, 10, (m) => ({
+      name: str(m.name) || '메뉴',
+      count: Math.round(num(m.count)),
+    })),
+  };
+};
+
 const sanitizeBody = (raw: unknown): InsightsBody | null => {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -95,7 +150,12 @@ const sanitizeBody = (raw: unknown): InsightsBody | null => {
     const p = o.prevStats as Record<string, unknown>;
     prevStats = { revenue: num(p.revenue), profit: num(p.profit), qty: num(p.qty) };
   }
-  return { stats, prevStats, rangeLabel: str(o.rangeLabel, 30) || undefined };
+  return {
+    stats,
+    prevStats,
+    rangeLabel: str(o.rangeLabel, 30) || undefined,
+    needs: sanitizeNeeds(o.needs),
+  };
 };
 
 const buildSummary = (b: InsightsBody): string => {
@@ -152,6 +212,34 @@ const buildSummary = (b: InsightsBody): string => {
       `- 분류별: ${s.byCategory.slice(0, 3).map((c) => `${c.category} ${won(c.revenue)}`).join(', ')}`,
     );
   }
+  // 고객 니즈 (충분히 쌓였을 때만)
+  const n = b.needs;
+  if (n && n.total >= 5) {
+    const fmtDim = (rec: Record<string, number>) => {
+      const sum = Object.values(rec).reduce((x, y) => x + y, 0);
+      if (sum === 0) return '';
+      return Object.entries(rec)
+        .sort((a, c) => c[1] - a[1])
+        .map(([k, v]) => `${NEEDS_LABEL[k] ?? k} ${Math.round((v / sum) * 100)}%`)
+        .join(' / ');
+    };
+    const parts: string[] = [];
+    const g = fmtDim(n.gender);
+    if (g) parts.push(`성별 [${g}]`);
+    const a = fmtDim(n.ageBand);
+    if (a) parts.push(`연령대 [${a}]`);
+    const c = fmtDim(n.withChild);
+    if (c) parts.push(`자녀 [${c}]`);
+    const p = fmtDim(n.purpose);
+    if (p) parts.push(`목적 [${p}]`);
+    const r = fmtDim(n.residence);
+    if (r) parts.push(`거주지 [${r}]`);
+    lines.push(`- 고객 니즈 조사 ${n.total}건: ${parts.join(', ')}`);
+    if (n.topMenus.length)
+      lines.push(
+        `- 니즈 조사에서 손님이 자주 찾은 (모두 이미 등록된) 메뉴: ${n.topMenus.slice(0, 5).map((m) => `${m.name}(${m.count}회)`).join(', ')}`,
+      );
+  }
   return lines.join('\n');
 };
 
@@ -163,6 +251,7 @@ const SYSTEM_PROMPT =
   '- 반드시 데이터의 구체적 숫자를 인용하고, 가능하면 실행 가능한 제안 1가지를 포함.\n' +
   '- 한국어만 사용. 한자·영어·일본어 단어를 섞지 말 것(예: "最高" 금지, "최고").\n' +
   '- 데이터에 없는 메뉴명·숫자를 지어내지 말 것.\n' +
+  '- "고객 니즈 조사" 항목이 데이터에 있으면, 인사이트 중 적어도 1개는 그걸 활용하세요 — 어떤 손님(연령대·자녀 동반 여부·거주지)이 무엇을 왜 사는지, 그에 맞춘 실행 제안. 니즈 데이터가 없으면 매출만 분석.\n' +
   '- 판매가 5건 미만이거나 데이터가 빈약하면 인사이트 1개로 "데이터가 더 쌓이면 더 정확한 분석을 드릴 수 있어요" 정도만.\n' +
   '- 출력은 JSON 배열만: ["인사이트1", "인사이트2", ...]. 다른 텍스트·코드펜스·설명 절대 금지.';
 

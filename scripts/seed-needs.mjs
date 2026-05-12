@@ -1,5 +1,5 @@
-// 고객 니즈 샘플 데이터 시드 — guest1~5에 각각 ~60건, 최근 12일에 분산.
-// (BI 고객 니즈 섹션이 비어 보이지 않게. 판매·메뉴는 건드리지 않음 — 추가만.)
+// 고객 니즈 샘플 데이터 시드 — guest1~5에 각각 ~250건, 최근 3개월(92일)에 분산.
+// 재실행 안전: 각 계정의 기존 니즈 기록을 먼저 모두 삭제하고 새로 채움. 판매·메뉴는 안 건드림.
 // 실행: node scripts/seed-needs.mjs
 
 const HOST = process.env.NUNCHI_HOST || 'https://nunchi.realstoryjun.workers.dev';
@@ -8,8 +8,8 @@ const DAY = 86_400_000;
 const GUESTS = ['guest1', 'guest2', 'guest3', 'guest4', 'guest5'].map(
   (g) => `${g}@nunchi.app`,
 );
-const PER_ACCOUNT = 60;
-const HISTORY_DAYS = 12;
+const PER_ACCOUNT = 250;
+const HISTORY_DAYS = 92;
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const wpick = (items) => {
@@ -48,10 +48,29 @@ async function login(email) {
   return r.headers.get('set-cookie').split(';')[0];
 }
 
+async function wipeNeeds(cookie) {
+  let removed = 0;
+  for (let guard = 0; guard < 50; guard++) {
+    const r = await j(await fetch(`${HOST}/api/needs?limit=500`, { headers: { cookie } }));
+    const list = r.ok ? r.data.needs : [];
+    if (list.length === 0) break;
+    let batch = [];
+    for (const n of list) {
+      batch.push(fetch(`${HOST}/api/needs/${n.id}`, { method: 'DELETE', headers: { cookie } }));
+      if (batch.length >= 15) { await Promise.all(batch); batch = []; }
+    }
+    if (batch.length) await Promise.all(batch);
+    removed += list.length;
+    if (list.length < 500) break;
+  }
+  return removed;
+}
+
 async function seedAccount(email) {
   const cookie = await login(email);
   const menusRes = await j(await fetch(`${HOST}/api/menus`, { headers: { cookie } }));
   const menuIds = menusRes.ok ? menusRes.data.menus.map((m) => m.id) : [];
+  const wiped = await wipeNeeds(cookie);
   const now = Date.now();
   let okCount = 0;
   let batch = [];
@@ -89,7 +108,9 @@ async function seedAccount(email) {
   }
   if (batch.length) await Promise.all(batch);
   await fetch(`${HOST}/api/auth/logout`, { method: 'POST', headers: { cookie } });
-  console.log(`  [${email}] +${okCount}/${PER_ACCOUNT} 니즈 (메뉴 풀 ${menuIds.length}개)`);
+  console.log(
+    `  [${email}] 기존 ${wiped}건 삭제, 신규 ${okCount}/${PER_ACCOUNT}건 (메뉴 풀 ${menuIds.length}개)`,
+  );
 }
 
 async function main() {

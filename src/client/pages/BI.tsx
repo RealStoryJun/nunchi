@@ -150,6 +150,7 @@ export default function BI() {
   const [needsStats, setNeedsStats] = useState<NeedsStats | null>(null);
   // AI 인사이트 — 기간 선택과 무관하게 항상 "이번 달" 기준 (오늘/사용자지정은 분석 의미가 약하고 호출만 늘어남)
   const [monthStats, setMonthStats] = useState<Stats | null>(null);
+  const [monthNeedsStats, setMonthNeedsStats] = useState<NeedsStats | null>(null);
   const [insights, setInsights] = useState<string[] | null>(null);
   const [insightsBump, setInsightsBump] = useState(0);
   // 메뉴 등록 여부 — BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
@@ -265,19 +266,36 @@ export default function BI() {
     };
   }, [userId]);
 
-  // 이번 달 stats (AI 인사이트 전용 — 기간 선택과 별개). "이번 달" 기간 선택 시 메인 effect가 채워둔 캐시와 공유.
+  // 이번 달 stats + 니즈 집계 (AI 인사이트용 — 기간 선택과 별개). "이번 달" 기간 선택 시 메인 effect와 캐시 공유.
   useEffect(() => {
+    let alive = true;
     const cached = getCache<Stats>(monthStatsCacheKey);
     if (cached) setMonthStats(cached);
-    if (isFresh(monthStatsCacheKey, TTL_STATS)) return;
-    let alive = true;
-    apiGet<Stats>(`/api/stats?from=${monthFromMs}&to=${monthToMs}&tz=${tzOffset}`)
-      .then((d) => {
-        if (!alive) return;
-        setMonthStats(d);
-        setCache(monthStatsCacheKey, d);
-      })
-      .catch(() => {});
+    if (!isFresh(monthStatsCacheKey, TTL_STATS)) {
+      apiGet<Stats>(`/api/stats?from=${monthFromMs}&to=${monthToMs}&tz=${tzOffset}`)
+        .then((d) => {
+          if (!alive) return;
+          setMonthStats(d);
+          setCache(monthStatsCacheKey, d);
+        })
+        .catch(() => {});
+    }
+    // 이번 달 고객 니즈 집계 — 인사이트 프롬프트에 포함. 실패해도 빈 집계로 두어 인사이트 생성은 진행.
+    apiGet<NeedsStats>(`/api/needs/stats?from=${monthFromMs}&to=${monthToMs}`)
+      .then((d) => alive && setMonthNeedsStats(d))
+      .catch(
+        () =>
+          alive &&
+          setMonthNeedsStats((p) => p ?? {
+            total: 0,
+            gender: {},
+            ageBand: {},
+            withChild: {},
+            purpose: {},
+            residence: {},
+            topMenus: [],
+          }),
+      );
     return () => {
       alive = false;
     };
@@ -423,6 +441,7 @@ export default function BI() {
   }, [stats, rankBy]);
 
   // AI 인사이트 — 항상 "이번 달" 기준 (기간 선택과 무관). 캐시 키가 이달로 고정이라 호출이 거의 안 늘어남.
+  // 매출 + 고객 니즈 둘 다 로드된 뒤에 호출 (니즈도 프롬프트에 포함).
   useEffect(() => {
     if (!monthStats) {
       setInsights(null);
@@ -433,6 +452,7 @@ export default function BI() {
       setInsights([]);
       return;
     }
+    if (monthNeedsStats === null) return; // 니즈 집계 도착 대기 (도착하면 effect 재실행)
     let alive = true;
     const cached = getCache<string[]>(monthInsightsKey);
     if (cached) setInsights(cached);
@@ -440,6 +460,7 @@ export default function BI() {
     apiPost<{ insights: string[] }>('/api/insights', {
       stats: { ...monthStats, peakHour: monthPeakHour?.hour ?? null },
       rangeLabel: '이번 달',
+      needs: monthNeedsStats.total > 0 ? monthNeedsStats : undefined,
     })
       .then((d) => {
         if (!alive) return;
@@ -454,7 +475,7 @@ export default function BI() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthStats, monthPeakHour, monthInsightsKey, insightsBump]);
+  }, [monthStats, monthNeedsStats, monthPeakHour, monthInsightsKey, insightsBump]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">

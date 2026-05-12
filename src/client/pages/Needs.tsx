@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiGet } from '../lib/api';
 import { setCache, getCache, isFresh } from '../lib/cache';
 import NeedsTab from '../components/NeedsTab';
-import { Skeleton } from '../components/Skeleton';
 import { useAuth } from '../hooks/useAuth';
 
 interface MenuLite {
@@ -17,16 +16,17 @@ export default function Needs() {
   const menuCacheKey = `menus:${userId}`;
   const TTL_MENUS = 5 * 60 * 1000;
 
+  // 메뉴 목록은 캐시에서 즉시 — 폼은 첫 렌더부터 바로 보임 (스켈레톤 없음)
   const [menus, setMenus] = useState<MenuLite[]>(
     () => getCache<MenuLite[]>(menuCacheKey) ?? [],
   );
-  const [loaded, setLoaded] = useState<boolean>(
+  const [menusLoaded, setMenusLoaded] = useState<boolean>(
     () => (getCache<MenuLite[]>(menuCacheKey)?.length ?? 0) > 0,
   );
 
   const load = useCallback(async () => {
     if (isFresh(menuCacheKey, TTL_MENUS)) {
-      setLoaded(true);
+      setMenusLoaded(true);
       return;
     }
     try {
@@ -34,9 +34,9 @@ export default function Needs() {
       setMenus(d.menus);
       setCache(menuCacheKey, d.menus);
     } catch {
-      /* 캐시 비어있으면 menus=[] 그대로 — 폼은 동작, 제품 선택만 비활성 */
+      /* 못 불러와도 폼은 동작 — 제품 선택만 비활성 */
     } finally {
-      setLoaded(true);
+      setMenusLoaded(true);
     }
   }, [menuCacheKey, TTL_MENUS]);
   useEffect(() => {
@@ -46,15 +46,7 @@ export default function Needs() {
   return (
     <div className="max-w-2xl mx-auto px-4 md:px-0 py-4 md:py-0">
       <h1 className="font-display text-2xl md:text-3xl mb-4">고객 니즈</h1>
-      {!loaded ? (
-        <div className="card p-5 space-y-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-10" />
-          ))}
-        </div>
-      ) : (
-        <NeedsTab menus={menus} />
-      )}
+      <NeedsTab menus={menus} menusLoaded={menusLoaded} />
     </div>
   );
 }

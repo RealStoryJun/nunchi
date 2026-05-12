@@ -122,7 +122,13 @@ function chips(n: NeedEntry, menus: MenuLite[]): string[] {
   return out;
 }
 
-export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
+export default function NeedsTab({
+  menus,
+  menusLoaded = true,
+}: {
+  menus: MenuLite[];
+  menusLoaded?: boolean;
+}) {
   const [gender, setGender] = useState<Gender | null>(DEFAULTS.gender);
   const [age, setAge] = useState<Age | null>(DEFAULTS.age);
   const [child, setChild] = useState<'yes' | 'no' | null>(DEFAULTS.child);
@@ -219,14 +225,16 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
-              disabled={menus.length === 0}
+              disabled={!menusLoaded || menus.length === 0}
               className={`flex-1 min-w-0 h-10 px-3 rounded-lg border text-sm text-left truncate transition ${
                 selectedMenus.length > 0
                   ? 'bg-accent/[0.04] border-accent/40 text-ink'
                   : 'bg-card border-border text-sub hover:border-accent/40'
               } disabled:opacity-50`}
             >
-              {menus.length === 0
+              {!menusLoaded
+                ? '메뉴 불러오는 중…'
+                : menus.length === 0
                 ? '등록된 메뉴가 없어요'
                 : selectedMenus.length === 0
                 ? '제품 선택하기'

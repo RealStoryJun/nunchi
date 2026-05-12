@@ -6,11 +6,11 @@ import NavIcon, { IconName } from './NavIcon';
 import { useAuth, logout } from '../hooks/useAuth';
 
 const sideItems: { to: string; label: string; icon: IconName }[] = [
+  { to: '/needs', label: '고객 니즈', icon: 'users' },
   { to: '/sales', label: '판매 입력', icon: 'receipt' },
   { to: '/menus', label: '메뉴 관리', icon: 'tag' },
   { to: '/bi', label: 'BI 대시보드', icon: 'chart' },
   { to: '/account', label: '계정 설정', icon: 'settings' },
-  { to: '/needs', label: '고객 니즈', icon: 'users' },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {

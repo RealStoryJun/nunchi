@@ -2,11 +2,11 @@ import { NavLink } from 'react-router-dom';
 import NavIcon, { IconName } from './NavIcon';
 
 const items: { to: string; label: string; icon: IconName }[] = [
+  { to: '/needs', label: '니즈', icon: 'users' },
   { to: '/sales', label: '판매', icon: 'receipt' },
   { to: '/menus', label: '메뉴', icon: 'tag' },
   { to: '/bi', label: 'BI', icon: 'chart' },
   { to: '/account', label: '설정', icon: 'settings' },
-  { to: '/needs', label: '니즈', icon: 'users' },
 ];
 
 export default function BottomNav() {

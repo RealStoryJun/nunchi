@@ -6,11 +6,15 @@ const GENDERS = ['female', 'male'] as const;
 const AGE_BANDS = ['10s_20s', '30s_40s', '50plus'] as const;
 const PURPOSES = ['gift', 'kids_snack', 'meal_replacement'] as const;
 const RESIDENCES = ['busan', 'outside'] as const;
+const MAX_MENU_IDS = 30;
 
 const pick = <T extends readonly string[]>(
   v: unknown,
   allowed: T,
-): T[number] | null => (typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T[number]) : null);
+): T[number] | null =>
+  typeof v === 'string' && (allowed as readonly string[]).includes(v)
+    ? (v as T[number])
+    : null;
 
 interface NeedRow {
   id: number;
@@ -19,11 +23,21 @@ interface NeedRow {
   with_child: number | null;
   purpose: string | null;
   residence: string | null;
-  menu_id: number | null;
+  menu_ids: string | null;
   created_at: number;
-  menu_name: string | null;
-  menu_emoji: string | null;
 }
+
+const parseMenuIds = (s: string | null): number[] => {
+  if (!s) return [];
+  try {
+    const arr = JSON.parse(s);
+    return Array.isArray(arr)
+      ? arr.filter((n): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0)
+      : [];
+  } catch {
+    return [];
+  }
+};
 
 export async function handleNeeds(
   request: Request,
@@ -36,11 +50,10 @@ export async function handleNeeds(
   if (rest === '' && request.method === 'GET') {
     const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 20), 1), 100);
     const { results } = await env.DB.prepare(
-      `SELECT n.id, n.gender, n.age_band, n.with_child, n.purpose, n.residence,
-              n.menu_id, n.created_at, m.name AS menu_name, m.emoji AS menu_emoji
-       FROM customer_needs n LEFT JOIN menus m ON m.id = n.menu_id
-       WHERE n.user_id = ?
-       ORDER BY n.created_at DESC
+      `SELECT id, gender, age_band, with_child, purpose, residence, menu_ids, created_at
+       FROM customer_needs
+       WHERE user_id = ?
+       ORDER BY created_at DESC
        LIMIT ?`,
     )
       .bind(user.id, limit)
@@ -53,9 +66,7 @@ export async function handleNeeds(
         withChild: r.with_child == null ? null : !!r.with_child,
         purpose: r.purpose,
         residence: r.residence,
-        menuId: r.menu_id,
-        menuName: r.menu_name,
-        menuEmoji: r.menu_emoji,
+        menuIds: parseMenuIds(r.menu_ids),
         createdAt: r.created_at,
       })),
     });
@@ -76,31 +87,52 @@ export async function handleNeeds(
     const withChild =
       body?.withChild === true ? 1 : body?.withChild === false ? 0 : null;
 
-    let menuId: number | null = null;
-    if (typeof body?.menuId === 'number' && Number.isInteger(body.menuId) && body.menuId > 0) {
-      const m = await env.DB.prepare('SELECT id FROM menus WHERE id = ? AND user_id = ?')
-        .bind(body.menuId, user.id)
-        .first<{ id: number }>();
-      if (m) menuId = m.id;
+    // menuIds: 본인 메뉴인 것만, 중복 제거, 최대 MAX_MENU_IDS
+    let menuIds: number[] = [];
+    const rawIds = Array.isArray(body?.menuIds) ? body!.menuIds : [];
+    const candidate = [
+      ...new Set(
+        rawIds
+          .map((x) => (typeof x === 'number' ? x : Number(x)))
+          .filter((n) => Number.isInteger(n) && n > 0),
+      ),
+    ].slice(0, MAX_MENU_IDS);
+    if (candidate.length > 0) {
+      const ph = candidate.map(() => '?').join(',');
+      const { results } = await env.DB.prepare(
+        `SELECT id FROM menus WHERE user_id = ? AND id IN (${ph})`,
+      )
+        .bind(user.id, ...candidate)
+        .all<{ id: number }>();
+      const owned = new Set(results.map((m) => m.id));
+      menuIds = candidate.filter((id) => owned.has(id));
     }
 
-    // 전부 비어있으면 의미 없음
     if (
       gender === null &&
       ageBand === null &&
       withChild === null &&
       purpose === null &&
       residence === null &&
-      menuId === null
+      menuIds.length === 0
     ) {
       return err('한 가지 이상 선택해주세요.');
     }
 
     const r = await env.DB.prepare(
-      `INSERT INTO customer_needs (user_id, gender, age_band, with_child, purpose, residence, menu_id, created_at)
+      `INSERT INTO customer_needs (user_id, gender, age_band, with_child, purpose, residence, menu_ids, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind(user.id, gender, ageBand, withChild, purpose, residence, menuId, Date.now())
+      .bind(
+        user.id,
+        gender,
+        ageBand,
+        withChild,
+        purpose,
+        residence,
+        menuIds.length ? JSON.stringify(menuIds) : null,
+        Date.now(),
+      )
       .run();
     return ok({ id: Number(r.meta.last_row_id) });
   }

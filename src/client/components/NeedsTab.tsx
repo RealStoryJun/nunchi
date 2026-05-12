@@ -15,9 +15,7 @@ interface NeedEntry {
   withChild: boolean | null;
   purpose: 'gift' | 'kids_snack' | 'meal_replacement' | null;
   residence: 'busan' | 'outside' | null;
-  menuId: number | null;
-  menuName: string | null;
-  menuEmoji: string | null;
+  menuIds: number[];
   createdAt: number;
 }
 
@@ -110,14 +108,17 @@ function Seg<V extends string>({
   );
 }
 
-function chips(n: NeedEntry): string[] {
+function chips(n: NeedEntry, menus: MenuLite[]): string[] {
   const out: string[] = [];
   if (n.gender) out.push(LABEL[n.gender]);
   if (n.ageBand) out.push(LABEL[n.ageBand]);
   if (n.withChild != null) out.push(n.withChild ? '자녀 동반' : '미동반');
   if (n.purpose) out.push(LABEL[n.purpose]);
   if (n.residence) out.push(LABEL[n.residence]);
-  if (n.menuName) out.push(`${n.menuEmoji || '📦'} ${n.menuName}`);
+  for (const id of n.menuIds) {
+    const m = menus.find((x) => x.id === id);
+    if (m) out.push(`${m.emoji || '📦'} ${m.name}`);
+  }
   return out;
 }
 
@@ -127,7 +128,7 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
   const [child, setChild] = useState<'yes' | 'no' | null>(DEFAULTS.child);
   const [purpose, setPurpose] = useState<Purpose | null>(DEFAULTS.purpose);
   const [residence, setResidence] = useState<Resid | null>(DEFAULTS.residence);
-  const [menuId, setMenuId] = useState<number | null>(null);
+  const [menuIds, setMenuIds] = useState<number[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [recent, setRecent] = useState<NeedEntry[] | null>(null);
@@ -143,11 +144,16 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
     };
   }, []);
 
-  const selectedMenu = useMemo(
-    () => menus.find((m) => m.id === menuId) ?? null,
-    [menus, menuId],
+  // 선택된 메뉴 (등록 순서대로)
+  const selectedMenus = useMemo(
+    () => menus.filter((m) => menuIds.includes(m.id)),
+    [menus, menuIds],
   );
-  const hasAny = !!(gender || age || child || purpose || residence || menuId);
+  const toggleMenu = (id: number) =>
+    setMenuIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  const hasAny = !!(gender || age || child || purpose || residence) || menuIds.length > 0;
 
   // 자주 오는 손님 기준 프리셋으로 되돌림 (제품 선택은 비움)
   const reset = () => {
@@ -156,7 +162,7 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
     setChild(DEFAULTS.child);
     setPurpose(DEFAULTS.purpose);
     setResidence(DEFAULTS.residence);
-    setMenuId(null);
+    setMenuIds([]);
   };
 
   const submit = async () => {
@@ -169,7 +175,7 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
         withChild: child === 'yes' ? true : child === 'no' ? false : undefined,
         purpose,
         residence,
-        menuId: menuId ?? undefined,
+        menuIds,
       });
       const d = await apiGet<{ needs: NeedEntry[] }>('/api/needs?limit=20');
       setRecent(d.needs);
@@ -208,28 +214,30 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
         <Seg label="거주지" options={RESID_OPTS} value={residence} onChange={setResidence} />
 
         <div>
-          <div className="label">판매제품</div>
+          <div className="label">판매제품 (여러 개 선택 가능)</div>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
               disabled={menus.length === 0}
               className={`flex-1 min-w-0 h-10 px-3 rounded-lg border text-sm text-left truncate transition ${
-                selectedMenu
+                selectedMenus.length > 0
                   ? 'bg-accent/[0.04] border-accent/40 text-ink'
                   : 'bg-card border-border text-sub hover:border-accent/40'
               } disabled:opacity-50`}
             >
-              {selectedMenu
-                ? `${selectedMenu.emoji || '📦'} ${selectedMenu.name}`
-                : menus.length === 0
+              {menus.length === 0
                 ? '등록된 메뉴가 없어요'
-                : '제품 선택하기'}
+                : selectedMenus.length === 0
+                ? '제품 선택하기'
+                : selectedMenus.length === 1
+                ? `${selectedMenus[0].emoji || '📦'} ${selectedMenus[0].name}`
+                : `${selectedMenus[0].emoji || '📦'} ${selectedMenus[0].name} 외 ${selectedMenus.length - 1}개`}
             </button>
-            {selectedMenu && (
+            {selectedMenus.length > 0 && (
               <button
                 type="button"
-                onClick={() => setMenuId(null)}
+                onClick={() => setMenuIds([])}
                 className="text-xs text-sub hover:text-ink px-2 h-9 shrink-0"
               >
                 지우기
@@ -279,7 +287,7 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
               <li key={n.id} className="px-4 py-3 flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap gap-1.5">
-                    {chips(n).map((c, i) => (
+                    {chips(n, menus).map((c, i) => (
                       <span
                         key={i}
                         className="text-xs bg-bg border border-border rounded-full px-2 py-0.5 text-ink/80"
@@ -317,43 +325,55 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-4 h-12 flex items-center justify-between border-b border-border shrink-0">
-              <h2 className="font-semibold text-sm">판매제품 선택</h2>
-              <button
-                type="button"
-                onClick={() => setPickerOpen(false)}
-                className="text-sm text-sub px-2 h-8 rounded hover:bg-black/5"
-              >
-                닫기
-              </button>
+              <h2 className="font-semibold text-sm">
+                판매제품 선택
+                {menuIds.length > 0 && (
+                  <span className="text-sub font-normal num"> · {menuIds.length}개</span>
+                )}
+              </h2>
+              <div className="flex items-center gap-1">
+                {menuIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setMenuIds([])}
+                    className="text-xs text-sub px-2 h-8 rounded hover:bg-black/5"
+                  >
+                    전체 해제
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen(false)}
+                  className="text-sm text-accent font-medium px-3 h-8 rounded hover:bg-accent/10"
+                >
+                  완료
+                </button>
+              </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuId(null);
-                  setPickerOpen(false);
-                }}
-                className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-sub hover:bg-black/5"
-              >
-                선택 안 함
-              </button>
               {menus.map((m) => {
-                const active = m.id === menuId;
+                const active = menuIds.includes(m.id);
                 return (
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => {
-                      setMenuId(m.id);
-                      setPickerOpen(false);
-                    }}
+                    onClick={() => toggleMenu(m.id)}
+                    aria-pressed={active}
                     className={`w-full text-left px-3 py-2.5 rounded-lg text-sm flex items-center gap-2 ${
                       active ? 'bg-accent/10 text-accent font-medium' : 'hover:bg-black/5'
                     }`}
                   >
+                    <span
+                      className={`w-5 h-5 rounded-md border flex items-center justify-center text-[11px] shrink-0 ${
+                        active
+                          ? 'bg-accent border-accent text-white'
+                          : 'border-border text-transparent'
+                      }`}
+                    >
+                      ✓
+                    </span>
                     <span className="text-lg">{m.emoji || '📦'}</span>
                     <span className="flex-1 truncate">{m.name}</span>
-                    {active && <span className="text-accent">✓</span>}
                   </button>
                 );
               })}

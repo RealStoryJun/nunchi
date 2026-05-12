@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS customer_needs (
   with_child INTEGER,  -- 1 | 0 | NULL
   purpose TEXT,        -- 'gift' | 'kids_snack' | 'meal_replacement' | NULL
   residence TEXT,      -- 'busan' | 'outside' | NULL
-  menu_id INTEGER,     -- 판매제품 (등록 메뉴) — NULL 가능
+  menu_ids TEXT,       -- 판매제품(등록 메뉴) id JSON 배열, 예 '[5,12]' — NULL/[] 가능 (다중 선택)
   created_at INTEGER NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

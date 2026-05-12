@@ -26,8 +26,10 @@ export default function MenuTile({ emoji, name, price, onTap, disabled }: Props)
       }}
       className={`card w-full min-w-0 flex flex-col items-center justify-center gap-1
                   px-2 py-3 min-h-[112px] active:scale-[0.97] transition
+                  hover:border-accent/40 hover:shadow-soft
                   focus:outline-none focus:ring-2 focus:ring-accent/40
                   disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100
+                  disabled:hover:border-border disabled:hover:shadow-none
                   ${pop ? 'anim-pop' : ''}`}
     >
       <span className="text-3xl leading-none">{emoji || '📦'}</span>

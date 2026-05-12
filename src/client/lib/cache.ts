@@ -40,6 +40,19 @@ export function invalidate(key: string): void {
   }
 }
 
+// 키 접두사로 일괄 무효화 (예: 판매 기록 후 'stats:<uid>:' 전체)
+export function invalidateByPrefix(prefix: string): void {
+  try {
+    const full = PREFIX + prefix;
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(full)) localStorage.removeItem(k);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 export function setCache<T>(key: string, v: T): void {
   try {
     localStorage.setItem(

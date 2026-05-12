@@ -458,7 +458,7 @@ export default function BI() {
               </div>
             ))}
           </div>
-          <div className="grid md:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="card p-4">
               <Skeleton className="h-4 w-28 mb-3" />
               <Skeleton className="h-[200px] w-full" />
@@ -530,7 +530,7 @@ export default function BI() {
             />
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="card p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">일별 매출 추이</h3>
@@ -657,7 +657,7 @@ export default function BI() {
             )}
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4 md:items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:items-start">
           <div className="card p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">품목별 순위</h3>
@@ -685,15 +685,19 @@ export default function BI() {
                 {ranked.map((m, i) => (
                   <li
                     key={m.menu_id}
-                    className="flex items-center gap-3 py-2.5"
+                    className="flex items-center gap-2 md:gap-3 py-2.5"
                   >
-                    <span className="num w-6 text-sub text-sm">
+                    <span className="num w-5 md:w-6 text-sub text-sm shrink-0">
                       {i + 1}
                     </span>
-                    <span className="text-xl">{m.emoji || '📦'}</span>
-                    <span className="flex-1 truncate font-medium">{m.name}</span>
-                    <span className="num text-sub text-sm">{m.qty}개</span>
-                    <span className="num font-semibold w-28 text-right">
+                    <span className="text-xl shrink-0">{m.emoji || '📦'}</span>
+                    <span className="flex-1 min-w-0 truncate font-medium">
+                      {m.name}
+                    </span>
+                    <span className="num text-sub text-xs md:text-sm shrink-0">
+                      {m.qty}개
+                    </span>
+                    <span className="num font-semibold w-24 md:w-28 text-right shrink-0">
                       {won(m.revenue)}
                     </span>
                   </li>

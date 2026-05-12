@@ -235,7 +235,7 @@ export default function Menus() {
               {form.emoji}
             </div>
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 md:max-w-md">
             <label className="label">이름</label>
             <input
               required
@@ -247,7 +247,7 @@ export default function Menus() {
           </div>
         </div>
         {/* 분류 */}
-        <div>
+        <div className="md:max-w-md">
           <label className="label">분류 (선택)</label>
           <input
             className="field"

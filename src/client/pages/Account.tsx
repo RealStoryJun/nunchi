@@ -84,7 +84,7 @@ export default function Account() {
                 value={nameInput}
                 onChange={(e) => setNameInput(e.target.value)}
                 maxLength={40}
-                className="field"
+                className="field md:max-w-sm"
                 placeholder="가게 이름"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') saveName();

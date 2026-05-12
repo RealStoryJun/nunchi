@@ -8,6 +8,7 @@ import Tutorial from './pages/Tutorial';
 import Sales from './pages/Sales';
 import Menus from './pages/Menus';
 import BI from './pages/BI';
+import Needs from './pages/Needs';
 import Account from './pages/Account';
 import Admin from './pages/Admin';
 import Layout from './components/Layout';
@@ -48,6 +49,7 @@ export default function App() {
       <Route path="/sales" element={protect(<Sales />)} />
       <Route path="/menus" element={protect(<Menus />)} />
       <Route path="/bi" element={protect(<BI />)} />
+      <Route path="/needs" element={protect(<Needs />)} />
       <Route path="/account" element={protect(<Account />)} />
       <Route path="/admin" element={protect(<Admin />)} />
       <Route path="*" element={<Navigate to="/" replace />} />

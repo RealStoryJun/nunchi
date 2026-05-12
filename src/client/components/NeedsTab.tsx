@@ -35,19 +35,29 @@ const AGE_OPTS = [
   { v: '30s_40s' as Age, l: '30–40대' },
   { v: '50plus' as Age, l: '50대+' },
 ];
+// 미동반·식사대용을 첫 옵션으로 — 기본값이 모두 맨 왼쪽에 와서 선택 표시가 일자로 정렬됨
 const CHILD_OPTS = [
-  { v: 'yes' as const, l: '자녀 동반' },
   { v: 'no' as const, l: '미동반' },
+  { v: 'yes' as const, l: '자녀 동반' },
 ];
 const PURPOSE_OPTS = [
+  { v: 'meal_replacement' as Purpose, l: '식사대용' },
   { v: 'gift' as Purpose, l: '선물용' },
   { v: 'kids_snack' as Purpose, l: '자녀 간식용' },
-  { v: 'meal_replacement' as Purpose, l: '식사대용' },
 ];
 const RESID_OPTS = [
   { v: 'busan' as Resid, l: '부산' },
   { v: 'outside' as Resid, l: '부산 외' },
 ];
+
+// 자주 오는 손님 기준 기본값 (전부 각 그룹의 첫 옵션 = 왼쪽 정렬)
+const DEFAULTS = {
+  gender: 'female' as Gender,
+  age: '10s_20s' as Age,
+  child: 'no' as 'yes' | 'no',
+  purpose: 'meal_replacement' as Purpose,
+  residence: 'busan' as Resid,
+};
 
 const LABEL: Record<string, string> = {
   female: '여성',
@@ -112,11 +122,11 @@ function chips(n: NeedEntry): string[] {
 }
 
 export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
-  const [gender, setGender] = useState<Gender | null>(null);
-  const [age, setAge] = useState<Age | null>(null);
-  const [child, setChild] = useState<'yes' | 'no' | null>(null);
-  const [purpose, setPurpose] = useState<Purpose | null>(null);
-  const [residence, setResidence] = useState<Resid | null>(null);
+  const [gender, setGender] = useState<Gender | null>(DEFAULTS.gender);
+  const [age, setAge] = useState<Age | null>(DEFAULTS.age);
+  const [child, setChild] = useState<'yes' | 'no' | null>(DEFAULTS.child);
+  const [purpose, setPurpose] = useState<Purpose | null>(DEFAULTS.purpose);
+  const [residence, setResidence] = useState<Resid | null>(DEFAULTS.residence);
   const [menuId, setMenuId] = useState<number | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -139,12 +149,13 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
   );
   const hasAny = !!(gender || age || child || purpose || residence || menuId);
 
+  // 자주 오는 손님 기준 프리셋으로 되돌림 (제품 선택은 비움)
   const reset = () => {
-    setGender(null);
-    setAge(null);
-    setChild(null);
-    setPurpose(null);
-    setResidence(null);
+    setGender(DEFAULTS.gender);
+    setAge(DEFAULTS.age);
+    setChild(DEFAULTS.child);
+    setPurpose(DEFAULTS.purpose);
+    setResidence(DEFAULTS.residence);
     setMenuId(null);
   };
 
@@ -183,10 +194,10 @@ export default function NeedsTab({ menus }: { menus: MenuLite[] }) {
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div>
       <p className="text-sub text-sm mb-4 break-keep">
-        손님 특성을 가볍게 남겨두면, 어떤 손님이 무엇을 찾는지 감을 잡는 데 도움이 돼요.
-        한 가지만 골라도 괜찮아요.
+        손님 특성을 가볍게 남겨두면, 어떤 손님이 무엇을 찾는지 감이 잡혀요.
+        자주 오는 손님 기준으로 미리 골라뒀어요 — 다르면 바꿔서 기록하세요.
       </p>
 
       <div className="card p-5 space-y-4">

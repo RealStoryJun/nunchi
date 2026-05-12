@@ -5,7 +5,6 @@ import { Skeleton } from '../components/Skeleton';
 import { apiGet, apiPost } from '../lib/api';
 import { getCache, setCache, isFresh, invalidateByPrefix } from '../lib/cache';
 import { useAuth } from '../hooks/useAuth';
-import NeedsTab from '../components/NeedsTab';
 
 interface Menu {
   id: number;
@@ -135,7 +134,6 @@ export default function Sales() {
     () => (getCache<Menu[]>(menuCacheKey)?.length ?? 0) > 0,
   );
   const [loadError, setLoadError] = useState(false);
-  const [tab, setTab] = useState<'sales' | 'needs'>('sales');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [expanded, setExpanded] = useState(false); // 하단 패널 펼침 여부 (모바일/태블릿)
   const [submitting, setSubmitting] = useState(false);
@@ -258,44 +256,37 @@ export default function Sales() {
     onSubmit: submit,
   };
 
-  const tabStrip = (
-    <div className="flex gap-1.5 mb-4">
-      {(['sales', 'needs'] as const).map((t) => (
-        <button
-          key={t}
-          type="button"
-          onClick={() => setTab(t)}
-          className={`px-4 h-10 rounded-lg text-sm font-medium border transition ${
-            tab === t
-              ? 'bg-accent text-white border-accent'
-              : 'bg-card text-ink border-border hover:border-accent/40'
-          }`}
-        >
-          {t === 'sales' ? '판매 입력' : '고객 니즈'}
-        </button>
-      ))}
-    </div>
-  );
-
-  return (
-    <div className="max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
-      {tabStrip}
-
-      {!menusLoaded ? (
+  if (!menusLoaded) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-[112px] rounded-2xl" />
           ))}
         </div>
-      ) : tab === 'needs' ? (
-        <NeedsTab menus={menus} />
-      ) : (
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
       <div className="lg:flex lg:gap-6 lg:items-start">
-        {/* 왼쪽: 안내 + 메뉴 타일 */}
+        {/* 왼쪽: 헤더 + 메뉴 타일 */}
         <div className="flex-1 min-w-0 pb-28 lg:pb-0">
-          <p className="text-sub text-sm md:text-base mb-4">
-            메뉴를 누르면 담기고, 확인하면 한 번에 기록돼요
-          </p>
+          <div className="md:hidden mb-3">
+            <h1 className="font-display text-2xl">판매 입력</h1>
+            <p className="text-sub text-xs">
+              메뉴를 누르면 담기고, 확인하면 한 번에 기록돼요
+            </p>
+          </div>
+          <div className="hidden md:flex md:items-baseline md:gap-3 mb-6">
+            <h1 className="font-display text-3xl shrink-0 whitespace-nowrap">
+              판매 입력
+            </h1>
+            <p className="text-sub truncate min-w-0">
+              메뉴를 누르면 담기고, 확인하면 한 번에 기록돼요
+            </p>
+          </div>
 
           {loadError && menus.length === 0 ? (
             <div className="card p-10 text-center">
@@ -361,10 +352,9 @@ export default function Sales() {
           </aside>
         )}
       </div>
-      )}
 
-      {/* 하단 고정 패널 (<lg) — 모바일은 BottomNav 위, 태블릿은 화면 맨 아래 — 판매 탭에서만 */}
-      {menusLoaded && tab === 'sales' && menus.length > 0 && (
+      {/* 하단 고정 패널 (<lg) — 모바일은 BottomNav 위, 태블릿은 화면 맨 아래 */}
+      {menus.length > 0 && (
         <div
           className="lg:hidden fixed left-0 md:left-64 right-0 bottom-16 md:bottom-0 z-30
                      bg-card border-t border-border shadow-[0_-3px_14px_rgba(0,0,0,0.07)]

@@ -11,7 +11,8 @@ type IconName =
   | 'plus'
   | 'shield'
   | 'search'
-  | 'trash';
+  | 'trash'
+  | 'users';
 
 const PATHS: Record<IconName, JSX.Element> = {
   receipt: (
@@ -81,6 +82,14 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M8 6V4h8v2" />
       <path d="M6 6l1 14h10l1-14" />
       <path d="M10 11v6M14 11v6" />
+    </>
+  ),
+  users: (
+    <>
+      <path d="M16 19v-1.5a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V19" />
+      <circle cx="9" cy="7.5" r="3.5" />
+      <path d="M22 19v-1.5a4 4 0 0 0-3-3.87" />
+      <path d="M15.5 4.13a3.5 3.5 0 0 1 0 6.75" />
     </>
   ),
 };

@@ -307,7 +307,7 @@ export default function BI() {
     const key = `needsStats:${userId}:${fromMs}:${toMs}`;
     const cached = getCache<NeedsStats>(key);
     if (cached) setNeedsStats(cached);
-    else setNeedsStats(null); // 기간 바뀌면 일단 비움 → 스켈레톤
+    // 캐시 미스여도 이전 기간 값을 잠깐 더 둠(깜빡임 방지) — 다른 BI 섹션과 동일하게
     if (isFresh(key, TTL_STATS)) return;
     apiGet<NeedsStats>(`/api/needs/stats?from=${fromMs}&to=${toMs}`)
       .then((d) => {

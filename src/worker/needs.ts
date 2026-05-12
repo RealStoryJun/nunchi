@@ -48,7 +48,8 @@ export async function handleNeeds(
 ): Promise<Response> {
   // GET /api/needs?from=&to=&limit=N — 기록 목록 (from/to로 기간 필터, limit+1로 hasMore 판단)
   if (rest === '' && request.method === 'GET') {
-    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 20), 1), 500);
+    const limitN = Number(url.searchParams.get('limit') ?? 20);
+    const limit = Math.min(Math.max(Number.isFinite(limitN) ? limitN : 20, 1), 500);
     const conds = ['user_id = ?'];
     const args: (string | number)[] = [user.id];
     const fromQ = url.searchParams.get('from');
@@ -212,9 +213,9 @@ export async function handleNeeds(
     if (ranked.length > 0) {
       const ph = ranked.map(() => '?').join(',');
       const { results: ms } = await env.DB.prepare(
-        `SELECT id, name, emoji FROM menus WHERE id IN (${ph})`,
+        `SELECT id, name, emoji FROM menus WHERE user_id = ? AND id IN (${ph})`,
       )
-        .bind(...ranked.map((r) => r.menuId))
+        .bind(user.id, ...ranked.map((r) => r.menuId))
         .all<{ id: number; name: string; emoji: string | null }>();
       const byId = new Map(ms.map((m) => [m.id, m]));
       topMenus = ranked.map((r) => {

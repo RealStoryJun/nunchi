@@ -361,17 +361,17 @@ export default function BI() {
           </button>
         ))}
         {range === 'custom' && (
-          <div className="flex items-center gap-2 ml-2">
+          <div className="flex items-center gap-2 w-full md:w-auto">
             <input
               type="date"
-              className="field h-10 px-2 num text-sm"
+              className="field h-10 px-2 num text-sm flex-1 min-w-0 md:flex-none md:w-[150px]"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
             />
-            <span className="text-sub">~</span>
+            <span className="text-sub shrink-0">~</span>
             <input
               type="date"
-              className="field h-10 px-2 num text-sm"
+              className="field h-10 px-2 num text-sm flex-1 min-w-0 md:flex-none md:w-[150px]"
               value={to}
               onChange={(e) => setTo(e.target.value)}
             />

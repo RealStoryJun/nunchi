@@ -249,7 +249,7 @@ const SYSTEM_PROMPT =
   '규칙:\n' +
   '- 인사이트 2~4개. 각 1~2문장. "~예요/~네요/~어요" 같은 친근한 존댓말. ("에요" 아님 "예요")\n' +
   '- 반드시 데이터의 구체적 숫자를 인용하고, 가능하면 실행 가능한 제안 1가지를 포함.\n' +
-  '- 한국어만 사용. 한자·영어·일본어 단어를 섞지 말 것(예: "最高" 금지, "최고").\n' +
+  '- 반드시 한국어로만 작성. 한자(漢字)·일본어 가나·러시아어 키릴 문자 등 다른 문자를 절대 섞지 말 것 — 한자어가 떠오르면 한국어 표기로(예: "重点"→"핵심", "最高"→"최고", "戦略"→"전략").\n' +
   '- 데이터에 없는 메뉴명·숫자를 지어내지 말 것.\n' +
   '- "고객 니즈 조사" 항목이 데이터에 있으면, 인사이트 중 적어도 1개는 그걸 활용하세요 — 어떤 손님(연령대·자녀 동반 여부·거주지)이 무엇을 왜 사는지, 그에 맞춘 실행 제안. 니즈 데이터가 없으면 매출만 분석.\n' +
   '- 판매가 5건 미만이거나 데이터가 빈약하면 인사이트 1개로 "데이터가 더 쌓이면 더 정확한 분석을 드릴 수 있어요" 정도만.\n' +
@@ -261,6 +261,26 @@ const MODELS: ReadonlyArray<{ model: string; maxTokens: number }> = [
   { model: 'llama-3.3-70b-versatile', maxTokens: 550 },
   { model: 'llama-3.1-8b-instant', maxTokens: 480 },
 ];
+
+// LLM이 가끔 한자·일본어 가나·키릴 문자를 섞음 — 프롬프트로 줄지만 100%는 아니라서 출력 단계에서 처리.
+// (1) 흔한 한자어는 한국어로 치환해 살리고, (2) 그래도 비한국어 문자가 남은 인사이트는 통째로 버린다(사용자에게 절대 안 보이게).
+const SALVAGE: ReadonlyArray<readonly [RegExp, string]> = [
+  [/重[点點]/g, '핵심'],
+  [/最高/g, '최고'],
+  [/[戦戰战]略/g, '전략'],
+  [/客[層层]/g, '고객층'],
+  [/重要/g, '중요'],
+  [/効果|效果/g, '효과'],
+];
+// CJK 기호·한자·가나·전각 영숫자·키릴 — 하나라도 들어있으면 비한국어 혼입으로 간주.
+// (한국어 가운뎃점 '·'(U+00B7)·물결표 '~'·화살표 '→'·말줄임표 '…'는 이 범위 밖이라 안 걸림.)
+const NON_KOREAN =
+  /[　-〿぀-ヿ㐀-䶿一-鿿豈-﫿＀-￯Ѐ-ӿ]/;
+const cleanLine = (s: string): string => {
+  let t = s.trim();
+  for (const [re, rep] of SALVAGE) t = t.replace(re, rep);
+  return t;
+};
 
 const callGroqWith = async (
   apiKey: string,
@@ -300,7 +320,8 @@ const callGroqWith = async (
         if (Array.isArray(parsed)) {
           const arr = parsed
             .filter((x): x is string => typeof x === 'string' && x.trim().length > 4)
-            .map((x) => x.trim())
+            .map(cleanLine)
+            .filter((x) => x.length > 4 && !NON_KOREAN.test(x))
             .slice(0, 5);
           if (arr.length) return arr;
         }
@@ -311,8 +332,8 @@ const callGroqWith = async (
     // 줄바꿈 fallback
     const lines = raw
       .split('\n')
-      .map((l) => l.replace(/^["\s\-*•\d.)]+/, '').replace(/["\s]+$/, '').trim())
-      .filter((l) => l.length > 8)
+      .map((l) => cleanLine(l.replace(/^["\s\-*•\d.)]+/, '').replace(/["\s]+$/, '')))
+      .filter((l) => l.length > 8 && !NON_KOREAN.test(l))
       .slice(0, 4);
     return lines.length ? lines : null;
   } catch {

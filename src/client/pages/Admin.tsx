@@ -241,12 +241,12 @@ export default function Admin() {
                       {u.business_name}
                     </span>
                     {u.is_admin && (
-                      <span className="text-[10px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">
+                      <span className="text-[11px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">
                         ADMIN
                       </span>
                     )}
                     {self && (
-                      <span className="text-[10px] text-sub shrink-0">(나)</span>
+                      <span className="text-[11px] text-sub shrink-0">(나)</span>
                     )}
                   </div>
                   <div className="text-sub text-xs num truncate">{u.email}</div>

@@ -33,7 +33,7 @@ export default function MenuTile({ emoji, name, price, onTap, disabled }: Props)
                   ${pop ? 'anim-pop' : ''}`}
     >
       <span className="text-3xl leading-none">{emoji || '📦'}</span>
-      <span className="block w-full text-[13px] leading-snug font-medium text-ink clamp-2 text-center">
+      <span className="block w-full text-sm leading-snug font-medium text-ink clamp-2 text-center">
         {name}
       </span>
       <span className="num text-xs text-sub mt-auto">

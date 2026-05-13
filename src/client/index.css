@@ -5,6 +5,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── 타이포그래피 캐논 (새 화면 만들 때 이 안에서 고를 것) ────────────────
+   본문            text-sm   (14px)   ← 기본. 거의 모든 텍스트.
+   보조·캡션·메타    text-xs   (12px)
+   초단 범례·미세 라벨 text-[11px]        ← 정말 촘촘한 곳만 (BI 범례, 튜토리얼 스텝 라벨 등)
+   강조 줄·빈 상태 헤드라인 text-lg (18px), 필요 시 font-semibold
+   인앱 페이지 제목  font-display text-2xl md:text-3xl   ← h1 (BI/메뉴/판매/니즈/계정/관리)
+   인증 화면 헤드라인 font-display text-3xl              ← Login/Signup/Recover
+   온보딩·튜토리얼 인트로 font-display text-3xl md:text-4xl
+   랜딩 히어로       font-display text-4xl md:text-6xl
+   * 이모지/아이콘 글리프는 text-base / text-lg / text-3xl 로 "글자 크기"를 빌려 쓰는 거라 위 표와 무관.
+   * 제목은 항상 font-display(고운바탕 세리프) — "고급스러운" 톤의 핵심이라 산세리프로 바꾸지 말 것.
+   ─────────────────────────────────────────────────────────────── */
+
 @layer base {
   html, body, #root {
     height: 100%;

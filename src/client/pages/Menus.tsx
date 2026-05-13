@@ -194,7 +194,7 @@ export default function Menus() {
     <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="font-display text-2xl text-ink">메뉴 관리</h1>
+          <h1 className="font-display text-2xl md:text-3xl text-ink">메뉴 관리</h1>
           <span className="text-sub text-sm">{menus.length}개 활성</span>
         </div>
         {!formOpen && menus.length > 0 && (

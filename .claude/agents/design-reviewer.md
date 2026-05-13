@@ -83,6 +83,13 @@ Apply each item against the changes you're asked to review:
 
 9. **Animation choreography** — Onboarding/Tutorial use `anim-rise`/`anim-slide-r` with stagger (35–60ms). New animations should follow ~300–500ms duration with cubic-bezier easing already defined in `index.css`. Don't introduce a 4th easing flavor without reason.
 
+    **Cross-page composition (the rule that catches "왜 이 페이지만 이상해 보이지" bugs).** A page can pass every canon rule individually and still feel off because it's **inconsistent with its neighbors** at the same viewport. Past regression: Sales used `max-w-5xl` (1024px) while BI/Menus/Account used `max-w-3xl` (768px). Each was internally OK but Sales side-by-side felt "stranded mobile-layout-stretched-to-PC" — user called it "디자인 핍진성 해친다". The fix: standardize widths to match peers (Sales → `max-w-4xl` with `xl:grid-cols-3` to keep cart aside design).
+
+    **Do this for every UI change**:
+    - Take screenshots of the changed page **AND** 1-2 neighbor pages at the same viewport (1440 minimum).
+    - Compare side-by-side: container `max-w-*`, heading hierarchy (h1/h2/h3 sizes + fonts), grid density, padding rhythm, empty-state composition. Flag any axis where the changed page is the odd one out without justified reason.
+    - If a side-panel-having page needs more width than no-panel peers, the asymmetry is justified — but call it out so it's intentional, not accidental drift.
+
 11. **Desktop layout (1440×900 — do this for every review). And the breakpoint *edges*, not just the middle.**
 
     **Breakpoint matrix (any layout-affecting change must run this):**

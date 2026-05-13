@@ -43,9 +43,10 @@ function CartBody({
     <>
       <div className="flex-1 min-h-0 overflow-y-auto -mx-1 px-1">
         {cart.length === 0 ? (
-          <p className="text-sub text-sm py-8 text-center break-keep">
-            메뉴를 누르면 여기에 담겨요.
-          </p>
+          <div className="h-full min-h-0 flex flex-col items-center justify-center text-sub py-8">
+            <span className="text-4xl mb-2 opacity-70" aria-hidden>🛒</span>
+            <p className="text-sm break-keep">메뉴를 누르면 여기에 담겨요</p>
+          </div>
         ) : (
           <ul className="divide-y divide-border/60">
             {cart.map((c) => (
@@ -258,7 +259,7 @@ export default function Sales() {
 
   if (!menusLoaded) {
     return (
-      <div className="max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
+      <div className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0">
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-[112px] rounded-2xl" />
@@ -269,7 +270,7 @@ export default function Sales() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
+    <div className="max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0">
       <div className="xl:flex xl:gap-6 xl:items-start">
         {/* 왼쪽: 헤더 + 메뉴 타일 */}
         <div className="flex-1 min-w-0 pb-28 xl:pb-0">
@@ -317,8 +318,8 @@ export default function Sales() {
             <div className="space-y-6">
               {groupedMenus.map(([cat, items]) => (
                 <section key={cat}>
-                  <h3 className="text-sm text-sub mb-2 px-1">{cat}</h3>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                  <h3 className="text-sm md:text-base font-medium text-ink/70 mb-3 px-1">{cat}</h3>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-3 xl:grid-cols-3 gap-2">
                     {items.map((m) => (
                       <div key={m.id} className="min-w-0">
                         <MenuTile

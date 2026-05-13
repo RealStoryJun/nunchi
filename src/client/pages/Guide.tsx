@@ -96,7 +96,23 @@ export default function Guide() {
           </section>
 
           <section className="mt-14">
-            <h2 className="font-display text-2xl md:text-3xl mb-3">⑥ AI는 뭘 보나요</h2>
+            <h2 className="font-display text-2xl md:text-3xl mb-3">
+              ⑥ 고정비도 한 번 적어두면, 실제 순이익이 보여요
+            </h2>
+            <p className="text-ink/80 leading-relaxed mb-3">
+              매출에서 원가만 빼면 "총이익"이고, 거기서 임대료·공과금·인건비 같은
+              매월 고정 지출까지 빼야 진짜 손에 쥐는 돈이에요. BI 대시보드 안에서 한 번
+              적어두면 그 달의 "실제 순이익"을 같이 보여드립니다.
+            </p>
+            <p className="text-ink/80 leading-relaxed">
+              항목명은 자유롭게 — 임대료·공과금·통신비·보험·구독·마케팅·알바비 같은 추천을
+              깔아두고, 해당하는 칸만 채우면 돼요. 다음 달엔 "지난 달과 같이 채우기 →"
+              버튼 한 번이면 끝.
+            </p>
+          </section>
+
+          <section className="mt-14">
+            <h2 className="font-display text-2xl md:text-3xl mb-3">⑦ AI는 뭘 보나요</h2>
             <p className="text-ink/80 leading-relaxed mb-4">
               "이번 달 AI 분석" 카드를 만들 때, 서버가 아래 묶음 데이터만 모아 외부 AI
               서비스(Groq)에 보내요:
@@ -110,6 +126,8 @@ export default function Guide() {
                 고객 니즈가 5건 이상 쌓였을 때만, 응답 비율 요약(성별/연령대/자녀 동반/방문 목적/거주지)과
                 자주 언급된 메뉴
               </li>
+              <li>이번 달 고정비 합계 (등록했을 때만) — 실제 순이익까지 같이 봐요</li>
+              <li>가게 업종 (카페·카센터·미용실 등) — 업종 맥락에 맞는 표현을 쓰도록</li>
             </ul>
             <div className="mt-5 p-4 rounded-xl bg-card border border-border">
               <p className="text-sm text-ink/80 leading-relaxed">
@@ -122,11 +140,11 @@ export default function Guide() {
           </section>
 
           <section className="mt-14">
-            <h2 className="font-display text-2xl md:text-3xl mb-3">⑦ 내 데이터는 안전한가요</h2>
+            <h2 className="font-display text-2xl md:text-3xl mb-3">⑧ 내 데이터는 안전한가요</h2>
             <p className="text-ink/80 leading-relaxed">
               모든 데이터는 사장님 본인의 계정에 묶여 저장돼요. 로그인한 본인만
               조회·수정·삭제할 수 있고, 다른 사장님은 접근할 수 없습니다(서버에서 강제).
-              위 ⑥의 묶음 데이터만 분석을 위해 잠깐 외부로 나가고, 그 외에는 외부로 나가지 않아요.
+              위 ⑦의 묶음 데이터만 분석을 위해 잠깐 외부로 나가고, 그 외에는 외부로 나가지 않아요.
             </p>
           </section>
 

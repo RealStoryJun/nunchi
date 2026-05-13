@@ -8,33 +8,46 @@ const PW = '1q2w3e4r!@';
 const now = new Date();
 const YM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
+// 업태별로 사실적인 항목 구성 — 카페면 원두 정기, 식당이면 식자재·가스, 미용이면 재료·광고 등.
 const SEED = {
+  // cafe — 이음 커피
   'guest1@nunchi.app': [
     { label: '임대료', amount: 1800000 },
     { label: '공과금', amount: 220000 },
-    { label: '통신비', amount: 60000 },
+    { label: '통신·인터넷', amount: 60000 },
+    { label: '원두 정기구매', amount: 180000 },
     { label: '알바비', amount: 600000 },
   ],
+  // restaurant — 정든 한식당
   'guest2@nunchi.app': [
     { label: '임대료', amount: 2200000 },
     { label: '공과금', amount: 380000 },
-    { label: '통신비', amount: 70000 },
+    { label: '가스비', amount: 80000 },
+    { label: '식자재 정기', amount: 1200000 },
     { label: '알바비', amount: 1500000 },
   ],
+  // bakery — 데일리 베이크
   'guest3@nunchi.app': [
     { label: '임대료', amount: 1500000 },
     { label: '공과금', amount: 250000 },
-    { label: '통신비', amount: 60000 },
-    { label: '재료 정기구매', amount: 100000 },
+    { label: '통신·인터넷', amount: 60000 },
+    { label: '밀가루·재료 정기', amount: 350000 },
+    { label: '알바비', amount: 400000 },
   ],
+  // clothing — 무드 셀렉트샵
   'guest4@nunchi.app': [
     { label: '임대료', amount: 1200000 },
     { label: '공과금', amount: 100000 },
-    { label: '마케팅', amount: 200000 },
+    { label: '인터넷·POS', amount: 50000 },
+    { label: '인스타 마케팅', amount: 250000 },
+    { label: '카드 수수료', amount: 80000 },
   ],
+  // beauty — 살롱 헤어
   'guest5@nunchi.app': [
     { label: '임대료', amount: 2500000 },
     { label: '공과금', amount: 200000 },
+    { label: '미용재료', amount: 300000 },
+    { label: '광고비', amount: 200000 },
     { label: '알바비', amount: 1800000 },
   ],
 };

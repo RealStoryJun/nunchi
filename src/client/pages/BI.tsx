@@ -194,7 +194,8 @@ export default function BI() {
     return [startOfMonth(now).getTime(), endOfDay(now).getTime()];
   }, []);
   const monthStatsCacheKey = `stats:${userId}:${monthFromMs}:${monthToMs}`;
-  const monthInsightsKey = `insights:${userId}:${monthFromMs}:${monthToMs}`;
+  // 업종이 바뀌면 인사이트 톤도 바뀌어야 함 → 키에 포함
+  const monthInsightsKey = `insights:${userId}:${user?.business_type ?? 'none'}:${monthFromMs}:${monthToMs}`;
 
   const statsCacheKey = `stats:${userId}:${fromMs}:${toMs}`;
   const tzOffset = -new Date().getTimezoneOffset();
@@ -530,6 +531,7 @@ export default function BI() {
       stats: { ...monthStats, peakHour: monthPeakHour?.hour ?? null },
       rangeLabel: '이번 달',
       needs: monthNeedsStats.total > 0 ? monthNeedsStats : undefined,
+      businessType: user?.business_type ?? undefined,
     })
       .then((d) => {
         if (!alive) return;

@@ -61,7 +61,7 @@ export default function Onboarding() {
               <li
                 key={t.id}
                 className="anim-rise"
-                style={{ animationDelay: `${120 + i * 35}ms` }}
+                style={{ animationDelay: `${120 + Math.min(i, 9) * 25 + Math.max(0, i - 9) * 8}ms` }}
               >
                 <button
                   type="button"

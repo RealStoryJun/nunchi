@@ -17,6 +17,12 @@ export const BUSINESS_TYPES: BusinessTypeOption[] = [
   { id: 'bookstore', label: '서점·문구', emoji: '📚', desc: '책·문구' },
   { id: 'pet', label: '펫샵', emoji: '🐾', desc: '반려동물 용품' },
   { id: 'beauty', label: '미용·헤어', emoji: '💇', desc: '헤어·네일' },
+  { id: 'auto_repair', label: '카센터', emoji: '🔧', desc: '정비·오일·타이어' },
+  { id: 'motorcycle', label: '오토바이센터', emoji: '🏍️', desc: '오일·체인·정비' },
+  { id: 'wrap_tuning', label: '랩핑·튜닝', emoji: '🚙', desc: 'PPF·카본·튜닝' },
+  { id: 'craft', label: '공방·수공예', emoji: '🧶', desc: '가죽·캔들·도예' },
+  { id: 'laundry', label: '세탁소', emoji: '🧺', desc: '세탁·드라이' },
+  { id: 'sidedish', label: '반찬가게', emoji: '🍱', desc: '반찬·도시락' },
   { id: 'other', label: '기타', emoji: '📦', desc: '직접 입력 가능' },
 ];
 

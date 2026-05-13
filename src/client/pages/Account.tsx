@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { logout, refreshAuth, useAuth } from '../hooks/useAuth';
 import {
@@ -13,6 +13,7 @@ export default function Account() {
   const navigate = useNavigate();
   const [editingType, setEditingType] = useState(false);
   const [pending, setPending] = useState(false);
+  const typeGridRef = useRef<HTMLDivElement | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
   const [savingName, setSavingName] = useState(false);
@@ -119,15 +120,21 @@ export default function Account() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <div className="text-sub text-sm">업종</div>
-            {!editingType && (
-              <button
-                type="button"
-                onClick={() => setEditingType(true)}
-                className="text-sm text-accent font-medium px-3 h-9 rounded-lg hover:bg-accent/10 -my-1"
-              >
-                변경
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setEditingType((v) => !v);
+                // 그리드가 화면 밖이면 보이게 — 18칸 중 새 6종이 fold 아래에 묻히지 않도록
+                if (!editingType) {
+                  requestAnimationFrame(() => {
+                    typeGridRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                  });
+                }
+              }}
+              className="text-sm text-accent font-medium px-3 h-9 rounded-lg hover:bg-accent/10 -my-1"
+            >
+              {editingType ? '취소' : '변경'}
+            </button>
           </div>
           {!editingType ? (
             <div className="flex items-center gap-2">
@@ -137,7 +144,7 @@ export default function Account() {
               </span>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2 anim-fade">
+            <div ref={typeGridRef} className="grid grid-cols-3 md:grid-cols-6 gap-2 anim-fade">
               {BUSINESS_TYPES.map((t) => {
                 const active = user.business_type === t.id;
                 return (

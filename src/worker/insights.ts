@@ -1,4 +1,4 @@
-import { Env, ok, err } from './types';
+import { Env, ok, err, isBusinessType, BUSINESS_TYPE_LABELS, BusinessType } from './types';
 import { checkRateLimit, recordAttempt, tooMany } from './ratelimit';
 
 // 매출 데이터 → AI 인사이트. GROQ_API_KEY 없으면 빈 배열(클라가 카드 숨김).
@@ -44,6 +44,7 @@ interface InsightsBody {
   prevStats?: { revenue: number; profit: number; qty: number } | null;
   rangeLabel?: string;
   needs?: NeedsAgg | null;
+  businessType?: BusinessType | null;
 }
 
 // 니즈 항목 코드 → 한글 라벨 (프롬프트용)
@@ -155,12 +156,14 @@ const sanitizeBody = (raw: unknown): InsightsBody | null => {
     prevStats,
     rangeLabel: str(o.rangeLabel, 30) || undefined,
     needs: sanitizeNeeds(o.needs),
+    businessType: isBusinessType(o.businessType) ? o.businessType : null,
   };
 };
 
 const buildSummary = (b: InsightsBody): string => {
   const s = b.stats!;
   const lines: string[] = [];
+  if (b.businessType) lines.push(`- 업종: ${BUSINESS_TYPE_LABELS[b.businessType]}`);
   lines.push(`- 기간: ${b.rangeLabel || '선택 기간'}`);
   lines.push(
     `- 총매출 ${won(s.revenue)} / 총원가 ${won(s.cost)} / 순이익 ${won(s.profit)} / 마진율 ${pctStr(s.margin)} / 판매 ${s.qty}건`,
@@ -244,10 +247,11 @@ const buildSummary = (b: InsightsBody): string => {
 };
 
 const SYSTEM_PROMPT =
-  '당신은 한국 1인 사업자(카페·음식점·소매점 사장님)의 매출 데이터를 분석해 ' +
+  '당신은 한국 1인 사업자(카페·음식점·소매점·서비스업·카센터·공방 등) 사장님의 매출 데이터를 분석해 ' +
   '실질적으로 도움 되는 인사이트를 알려주는 분석가입니다.\n' +
   '규칙:\n' +
   '- 인사이트 2~4개. 각 1~2문장. "~예요/~네요/~어요" 같은 친근한 존댓말. ("에요" 아님 "예요")\n' +
+  '- "업종"이 주어지면 그 업종 맥락에 맞는 표현·제안을 쓰세요(예: 카센터면 "오일 교환 회전율", 미용실이면 "시술 단가", 카페면 "피크 시간대 동선"). 식당 어휘를 옷가게에 쓰지 말 것.\n' +
   '- 반드시 데이터의 구체적 숫자를 인용하고, 가능하면 실행 가능한 제안 1가지를 포함.\n' +
   '- 반드시 한국어로만 작성. 한자(漢字)·일본어 가나·러시아어 키릴 문자 등 다른 문자를 절대 섞지 말 것 — 한자어가 떠오르면 한국어 표기로(예: "重点"→"핵심", "最高"→"최고", "戦略"→"전략").\n' +
   '- 데이터에 없는 메뉴명·숫자를 지어내지 말 것.\n' +

@@ -24,6 +24,7 @@ export interface UserRow {
   is_admin: number;
 }
 
+// keep in sync with src/client/lib/businessTypes.ts
 export const BUSINESS_TYPE_IDS = [
   'cafe',
   'restaurant',
@@ -36,11 +37,39 @@ export const BUSINESS_TYPE_IDS = [
   'bookstore',
   'pet',
   'beauty',
+  'auto_repair',
+  'motorcycle',
+  'wrap_tuning',
+  'craft',
+  'laundry',
+  'sidedish',
   'other',
 ] as const;
 export type BusinessType = (typeof BUSINESS_TYPE_IDS)[number];
 export const isBusinessType = (v: unknown): v is BusinessType =>
   typeof v === 'string' && (BUSINESS_TYPE_IDS as readonly string[]).includes(v);
+
+// AI 프롬프트용 한글 라벨 — keep in sync with src/client/lib/businessTypes.ts
+export const BUSINESS_TYPE_LABELS: Record<BusinessType, string> = {
+  cafe: '카페',
+  restaurant: '음식점',
+  bakery: '베이커리',
+  bar: '주점·바',
+  clothing: '의류 매장',
+  bag: '가방·잡화',
+  cosmetics: '화장품',
+  flower: '꽃집',
+  bookstore: '서점·문구',
+  pet: '펫샵',
+  beauty: '미용·헤어',
+  auto_repair: '카센터',
+  motorcycle: '오토바이센터',
+  wrap_tuning: '랩핑·튜닝',
+  craft: '공방·수공예',
+  laundry: '세탁소',
+  sidedish: '반찬가게',
+  other: '기타',
+};
 
 export interface MenuRow {
   id: number;

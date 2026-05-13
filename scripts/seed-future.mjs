@@ -33,13 +33,19 @@ const RESID = [['busan', 74], ['outside', 26]];
 const N_MENUS = [[1, 56], [2, 30], [3, 11], [4, 3]];
 const QTY = [[1, 80], [2, 17], [3, 3]];
 
-// 업태별 손님 특성 분포 — 옷가게/미용실엔 "식사대용/자녀간식용"이 어울리지 않음.
+// 업태별 손님 특성 분포 — 차량 정비/공방/세탁 등엔 "식사대용/자녀간식용"이 안 어울림.
 const PURPOSE_BY_TYPE = {
   cafe: [['meal_replacement', 35], ['gift', 25], ['kids_snack', 20], [null, 20]],
   restaurant: [['meal_replacement', 60], ['gift', 10], ['kids_snack', 15], [null, 15]],
   bakery: [['gift', 35], ['kids_snack', 30], ['meal_replacement', 25], [null, 10]],
   clothing: [['gift', 55], [null, 45]],
   beauty: [['gift', 18], [null, 82]], // 미용은 거의 본인용
+  auto_repair: [['gift', 8], [null, 92]], // 차주 본인이 의뢰
+  motorcycle: [['gift', 6], [null, 94]],
+  wrap_tuning: [['gift', 12], [null, 88]],
+  craft: [['gift', 55], [null, 40], ['kids_snack', 5]], // 선물·자기 취미 위주
+  laundry: [[null, 95], ['gift', 5]],
+  sidedish: [['meal_replacement', 70], ['gift', 12], [null, 18]],
   default: [['meal_replacement', 40], ['gift', 25], ['kids_snack', 20], [null, 15]],
 };
 const CHILD_BY_TYPE = {
@@ -48,6 +54,12 @@ const CHILD_BY_TYPE = {
   bakery: [[true, 38], [false, 55], [null, 7]], // 아이들 빵 사러
   clothing: [[true, 10], [false, 80], [null, 10]],
   beauty: [[false, 92], [null, 8]],
+  auto_repair: [[false, 92], [null, 8]],
+  motorcycle: [[false, 96], [null, 4]],
+  wrap_tuning: [[false, 93], [null, 7]],
+  craft: [[true, 15], [false, 78], [null, 7]],
+  laundry: [[false, 88], [null, 12]],
+  sidedish: [[true, 28], [false, 64], [null, 8]], // 가족용으로 사 가는 손님
   default: [[true, 22], [false, 70], [null, 8]],
 };
 

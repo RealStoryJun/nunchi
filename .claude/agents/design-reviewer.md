@@ -27,6 +27,14 @@ Apply each item against the changes you're asked to review:
 
 3. **Horizontal overflow** — At 375px, `document.documentElement.scrollWidth` must equal viewport. Find any element where `getBoundingClientRect().right > 375 + 0.5`.
 
+   **3b. Card-bounded content fit-test (measure, don't eyeball).** Any element with `whitespace-nowrap` + dynamic text (numbers, currency, user-input labels) must fit inside its container at the **actual data range users hit**, not just the current snapshot. Page-level overflow (`scrollWidth === viewport`) can be clean while a value visibly spills into the neighboring card — the overflow goes sideways within the grid, not down to the document. Measure with `getBoundingClientRect()`:
+   ```js
+   const cardRect = card.getBoundingClientRect();
+   const valueRect = valueEl.getBoundingClientRect();
+   const fits = valueRect.right <= cardRect.right - PADDING;  // 4-8px slack for the .card's inner padding
+   ```
+   Do this for every StatCard-like component (4-card and 2-card grids both — narrower grid track is the real test) at BOTH viewports. **Run with realistic-grown data, not just today's seed**: if today's value is "1,779,000원" and the digit count can plausibly grow by one (매출 누적), test with a +1-digit synthetic too (e.g. inject "12,345,678원" via `browser_evaluate` and re-measure). Flag any track where the slack at the current data is <30px — a single digit's growth will push it past. Past regression: `text-3xl` (30px) value in a 183px-wide BI StatCard fit at 7-digit ₩ but overflowed at 8-digit ₩; `text-2xl` (24px) gives ~41px slack instead of 1px.
+
 4. **Tone consistency** —
    - Don't introduce raw hex outside the tokens above.
    - Buttons reuse `btn-primary`/`btn-warm`/`btn-outline`/`btn-ghost` from `index.css`. Cards reuse `card`. Don't accept one-off `bg-[#xxx]` when a token fits.

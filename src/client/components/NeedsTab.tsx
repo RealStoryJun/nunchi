@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiGet, apiPost, apiDelete } from '../lib/api';
 import { Skeleton } from './Skeleton';
-import { timeHM, startOfDay } from '../lib/format';
+import { timeHM, startOfDay, endOfDay } from '../lib/format';
 
-const todayFromMs = () => startOfDay(new Date()).getTime();
-const TODAY_NEEDS_URL = () => `/api/needs?from=${todayFromMs()}&limit=300`;
+// 오늘 00:00 ~ 23:59 — 상한을 안 두면 시드/미래 데이터까지 끼어들어 "정렬 안 된 것처럼" 보임
+const TODAY_NEEDS_URL = () => {
+  const now = new Date();
+  return `/api/needs?from=${startOfDay(now).getTime()}&to=${endOfDay(now).getTime()}&limit=300`;
+};
 
 interface MenuLite {
   id: number;
@@ -168,6 +171,14 @@ export default function NeedsTab({
     () => menus.filter((m) => menuIds.includes(m.id)),
     [menus, menuIds],
   );
+  // 오늘 기록 — 시간 ASC(오래된 → 새것 아래), 같은 시각은 id ASC. "일지" 형태.
+  const recentSorted = useMemo(
+    () =>
+      recent
+        ? [...recent].sort((a, b) => a.createdAt - b.createdAt || a.id - b.id)
+        : null,
+    [recent],
+  );
   const toggleMenu = (id: number) =>
     setMenuIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
@@ -232,7 +243,7 @@ export default function NeedsTab({
         <Seg label="거주지" options={RESID_OPTS} value={residence} onChange={setResidence} />
 
         <div>
-          <div className="label">판매제품 (여러 개 선택 가능)</div>
+          <div className="label">판매제품 (선택사항, 여러 개 가능)</div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -319,7 +330,7 @@ export default function NeedsTab({
           </div>
         ) : (
           <ul className="card divide-y divide-border overflow-hidden max-h-[28rem] overflow-y-auto">
-            {recent.map((n) => (
+            {recentSorted!.map((n) => (
               <li key={n.id} className="px-4 py-3 flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap gap-1.5">

@@ -20,22 +20,34 @@ export const handleSales = async (
   rest: string,
   url: URL,
 ): Promise<Response> => {
-  // GET /api/sales?from=&to=&limit=
+  // GET /api/sales?from=&to=&limit=&cursorAt=&cursorId=
+  // 커서 페이지네이션 — 정렬 sold_at DESC, id DESC. cursorAt/cursorId = 이전 페이지 마지막 항목 → 그 다음부터.
+  // limit+1로 hasMore 판정. 첫 페이지(커서 없음)일 때만 기간 내 전체 건수(total)도 함께 반환.
   if (rest === '' && request.method === 'GET') {
     const fromQ = url.searchParams.get('from');
     const toQ = url.searchParams.get('to');
-    const limit = Math.min(Number(url.searchParams.get('limit') ?? 100), 500);
-    const conds = ['s.user_id = ?'];
-    const args: (string | number)[] = [user.id];
+    const limN = Number(url.searchParams.get('limit') ?? 30);
+    const limit = Math.min(Math.max(Number.isFinite(limN) ? limN : 30, 1), 100);
+    const cursorAt = url.searchParams.get('cursorAt');
+    const cursorId = url.searchParams.get('cursorId');
+    // 기간 필터 — 목록/COUNT 둘 다 쓰므로 따로 보관
+    const baseConds = ['s.user_id = ?'];
+    const baseArgs: number[] = [user.id];
     if (fromQ) {
-      conds.push('s.sold_at >= ?');
-      args.push(Number(fromQ));
+      baseConds.push('s.sold_at >= ?');
+      baseArgs.push(Number(fromQ));
     }
     if (toQ) {
-      conds.push('s.sold_at <= ?');
-      args.push(Number(toQ));
+      baseConds.push('s.sold_at <= ?');
+      baseArgs.push(Number(toQ));
     }
-    args.push(limit);
+    const hasCursor = !!cursorAt && !!cursorId; // 빈 문자열도 "커서 없음" 취급 (total 누락 방지)
+    const conds = [...baseConds];
+    const args: number[] = [...baseArgs];
+    if (hasCursor) {
+      conds.push('(s.sold_at < ? OR (s.sold_at = ? AND s.id < ?))');
+      args.push(Number(cursorAt), Number(cursorAt), Number(cursorId));
+    }
     const { results } = await env.DB.prepare(
       `SELECT s.*, m.name AS menu_name, m.emoji AS menu_emoji
        FROM sales s LEFT JOIN menus m ON m.id = s.menu_id
@@ -43,9 +55,20 @@ export const handleSales = async (
        ORDER BY s.sold_at DESC, s.id DESC
        LIMIT ?`,
     )
-      .bind(...args)
+      .bind(...args, limit + 1)
       .all<SaleWithMenu>();
-    return ok({ sales: results });
+    const hasMore = results.length > limit;
+    const sales = hasMore ? results.slice(0, limit) : results;
+    let total: number | undefined;
+    if (!hasCursor) {
+      const c = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM sales s WHERE ${baseConds.join(' AND ')}`,
+      )
+        .bind(...baseArgs)
+        .first<{ n: number }>();
+      total = c?.n ?? sales.length;
+    }
+    return ok(total !== undefined ? { sales, hasMore, total } : { sales, hasMore });
   }
 
   // POST /api/sales

@@ -94,6 +94,13 @@ const PIE_COLORS = ['#1B4332', '#2D6A4F', '#52796F', '#C99D52', '#E76F51', '#767
 
 const TTL_STATS = 30 * 1000;
 const TTL_INSIGHTS = 60 * 60 * 1000; // AI 인사이트는 "이번 달" 고정 — 1시간 캐시면 충분
+const SALES_PAGE = 30; // 판매내역 한 페이지 (스크롤 시 다음 페이지 로드)
+
+interface SalesPage {
+  sales: Sale[];
+  hasMore: boolean;
+  total?: number; // 첫 페이지에만
+}
 
 // 고객 니즈 한 항목(성별/연령대/...)의 분포를 가로 막대 + 범례로
 function NeedsDim({
@@ -144,7 +151,14 @@ export default function BI() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [rankBy, setRankBy] = useState<'qty' | 'revenue'>('revenue');
-  const [sales, setSales] = useState<Sale[] | null>(null);
+  const [sales, setSales] = useState<Sale[] | null>(null); // 누적 (커서 페이지네이션)
+  const [salesHasMore, setSalesHasMore] = useState(false);
+  const [salesTotal, setSalesTotal] = useState<number | null>(null); // 기간 내 전체 건수
+  const [salesLoadingMore, setSalesLoadingMore] = useState(false);
+  const salesScrollRef = useRef<HTMLDivElement | null>(null); // 판매내역 스크롤 컨테이너 (무한스크롤 root)
+  const salesSentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreLockRef = useRef(false); // 다음 페이지 인플라이트 동기 가드 (옵저버 중복 발화 방지)
+  const salesPeriodRef = useRef(''); // 현재 기간 키 — loadMore 응답 도착 시 기간 바뀌었는지 확인용
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [needsStats, setNeedsStats] = useState<NeedsStats | null>(null);
@@ -203,12 +217,40 @@ export default function BI() {
     setCache(monthStatsCacheKey, d);
   }, [monthStatsCacheKey, monthFromMs, monthToMs, tzOffset]);
 
+  // 첫 페이지부터 다시 — 페이지네이션 상태 리셋 (편집 실패 후 재동기화용)
   const refetchSales = useCallback(async () => {
-    const d = await apiGet<{ sales: Sale[] }>(
-      `/api/sales?from=${fromMs}&to=${toMs}&limit=300`,
-    );
+    const d = await apiGet<SalesPage>(`/api/sales?from=${fromMs}&to=${toMs}&limit=${SALES_PAGE}`);
     setSales(d.sales);
+    setSalesHasMore(d.hasMore);
+    setSalesTotal(d.total ?? d.sales.length);
   }, [fromMs, toMs]);
+
+  // 다음 페이지 — 마지막 항목을 커서로. 스크롤 sentinel / "더 보기" 버튼이 호출.
+  const loadMoreSales = useCallback(async () => {
+    if (loadMoreLockRef.current || !salesHasMore || !sales || sales.length === 0) return;
+    const last = sales[sales.length - 1];
+    const reqKey = `${fromMs}-${toMs}`; // 이 요청의 기간 — 도착 시 salesPeriodRef와 다르면 폐기
+    loadMoreLockRef.current = true;
+    setSalesLoadingMore(true);
+    try {
+      const d = await apiGet<SalesPage>(
+        `/api/sales?from=${fromMs}&to=${toMs}&limit=${SALES_PAGE}&cursorAt=${last.sold_at}&cursorId=${last.id}`,
+      );
+      if (salesPeriodRef.current !== reqKey) return; // 기간 바뀜 → 이 응답 버림
+      // id 기준 중복 제거(이론상 동시 발화 대비) — 정상 경로에선 겹칠 일 없음
+      setSales((prev) => {
+        if (!prev) return d.sales;
+        const seen = new Set(prev.map((s) => s.id));
+        return [...prev, ...d.sales.filter((s) => !seen.has(s.id))];
+      });
+      setSalesHasMore(d.hasMore);
+    } catch {
+      /* 다음 페이지 실패는 조용히 — 사용자가 다시 스크롤하면 재시도 */
+    } finally {
+      loadMoreLockRef.current = false;
+      setSalesLoadingMore(false);
+    }
+  }, [salesHasMore, sales, fromMs, toMs]);
 
   useEffect(() => {
     let alive = true;
@@ -221,6 +263,11 @@ export default function BI() {
       setLoading(true);
     }
     setSales(null);
+    setSalesHasMore(false);
+    setSalesTotal(null);
+    setSalesLoadingMore(false);
+    loadMoreLockRef.current = false; // 기간 바뀜 — 인플라이트 loadMore 락 해제(스테일 응답은 salesPeriodRef로 폐기)
+    salesPeriodRef.current = `${fromMs}-${toMs}`;
     const tasks: Promise<unknown>[] = [];
     if (!isFresh(statsCacheKey, TTL_STATS)) {
       tasks.push(
@@ -234,10 +281,11 @@ export default function BI() {
       );
     }
     tasks.push(
-      apiGet<{ sales: Sale[] }>(
-        `/api/sales?from=${fromMs}&to=${toMs}&limit=300`,
-      ).then((d) => {
-        if (alive) setSales(d.sales);
+      apiGet<SalesPage>(`/api/sales?from=${fromMs}&to=${toMs}&limit=${SALES_PAGE}`).then((d) => {
+        if (!alive) return;
+        setSales(d.sales);
+        setSalesHasMore(d.hasMore);
+        setSalesTotal(d.total ?? d.sales.length);
       }),
     );
     Promise.all(tasks).finally(() => alive && setLoading(false));
@@ -246,6 +294,22 @@ export default function BI() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromMs, toMs, userId]);
+
+  // 판매내역 무한스크롤 — 스크롤 박스(root) 안 sentinel이 보이면 다음 페이지. (편집 모달 닫혀 있을 때만)
+  useEffect(() => {
+    if (editOpen || !salesHasMore) return;
+    const sentinel = salesSentinelRef.current;
+    const root = salesScrollRef.current;
+    if (!sentinel || !root) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) loadMoreSales();
+      },
+      { root, rootMargin: '160px' },
+    );
+    obs.observe(sentinel);
+    return () => obs.disconnect();
+  }, [editOpen, salesHasMore, loadMoreSales]);
 
   // 메뉴 개수 (빈 상태 분기용) — Sales/Menus와 동일한 menus:<userId> SWR 캐시 재사용
   useEffect(() => {
@@ -345,7 +409,11 @@ export default function BI() {
       await refetchStats();
     } catch (e) {
       alert(e instanceof Error ? e.message : '수정 실패');
-      await Promise.all([refetchStats(), refetchSales()]);
+      try {
+        await Promise.all([refetchStats(), refetchSales()]); // 실패 → 1페이지부터 재동기화
+      } catch {
+        /* 재동기화 실패는 무시 */
+      }
     } finally {
       setBusyId(null);
     }
@@ -355,13 +423,18 @@ export default function BI() {
     if (!confirm(`'${sale.menu_name}' 판매 기록을 취소할까요?`)) return;
     setBusyId(sale.id);
     setSales((prev) => (prev ? prev.filter((x) => x.id !== sale.id) : prev));
+    setSalesTotal((t) => (t != null ? t - 1 : t));
     try {
       await apiDelete(`/api/sales/${sale.id}`);
       editDirtyRef.current = true;
       await refetchStats();
     } catch (e) {
       alert(e instanceof Error ? e.message : '취소 실패');
-      await Promise.all([refetchStats(), refetchSales()]);
+      try {
+        await Promise.all([refetchStats(), refetchSales()]); // 실패 → 1페이지부터 재동기화
+      } catch {
+        /* 재동기화 실패는 무시 */
+      }
     } finally {
       setBusyId(null);
     }
@@ -369,11 +442,7 @@ export default function BI() {
 
   const closeEdit = async () => {
     setEditOpen(false);
-    try {
-      await refetchSales();
-    } catch {
-      /* 목록 갱신 실패는 무시 */
-    }
+    // 편집 결과는 이미 낙관적으로 sales에 반영됨 — 목록 재호출 안 함(페이지네이션 상태 유지). 집계만 갱신.
     if (editDirtyRef.current) {
       editDirtyRef.current = false;
       try {
@@ -913,11 +982,16 @@ export default function BI() {
             )}
           </div>
 
-          {/* 판매 내역 — 카드 사용내역 스타일 날짜별 그룹 (읽기 전용) */}
+          {/* 판매 내역 — 카드 사용내역 스타일 날짜별 그룹 (읽기 전용, 스크롤 시 더 로드) */}
           <div className="card p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">
-                판매 내역{sales ? ` (${sales.length}건)` : ''}
+                판매 내역
+                {salesTotal != null
+                  ? ` (전체 ${salesTotal.toLocaleString('ko-KR')}건)`
+                  : sales
+                  ? ` (${sales.length}건)`
+                  : ''}
               </h3>
               {sales && sales.length > 0 && (
                 <button
@@ -940,7 +1014,11 @@ export default function BI() {
                 이 기간에 판매 기록이 없습니다.
               </p>
             ) : (
-              <div className="max-h-[480px] overflow-y-auto -mx-1">
+              <div
+                key={`sales-${fromMs}-${toMs}`}
+                ref={salesScrollRef}
+                className="max-h-[480px] overflow-y-auto -mx-1"
+              >
                 {salesByDay.map(([day, items]) => {
                   const dayTotal = items.reduce(
                     (sum, x) => sum + x.price_at_sale * x.quantity,
@@ -979,6 +1057,26 @@ export default function BI() {
                     </div>
                   );
                 })}
+                {salesLoadingMore && (
+                  <div className="space-y-2 pt-1">
+                    <Skeleton className="h-12" />
+                    <Skeleton className="h-12" />
+                  </div>
+                )}
+                {salesHasMore && !salesLoadingMore && (
+                  <button
+                    type="button"
+                    onClick={loadMoreSales}
+                    className="w-full py-3 text-sm text-accent font-medium hover:bg-accent/5 rounded-lg"
+                  >
+                    더 보기
+                  </button>
+                )}
+                {/* 무한스크롤 sentinel — 보이면 다음 페이지 자동 로드 */}
+                {salesHasMore && <div ref={salesSentinelRef} className="h-px" />}
+                {!salesHasMore && sales.length > SALES_PAGE && (
+                  <p className="text-center text-xs text-sub py-2">전체 다 봤어요</p>
+                )}
               </div>
             )}
           </div>
@@ -1068,6 +1166,16 @@ export default function BI() {
                     </ul>
                   </div>
                 ))
+              )}
+              {salesHasMore && (
+                <button
+                  type="button"
+                  onClick={loadMoreSales}
+                  disabled={salesLoadingMore}
+                  className="w-full py-3 text-sm text-accent font-medium hover:bg-accent/5 rounded-lg disabled:opacity-50"
+                >
+                  {salesLoadingMore ? '불러오는 중…' : '더 보기'}
+                </button>
               )}
               </div>
             </div>

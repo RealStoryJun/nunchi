@@ -270,9 +270,9 @@ async function runBatched(items, fn, size = POST_CONCURRENCY) {
 
 async function wipeSales() {
   let removed = 0;
-  // 한 번에 최대 500건씩 가져와 삭제, 더 없을 때까지 반복
-  for (let guard = 0; guard < 200; guard++) {
-    const r = await j(await fetch(`${HOST}/api/sales?limit=500`, { headers: authHeaders() }));
+  // 한 번에 최대 100건씩(서버 상한) 가져와 삭제, 더 없을 때까지 반복
+  for (let guard = 0; guard < 1000; guard++) {
+    const r = await j(await fetch(`${HOST}/api/sales?limit=100`, { headers: authHeaders() }));
     const sales = r.ok ? r.data.sales : [];
     if (sales.length === 0) break;
     await runBatched(sales, (s) =>

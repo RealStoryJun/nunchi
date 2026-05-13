@@ -3,6 +3,28 @@ export const wonShort = (n: number) => n.toLocaleString('ko-KR');
 export const pct = (ratio: number, digits = 1) =>
   `${(ratio * 100).toFixed(digits)}%`;
 
+// BI 카드 요약용 — 자릿수 무관 항상 5~7자 이내. 한국 어법(이번 달 천구백만 / 1.5억) 맞춤.
+// 1만 미만: "9,999원" 그대로 / 1만~1억 미만: "194만원" 정수 만원 / 1억+: "1.5억원" 정수 또는 소수1자리
+// 정확값(원 단위)이 필요한 곳은 won()을 그대로 쓸 것. dashboard 요약 카드에만 사용.
+export const wonCompact = (n: number): string => {
+  if (!Number.isFinite(n) || n === 0) return '0원';
+  const sign = n < 0 ? '-' : '';
+  const abs = Math.abs(n);
+  if (abs >= 100_000_000) {
+    const v = abs / 100_000_000;
+    // 100억 이상은 소수점 없이 정수 (10,000억 = 1조 같은 큰 값은 자릿수 폭 줄이려고)
+    if (v >= 100) return `${sign}${Math.round(v).toLocaleString('en-US')}억원`;
+    // 1억~99.9억: 소수1자리 (정수면 생략)
+    const r = Math.round(v * 10) / 10;
+    return `${sign}${r % 1 === 0 ? r.toFixed(0) : r.toFixed(1)}억원`;
+  }
+  if (abs >= 10_000) {
+    const v = Math.round(abs / 10_000);
+    return `${sign}${v.toLocaleString('en-US')}만원`;
+  }
+  return `${sign}${abs.toLocaleString('en-US')}원`;
+};
+
 export const formatDate = (ms: number) => {
   const d = new Date(ms);
   const M = (d.getMonth() + 1).toString().padStart(2, '0');

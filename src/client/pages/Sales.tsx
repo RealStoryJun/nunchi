@@ -270,9 +270,9 @@ export default function Sales() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
-      <div className="lg:flex lg:gap-6 lg:items-start">
+      <div className="xl:flex xl:gap-6 xl:items-start">
         {/* 왼쪽: 헤더 + 메뉴 타일 */}
-        <div className="flex-1 min-w-0 pb-28 lg:pb-0">
+        <div className="flex-1 min-w-0 pb-28 xl:pb-0">
           <div className="md:hidden mb-3">
             <h1 className="font-display text-2xl">판매 입력</h1>
             <p className="text-sub text-xs">
@@ -339,7 +339,7 @@ export default function Sales() {
 
         {/* 오른쪽 고정 컬럼 (≥lg) — 담은 목록 */}
         {menus.length > 0 && (
-          <aside className="hidden lg:flex lg:flex-col lg:w-72 lg:shrink-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] card p-4">
+          <aside className="hidden xl:flex xl:flex-col xl:w-80 xl:shrink-0 xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] card p-4">
             <div className="flex items-baseline gap-2 mb-2 shrink-0">
               <h2 className="font-semibold">담은 목록</h2>
               {cart.length > 0 && (
@@ -356,7 +356,7 @@ export default function Sales() {
       {/* 하단 고정 패널 (<lg) — 모바일은 BottomNav 위, 태블릿은 화면 맨 아래 */}
       {menus.length > 0 && (
         <div
-          className="lg:hidden fixed left-0 md:left-64 right-0 bottom-16 md:bottom-0 z-30
+          className="xl:hidden fixed left-0 md:left-64 right-0 bottom-16 md:bottom-0 z-30
                      bg-card border-t border-border shadow-[0_-3px_14px_rgba(0,0,0,0.07)]
                      flex flex-col"
         >
@@ -403,7 +403,7 @@ export default function Sales() {
 
       {/* 기록 완료 토스트 */}
       {toast && (
-        <div className="fixed left-1/2 -translate-x-1/2 z-40 pointer-events-none bottom-32 md:bottom-20 lg:bottom-auto lg:top-20">
+        <div className="fixed left-1/2 -translate-x-1/2 z-40 pointer-events-none bottom-32 md:bottom-20 xl:bottom-auto xl:top-20">
           <div
             key={toast.key}
             className="anim-toast bg-accent text-white rounded-full px-4 py-2

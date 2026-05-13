@@ -26,6 +26,7 @@ import {
   startOfWeek,
   timeHM,
   won,
+  wonCompact,
   ymd,
 } from '../lib/format';
 
@@ -817,11 +818,11 @@ export default function BI() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            <StatCard label="총매출" value={won(stats.revenue)} tone="accent" />
-            <StatCard label="총원가" value={won(stats.cost)} />
+            <StatCard label="총매출" value={wonCompact(stats.revenue)} tone="accent" />
+            <StatCard label="총원가" value={wonCompact(stats.cost)} />
             <StatCard
               label="순이익"
-              value={won(stats.profit)}
+              value={wonCompact(stats.profit)}
               tone={stats.profit >= 0 ? 'accent' : 'warm'}
             />
             <StatCard
@@ -836,8 +837,8 @@ export default function BI() {
             <div className="grid grid-cols-2 gap-3 mb-6">
               <StatCard
                 label="실제 순이익"
-                value={won(stats.profit - monthFixedCost)}
-                hint={`고정비 ${won(monthFixedCost)} 차감 후`}
+                value={wonCompact(stats.profit - monthFixedCost)}
+                hint={`고정비 ${wonCompact(monthFixedCost)} 차감 후`}
                 tone={stats.profit - monthFixedCost >= 0 ? 'accent' : 'warm'}
               />
               <StatCard

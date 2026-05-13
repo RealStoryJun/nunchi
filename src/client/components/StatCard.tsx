@@ -15,10 +15,10 @@ export default function StatCard({ label, value, hint, tone = 'default' }: Props
   return (
     <div className="card p-4 md:p-5">
       <div className="text-sub text-sm">{label}</div>
-      <div className={`num text-2xl md:text-3xl font-bold mt-1 ${valueClass}`}>
+      <div className={`num text-xl md:text-3xl font-bold mt-1 whitespace-nowrap ${valueClass}`}>
         {value}
       </div>
-      {hint && <div className="text-sub text-xs mt-1 num">{hint}</div>}
+      {hint && <div className="text-sub text-xs mt-1 num break-keep">{hint}</div>}
     </div>
   );
 }

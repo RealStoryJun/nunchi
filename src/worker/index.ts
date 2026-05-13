@@ -7,6 +7,7 @@ import { handleInferEmoji } from './emoji';
 import { handleInsights } from './insights';
 import { handleAdmin } from './admin';
 import { handleNeeds } from './needs';
+import { handleMonthlyCosts } from './monthly-costs';
 import { getSessionUser } from './session';
 
 export default {
@@ -76,6 +77,16 @@ export default {
           env,
           session.user,
           path.replace('/api/needs', ''),
+          url,
+        );
+      }
+
+      if (path === '/api/monthly-costs' || path.startsWith('/api/monthly-costs/')) {
+        return await handleMonthlyCosts(
+          request,
+          env,
+          session.user,
+          path.replace('/api/monthly-costs', ''),
           url,
         );
       }

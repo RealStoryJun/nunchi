@@ -45,6 +45,7 @@ interface InsightsBody {
   rangeLabel?: string;
   needs?: NeedsAgg | null;
   businessType?: BusinessType | null;
+  monthlyFixedCost?: number;
 }
 
 // 니즈 항목 코드 → 한글 라벨 (프롬프트용)
@@ -151,12 +152,16 @@ const sanitizeBody = (raw: unknown): InsightsBody | null => {
     const p = o.prevStats as Record<string, unknown>;
     prevStats = { revenue: num(p.revenue), profit: num(p.profit), qty: num(p.qty) };
   }
+  const fc = num(o.monthlyFixedCost);
+  // 사이트 어느 항목도 100억 넘는 게 비현실 — 그 이상은 0으로 떨궈 LLM이 헛소리 하지 않게.
+  const MAX_FC = 10_000_000_000;
   return {
     stats,
     prevStats,
     rangeLabel: str(o.rangeLabel, 30) || undefined,
     needs: sanitizeNeeds(o.needs),
     businessType: isBusinessType(o.businessType) ? o.businessType : null,
+    monthlyFixedCost: fc > 0 && Number.isFinite(fc) && fc <= MAX_FC ? Math.round(fc) : 0,
   };
 };
 
@@ -168,6 +173,13 @@ const buildSummary = (b: InsightsBody): string => {
   lines.push(
     `- 총매출 ${won(s.revenue)} / 총원가 ${won(s.cost)} / 순이익 ${won(s.profit)} / 마진율 ${pctStr(s.margin)} / 판매 ${s.qty}건`,
   );
+  const fc = b.monthlyFixedCost ?? 0;
+  if (fc > 0) {
+    const realProfit = s.profit - fc;
+    lines.push(
+      `- 이번 달 고정비 ${won(fc)} (임대료·공과금·인건비 등 매월 고정 지출) → 실제 순이익 ${won(realProfit)}`,
+    );
+  }
   if (b.prevStats) {
     const rd =
       b.prevStats.revenue > 0

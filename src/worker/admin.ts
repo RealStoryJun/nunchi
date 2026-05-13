@@ -69,6 +69,7 @@ export async function handleAdmin(
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM sales WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM customer_needs WHERE user_id IN (${ph})`).bind(...ids),
+      env.DB.prepare(`DELETE FROM monthly_cost_items WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM menus WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM sessions WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM users WHERE id IN (${ph})`).bind(...ids),

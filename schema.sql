@@ -75,8 +75,21 @@ CREATE TABLE IF NOT EXISTS customer_needs (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- 월별 고정 지출(임대료·공과금·인건비 등) — 사장님이 매월 자유 라벨로 입력
+CREATE TABLE IF NOT EXISTS monthly_cost_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  year_month TEXT NOT NULL,        -- 'YYYY-MM' (사용자 로컬 타임존 기준)
+  label TEXT NOT NULL,
+  amount INTEGER NOT NULL,         -- 원 단위
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_sales_user_date ON sales(user_id, sold_at);
 CREATE INDEX IF NOT EXISTS idx_menus_user ON menus(user_id, archived);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_attempts ON auth_attempts(key, attempted_at);
 CREATE INDEX IF NOT EXISTS idx_needs_user ON customer_needs(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_mci_user_ym ON monthly_cost_items(user_id, year_month);

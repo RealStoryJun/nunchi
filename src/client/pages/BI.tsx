@@ -88,6 +88,13 @@ interface NeedsStats {
   topMenus: { menuId: number; name: string | null; emoji: string | null; count: number }[];
 }
 
+interface CostItem {
+  id: number;
+  label: string;
+  amount: number;
+  sort_order: number;
+}
+
 type Range = 'today' | 'week' | 'month' | 'custom';
 
 const PIE_COLORS = ['#1B4332', '#2D6A4F', '#52796F', '#C99D52', '#E76F51', '#767270'];
@@ -95,6 +102,23 @@ const PIE_COLORS = ['#1B4332', '#2D6A4F', '#52796F', '#C99D52', '#E76F51', '#767
 const TTL_STATS = 30 * 1000;
 const TTL_INSIGHTS = 60 * 60 * 1000; // AI 인사이트는 "이번 달" 고정 — 1시간 캐시면 충분
 const SALES_PAGE = 30; // 판매내역 한 페이지 (스크롤 시 다음 페이지 로드)
+const COST_RECOMMENDED_LABELS = [
+  '임대료',
+  '공과금',
+  '통신비',
+  '보험·세금',
+  '구독·소프트웨어',
+  '마케팅',
+  '알바비',
+];
+const MAX_COST_ITEMS = 30;
+const prevYearMonth = (ym: string): string => {
+  const y = Number(ym.slice(0, 4));
+  const m = Number(ym.slice(5, 7));
+  return m === 1
+    ? `${y - 1}-12`
+    : `${y}-${String(m - 1).padStart(2, '0')}`;
+};
 
 interface SalesPage {
   sales: Sale[];
@@ -165,6 +189,13 @@ export default function BI() {
   // AI 인사이트 — 기간 선택과 무관하게 항상 "이번 달" 기준 (오늘/사용자지정은 분석 의미가 약하고 호출만 늘어남)
   const [monthStats, setMonthStats] = useState<Stats | null>(null);
   const [monthNeedsStats, setMonthNeedsStats] = useState<NeedsStats | null>(null);
+  // 이번 달 고정비 — null = 아직 안 불러옴, 빈 배열 = 등록 없음
+  const [monthCostItems, setMonthCostItems] = useState<CostItem[] | null>(null);
+  const [costEditOpen, setCostEditOpen] = useState(false);
+  // 편집 버퍼 — amount는 input UX 위해 문자열로 유지, 저장 시 파싱
+  const [editingCosts, setEditingCosts] = useState<{ label: string; amount: string }[]>([]);
+  const [costSaving, setCostSaving] = useState(false);
+  const [costMsg, setCostMsg] = useState<string | null>(null);
   const [insights, setInsights] = useState<string[] | null>(null);
   const [insightsBump, setInsightsBump] = useState(0);
   // 메뉴 등록 여부 — BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
@@ -189,13 +220,20 @@ export default function BI() {
   }, [range, from, to]);
 
   // 이번 달 윈도우 (세션 동안 고정) — "이번 달" 기간 선택과 동일한 from/to라 stats 캐시도 공유
-  const [monthFromMs, monthToMs] = useMemo(() => {
+  const [monthFromMs, monthToMs, currentYm] = useMemo(() => {
     const now = new Date();
-    return [startOfMonth(now).getTime(), endOfDay(now).getTime()];
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return [startOfMonth(now).getTime(), endOfDay(now).getTime(), ym];
   }, []);
   const monthStatsCacheKey = `stats:${userId}:${monthFromMs}:${monthToMs}`;
-  // 업종이 바뀌면 인사이트 톤도 바뀌어야 함 → 키에 포함
-  const monthInsightsKey = `insights:${userId}:${user?.business_type ?? 'none'}:${monthFromMs}:${monthToMs}`;
+  const monthCostsKey = `fixedCosts:${userId}:${currentYm}`;
+  // 이번 달 고정비 총합 (useMemo로 파생) — 인사이트 키·prompt에 동봉
+  const monthFixedCost = useMemo(
+    () => (monthCostItems ? monthCostItems.reduce((s, x) => s + x.amount, 0) : 0),
+    [monthCostItems],
+  );
+  // 업종이 바뀌면 인사이트 톤도, 고정비가 바뀌면 손익 인사이트도 새로
+  const monthInsightsKey = `insights:${userId}:${user?.business_type ?? 'none'}:${monthFromMs}:${monthToMs}:fc${monthFixedCost}`;
 
   const statsCacheKey = `stats:${userId}:${fromMs}:${toMs}`;
   const tzOffset = -new Date().getTimezoneOffset();
@@ -361,10 +399,22 @@ export default function BI() {
             topMenus: [],
           }),
       );
+    // 이번 달 고정비 — 캐시 우선, 백그라운드 갱신. 실패해도 빈 배열로 두어 BI 진행 계속
+    const cachedCosts = getCache<{ items: CostItem[]; total: number }>(monthCostsKey);
+    if (cachedCosts) setMonthCostItems(cachedCosts.items);
+    if (!isFresh(monthCostsKey, TTL_STATS)) {
+      apiGet<{ items: CostItem[]; total: number }>(`/api/monthly-costs?ym=${currentYm}`)
+        .then((d) => {
+          if (!alive) return;
+          setMonthCostItems(d.items);
+          setCache(monthCostsKey, d);
+        })
+        .catch(() => alive && setMonthCostItems((p) => p ?? []));
+    }
     return () => {
       alive = false;
     };
-  }, [monthStatsCacheKey, monthFromMs, monthToMs, tzOffset]);
+  }, [monthStatsCacheKey, monthCostsKey, monthFromMs, monthToMs, tzOffset, currentYm]);
 
   // 고객 니즈 집계 (선택 기간) — /needs 페이지와 별개, BI에 요약 카드로
   useEffect(() => {
@@ -397,6 +447,80 @@ export default function BI() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromMs, toMs, userId]);
+
+  // ─── 고정비 모달 핸들러 ──────────────────────────────────────────
+  const openCostEdit = () => {
+    if (monthCostItems && monthCostItems.length > 0) {
+      // 기존 항목 편집
+      setEditingCosts(
+        monthCostItems.map((it) => ({ label: it.label, amount: String(it.amount) })),
+      );
+    } else {
+      // 첫 입력 — 추천 라벨 7개 빈 금액으로 + 사용자 추가용 빈 행 한 줄
+      setEditingCosts(COST_RECOMMENDED_LABELS.map((l) => ({ label: l, amount: '' })));
+    }
+    setCostMsg(null);
+    setCostEditOpen(true);
+  };
+  const updateCostRow = (i: number, key: 'label' | 'amount', v: string) => {
+    setEditingCosts((rows) => {
+      const copy = rows.slice();
+      copy[i] = { ...copy[i], [key]: v };
+      return copy;
+    });
+  };
+  const addCostRow = () => {
+    if (editingCosts.length >= MAX_COST_ITEMS) return;
+    setEditingCosts((rows) => [...rows, { label: '', amount: '' }]);
+  };
+  const removeCostRow = (i: number) => {
+    setEditingCosts((rows) => rows.filter((_, idx) => idx !== i));
+  };
+  const copyPrevCosts = async () => {
+    const prevYm = prevYearMonth(currentYm);
+    try {
+      const d = await apiGet<{ items: CostItem[]; total: number }>(
+        `/api/monthly-costs?ym=${prevYm}`,
+      );
+      if (d.items.length === 0) {
+        setCostMsg('지난 달에 등록된 고정비가 없어요.');
+        return;
+      }
+      setEditingCosts(d.items.map((it) => ({ label: it.label, amount: String(it.amount) })));
+      setCostMsg('지난 달 항목을 가져왔어요. 확인하고 저장하세요.');
+    } catch {
+      setCostMsg('지난 달 데이터를 불러오지 못했어요.');
+    }
+  };
+  const saveCosts = async () => {
+    if (costSaving) return;
+    // 라벨이 비었거나 금액이 비어/0이면 제외 — 자연스럽게 "해당 칸만 채우면 됨"
+    const cleaned = editingCosts
+      .map((row, i) => ({
+        label: row.label.trim(),
+        amount: Number(row.amount.replace(/,/g, '')) || 0,
+        sort_order: i,
+      }))
+      .filter((row) => row.label.length > 0 && row.amount > 0);
+    setCostSaving(true);
+    try {
+      const d = await apiPut<{ items: CostItem[]; total: number }>(
+        `/api/monthly-costs?ym=${currentYm}`,
+        { items: cleaned },
+      );
+      setMonthCostItems(d.items);
+      setCache(monthCostsKey, d);
+      // 고정비가 바뀌었으니 인사이트 새로 — 캐시 무효화 + bump
+      invalidate(monthInsightsKey);
+      setInsights(null);
+      setInsightsBump((n) => n + 1);
+      setCostEditOpen(false);
+    } catch (e) {
+      setCostMsg(e instanceof Error ? e.message : '저장에 실패했어요.');
+    } finally {
+      setCostSaving(false);
+    }
+  };
 
   const changeQty = async (sale: Sale, q: number) => {
     if (q < 1 || busyId === sale.id) return;
@@ -523,6 +647,7 @@ export default function BI() {
       return;
     }
     if (monthNeedsStats === null) return; // 니즈 집계 도착 대기 (도착하면 effect 재실행)
+    if (monthCostItems === null) return; // 고정비 도착 대기 (빈 배열로라도 와야 정확)
     let alive = true;
     const cached = getCache<string[]>(monthInsightsKey);
     if (cached) setInsights(cached);
@@ -532,6 +657,7 @@ export default function BI() {
       rangeLabel: '이번 달',
       needs: monthNeedsStats.total > 0 ? monthNeedsStats : undefined,
       businessType: user?.business_type ?? undefined,
+      monthlyFixedCost: monthFixedCost > 0 ? monthFixedCost : undefined,
     })
       .then((d) => {
         if (!alive) return;
@@ -546,7 +672,7 @@ export default function BI() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthStats, monthNeedsStats, monthPeakHour, monthInsightsKey, insightsBump]);
+  }, [monthStats, monthNeedsStats, monthCostItems, monthPeakHour, monthInsightsKey, insightsBump]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
@@ -704,6 +830,74 @@ export default function BI() {
               hint={`${stats.qty}건 판매`}
             />
           </div>
+
+          {/* 실제 손익 — "이번 달" 보기 + 고정비 등록 시에만 (다른 기간엔 단위가 안 맞음) */}
+          {range === 'month' && monthFixedCost > 0 && (
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              <StatCard
+                label="실제 순이익"
+                value={won(stats.profit - monthFixedCost)}
+                hint={`고정비 ${won(monthFixedCost)} 차감 후`}
+                tone={stats.profit - monthFixedCost >= 0 ? 'accent' : 'warm'}
+              />
+              <StatCard
+                label="실제 마진율"
+                value={
+                  stats.revenue > 0
+                    ? pct((stats.profit - monthFixedCost) / stats.revenue)
+                    : '—'
+                }
+                hint="고정비 차감 후"
+              />
+            </div>
+          )}
+
+          {/* 이번 달 고정비 — 등록 권유 CTA 또는 요약 카드. 빈 상태 친근하게. */}
+          {monthCostItems !== null && monthCostItems.length === 0 ? (
+            <button
+              type="button"
+              onClick={openCostEdit}
+              className="card w-full p-4 mb-6 flex items-center justify-between text-left hover:border-accent/40 transition group"
+            >
+              <div className="min-w-0">
+                <div className="font-medium break-keep">
+                  이번 달 고정비도 적어두면, 손에 쥐는 돈이 보여요
+                </div>
+                <div className="text-sub text-xs mt-1 break-keep">
+                  임대료·공과금·인건비 등을 한 번 적어두면 실제 순이익을 알려드려요
+                </div>
+              </div>
+              <span className="text-sub group-hover:text-accent transition shrink-0 ml-3">→</span>
+            </button>
+          ) : monthCostItems && monthCostItems.length > 0 ? (
+            <div className="card p-4 mb-6">
+              <div className="flex items-baseline justify-between mb-2">
+                <h3 className="font-semibold text-sm">이번 달 고정비</h3>
+                <button
+                  type="button"
+                  onClick={openCostEdit}
+                  className="text-sm text-accent font-medium px-3 h-10 rounded-lg hover:bg-accent/10 -my-1"
+                >
+                  수정
+                </button>
+              </div>
+              <ul className="space-y-1 text-sm">
+                {monthCostItems.slice(0, 3).map((it) => (
+                  <li key={it.id} className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-ink/80">{it.label}</span>
+                    <span className="num text-ink/90 shrink-0">{won(it.amount)}</span>
+                  </li>
+                ))}
+                {monthCostItems.length > 3 && (
+                  <li className="text-xs text-sub pt-0.5">외 {monthCostItems.length - 3}개</li>
+                )}
+              </ul>
+              <div className="mt-3 pt-2 border-t border-border flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium">합계</span>
+                <span className="num font-semibold">{won(monthFixedCost)}</span>
+              </div>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="card p-4">
@@ -1181,6 +1375,100 @@ export default function BI() {
               )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 이번 달 고정비 편집 모달 — 모바일 풀스크린, 데스크탑 중앙 다이얼로그 */}
+      {costEditOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-bg md:items-center md:justify-center md:bg-black/40 md:p-6">
+          <div className="flex flex-col flex-1 min-h-0 w-full bg-bg overflow-hidden md:flex-none md:max-w-xl md:max-h-[85vh] md:rounded-2xl md:border md:border-border md:shadow-2xl">
+            <header className="px-4 h-14 flex items-center justify-between border-b border-border bg-card shrink-0">
+              <h2 className="font-semibold">이번 달 고정비</h2>
+              <button
+                type="button"
+                onClick={() => setCostEditOpen(false)}
+                className="text-sm text-sub px-3 h-9 rounded-lg hover:bg-black/5"
+              >
+                닫기
+              </button>
+            </header>
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+              <p className="text-sub text-sm mb-3 break-keep">
+                해당하는 칸만 채우면 돼요. 빈 줄은 자동으로 제외됩니다.
+              </p>
+              <button
+                type="button"
+                onClick={copyPrevCosts}
+                className="text-sm text-accent font-medium px-3 h-10 rounded-lg hover:bg-accent/10 mb-3 inline-flex items-center gap-1"
+              >
+                지난 달과 같이 채우기 <span aria-hidden>→</span>
+              </button>
+              {costMsg && (
+                <div className="text-sm text-sub mb-3 px-3 py-2 rounded-md bg-bg border border-border">
+                  {costMsg}
+                </div>
+              )}
+              <ul className="space-y-2">
+                {editingCosts.map((row, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={row.label}
+                      onChange={(e) => updateCostRow(i, 'label', e.target.value)}
+                      placeholder="항목명"
+                      maxLength={20}
+                      className="field flex-1 min-w-0 h-10"
+                    />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={row.amount ? Number(row.amount).toLocaleString('ko-KR') : ''}
+                      onChange={(e) =>
+                        updateCostRow(i, 'amount', e.target.value.replace(/[^\d]/g, ''))
+                      }
+                      placeholder="금액"
+                      className="field w-32 h-10 num text-right"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeCostRow(i)}
+                      className="text-warm w-10 h-10 inline-flex items-center justify-center rounded-md hover:bg-warm/10 shrink-0"
+                      aria-label="삭제"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {editingCosts.length < MAX_COST_ITEMS && (
+                <button
+                  type="button"
+                  onClick={addCostRow}
+                  className="mt-3 text-sm text-accent font-medium px-3 h-10 rounded-lg hover:bg-accent/10"
+                >
+                  + 항목 추가
+                </button>
+              )}
+            </div>
+            <footer className="px-4 py-3 border-t border-border bg-card shrink-0 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCostEditOpen(false)}
+                disabled={costSaving}
+                className="btn-outline flex-1 h-11"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={saveCosts}
+                disabled={costSaving}
+                className="btn-primary flex-[2] h-11"
+              >
+                {costSaving ? '저장 중…' : '저장'}
+              </button>
+            </footer>
           </div>
         </div>
       )}

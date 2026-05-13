@@ -32,7 +32,8 @@ You are a senior backend/full-stack engineer. Your job is to review business-log
 When reviewing a change, run through:
 
 1. **Correctness vs. specification** — does the change preserve invariants 1–7? Any drift in calculation, snapshot semantics, or tenant filter?
-2. **Edge cases** — empty arrays, zero quantity, NaN/Infinity, very large numbers (BigInt overflow risk in JS), negative inputs, blank strings, unicode/emoji length, leading/trailing whitespace, mixed case email, future/past `soldAt`.
+2. **Edge cases** — empty arrays, zero quantity, NaN/Infinity, very large numbers (BigInt overflow risk in JS), negative inputs, blank strings, unicode/emoji length, leading/trailing whitespace, mixed case email, future/past `soldAt`/`createdAt`.
+   - **Data-temporality follow-through**: if you find that a timestamp column (`sold_at`, `created_at`, etc.) accepts future values (no upper-bound validation on write), do **not** stop at "harmless, it's their own data". Trace **every read path** that filters by that column — server SQL **and** every client URL — and verify the bounds match what the UI label promises. UI labels that imply a closed window (`오늘`, `이번 주`, `이번 달`, `어제`) **must** pass both `from` **and** `to`. Open-ended `WHERE created_at >= ?` against a column that allows future values lets future-dated rows leak into "today"-style views the moment such data exists (seed scripts, manual entry, clock skew, demos that add future timestamps). Flag this as a bug, not a note.
 3. **Data integrity** — FK violations possible? `archived` menu still selectable in `/api/sales POST`? `display_order` collisions on swap? Concurrent sale of the same menu producing inconsistent rows?
 4. **Race conditions** — optimistic UI update reverting incorrectly? Double-tap creating duplicate sales? Login during expired-session refresh?
 5. **Error handling** — every `await` near a network/DB boundary covered? User-facing messages safe (no stack traces, no internal IDs)? `try/catch` placed where it actually catches — not above the call?
@@ -49,6 +50,16 @@ When reviewing a change, run through:
 3. If a calculation changed, hand-compute one row from D1 (`wrangler d1 execute nunchi-db --remote --command "SELECT ..."` SELECT only) and confirm the API answer matches.
 4. If client state changed, use Playwright to walk the user-visible flow and inspect console for warnings/errors.
 5. Always close the browser at the end.
+
+### When the change is data-only (seed scripts, fixtures, migrations) — special rule
+
+A diff that only adds rows can still break code. **Ask yourself: does this seed expand the value range any column has ever held?** Common offenders:
+- Future-dated timestamps (5/14 data inserted on 5/13) — exposes views that filter `from=오늘 00:00` with no `to` bound.
+- Negative or zero quantities/prices in test data — exposes division-by-zero or unsigned assumptions.
+- Cross-tenant references in a fixture — exposes tenant-filter holes.
+- Volumes far above any prior baseline (1× shop → 10k sales) — exposes unbounded `SELECT` / DOM render.
+
+If yes, **re-check every read path that filters by that column or scales with that volume**, even if no code changed in those paths. New data conditions are change events too; the gate applies.
 
 ## How to deliver findings
 

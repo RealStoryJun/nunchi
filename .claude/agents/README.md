@@ -210,31 +210,43 @@ Don't repeat logic/design/security concerns.
 ```
 You are the "design-reviewer" for the Nunchi app. Brief at
 `Z:\ClaudeCode\develop\nunchi\.claude\agents\design-reviewer.md` — read it first.
-Requires BOTH iPhone 13 mini (375×812) AND desktop (1440×900) checks, with the
-item-11 desktop checklist. Read-only: Read/Grep/Glob/Playwright MCP.
+Pay particular attention to:
+  - #3 + #3b together (page-level overflow + within-container fit-test with
+    synthetic-data injection — past regressions slipped because only #3 was checked).
+  - #11 breakpoint matrix (375 / 768 / 1024 / 1280 / 1440 / 1920) — any
+    layout-affecting change MUST measure scrollWidth at 1024 AND 1280, not just 1440.
+Read-only: Read/Grep/Glob/Playwright MCP.
 Live: https://nunchi.realstoryjun.workers.dev. Test accounts: <pick>.
 
 ## Scope: <what UI changed>
 
 <files + file:line; explain layout/typography/component additions; reference the
-index.css typography canon if relevant.>
+index.css typography canon if relevant. If the change touches numbers/currency in
+a card/grid, note the value's plausible data-range growth (e.g. magnitude
+acumulation, sign).>
 
 ## Your job
 
 1. Read the changed files.
-2. Playwright pass at 375×812 (logged-in account with rich data): visit each
-   affected page, take screenshots, check for horizontal overflow
-   (document.documentElement.scrollWidth === 375 or === viewport).
-3. Playwright pass at 1440×900: same checks + item-11 desktop checklist.
-4. Tone check vs. the app's 고급스럽고 친절한 voice.
+2. Phone pass (375×812, logged-in account with rich data): visit each affected
+   page, take screenshots, run #3 (`scrollWidth === viewport`) AND #3b
+   (per-element `getBoundingClientRect()` fit-test with synthetic-data injection
+   for any whitespace-nowrap dynamic text).
+3. Breakpoint-edge pass (1024 AND 1280) — required for any flex/grid/sticky/
+   fixed layout change. Same measurements. Past regression: Sales `lg:w-80`
+   at 1024 overflowed page by 73px, missed because dev only checked 1440.
+4. Desktop pass (1440×900): same checks + item-11 desktop checklist. Spot-check
+   1920 for ultrawide.
+5. Tone check vs. the app's 고급스럽고 친절한 voice.
 
 Always `browser_close` at the end.
 
 ## Report
 
 Per the brief's format: numbered, severity-ordered (🔴 BLOCKER / 🟡 POLISH /
-🟢 NICE), each tagged 📱/🖥️/both, file:line + viewport + evidence (screenshot
-observation) + 1-line fix. ≤350 words.
+🟢 NICE), each tagged 📱/🖥️/both, file:line + viewport + evidence (measurement,
+not eyeball) + 1-line fix. ≤350 words.
+For #3b fit-test results, report as a table: `[label] vp=N cardW=M valueW=K slack=L fits=yes|no`.
 End with: "Ship as-is" / "Ship with minor fixes" / "Block — must fix #N".
 ```
 
@@ -328,3 +340,15 @@ For a trivial change (one-line copy fix, typo, single class swap): use judgment,
 If a reviewer misses a class of bug, update the **brief** (the per-agent `.md` file), not just one-off prompts. Append a checklist item or a special-rule section. Future spawns inherit it automatically.
 
 When you add a check, write it as a concrete action ("if you find X, then trace Y"), not a hope ("be careful about X"). Hope doesn't survive a context window.
+
+### Past reviewer-miss → brief patch log
+
+Each row = a regression that slipped through a stage, then a brief patch so the same class is caught next time. **Don't water these rules down** — they exist because something specifically went wrong.
+
+| Date | Stage | Miss | Brief patch |
+|---|---|---|---|
+| 2026-05-13 | logic | `createdAt` 미래값 허용을 발견했으나 "Note only — BI 필터가 처리"로 결론, 클라이언트의 `/needs` from-only 필터를 추적 안 함. 시드로 미래 데이터 들어오자 "오늘 기록"이 깨짐. | `logic-reviewer.md` #2: timestamp 컬럼이 미래값 허용을 발견하면 그 컬럼으로 필터하는 **모든 read 경로**의 상·하한을 확인. UI 라벨이 닫힌 윈도우면 from+to 필수. + 데이터-only 변경(시드)이 컬럼 값 범위를 확장하면 의존 read 경로 재검증. |
+| 2026-05-13 | design | StatCard `text-3xl` 값이 7자릿 ₩(1,779,000원)에선 fit, 매출 누적되어 8자릿(1,942,500원)되니 옆 카드로 sideways overflow. `scrollWidth === viewport`만 검사해서 통과. 데이터 자릿수 시뮬레이션 없었음. | `design-reviewer.md` #3 명시 + 새 **#3b Within-container fit-test**: `whitespace-nowrap` + dynamic text는 `getBoundingClientRect` 비교 + **합성 데이터 주입**(+1, +2 자릿수). 슬랙 <30px이면 flag. `truncate` ≠ fit-test 통과. |
+| 2026-05-14 | design | Sales `lg:w-80` cart aside가 1024 viewport에서 73px 가로 오버플로. 1440에서만 검증해서 미스 (1024에서 main = viewport−sidebar 256 = 768인데 320+24+content가 못 들어감). | `design-reviewer.md` #11에 **브레이크포인트 매트릭스** (375/768/1024/1280/1440/1920) + 각 vp가 의미 있는 이유. layout-affecting 변경은 1024 + 1280 반드시 측정. + "How to perform" 3a 단계(브레이크포인트 엣지 pass) 추가. |
+
+새 미스가 발견되면 위 표에 한 줄 추가 + 브리프에 해당 룰 박는 것이 패턴. **검증자에게 "그냥 잘 봐줘"는 안 통한다** — 무엇을·어떻게·어느 viewport에서 측정할지 절차로 못박아야 LLM 검증자가 그걸 한다.

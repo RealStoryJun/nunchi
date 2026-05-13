@@ -87,10 +87,15 @@ export default function Guide() {
 
           <section className="mt-14">
             <h2 className="font-display text-2xl md:text-3xl mb-3">⑤ BI 대시보드</h2>
-            <p className="text-ink/80 leading-relaxed mb-4">
+            <p className="text-ink/80 leading-relaxed mb-3">
               오늘·이번 주·이번 달·사용자 지정 기간으로 매출, 원가, 순이익, 마진율,
               인기 메뉴, 시간대별 매출, 고객 니즈 분포까지. 매일 영업 끝나고 한 번씩
               들여다보면 감이 잡혀요.
+            </p>
+            <p className="text-ink/80 leading-relaxed mb-4">
+              위쪽 요약 카드는 한눈에 보이게 <strong className="text-ink">만/억 단위</strong>로
+              줄여 보여드려요 (예: 1,942,500원 → 194만원, 1.5억원). 원 단위 정확값은
+              아래 "판매 내역"에서 줄별로 그대로 확인할 수 있어요.
             </p>
             <Shot name="bi" alt="BI 대시보드" />
           </section>

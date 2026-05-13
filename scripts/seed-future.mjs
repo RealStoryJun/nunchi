@@ -24,16 +24,32 @@ if (TARGET_END <= NOW) {
 
 const BIZ_START = 8; // 영업 시작 시 (KST)
 const BIZ_END = 22; // 영업 종료 시 (exclusive)
-const SALES_PER_ACCOUNT = 32; // ~22/일 × 1.5일치 정도
-const NEEDS_PER_ACCOUNT = 7;
+// 미래 윈도우(일 단위, 부분일 포함). 페이스는 계정별 기존 30일 일평균에서 측정.
+const WINDOW_DAYS = (TARGET_END - NOW) / 86_400_000;
 
 const GENDER = [['female', 55], ['male', 45]];
 const AGE = [['10s_20s', 28], ['30s_40s', 48], ['50plus', 24]];
-const CHILD = [[true, 22], [false, 70], [null, 8]];
-const PURPOSE = [['meal_replacement', 40], ['gift', 25], ['kids_snack', 20], [null, 15]];
 const RESID = [['busan', 74], ['outside', 26]];
 const N_MENUS = [[1, 56], [2, 30], [3, 11], [4, 3]];
 const QTY = [[1, 80], [2, 17], [3, 3]];
+
+// 업태별 손님 특성 분포 — 옷가게/미용실엔 "식사대용/자녀간식용"이 어울리지 않음.
+const PURPOSE_BY_TYPE = {
+  cafe: [['meal_replacement', 35], ['gift', 25], ['kids_snack', 20], [null, 20]],
+  restaurant: [['meal_replacement', 60], ['gift', 10], ['kids_snack', 15], [null, 15]],
+  bakery: [['gift', 35], ['kids_snack', 30], ['meal_replacement', 25], [null, 10]],
+  clothing: [['gift', 55], [null, 45]],
+  beauty: [['gift', 18], [null, 82]], // 미용은 거의 본인용
+  default: [['meal_replacement', 40], ['gift', 25], ['kids_snack', 20], [null, 15]],
+};
+const CHILD_BY_TYPE = {
+  cafe: [[true, 22], [false, 70], [null, 8]],
+  restaurant: [[true, 30], [false, 60], [null, 10]],
+  bakery: [[true, 38], [false, 55], [null, 7]], // 아이들 빵 사러
+  clothing: [[true, 10], [false, 80], [null, 10]],
+  beauty: [[false, 92], [null, 8]],
+  default: [[true, 22], [false, 70], [null, 8]],
+};
 
 const wpick = (items) => {
   let total = 0;
@@ -127,6 +143,8 @@ async function wipeFutureNeeds(cookie) {
 
 async function fillAccount(email) {
   const cookie = await login(email);
+  const meRes = await j(await fetch(`${HOST}/api/me`, { headers: { cookie } }));
+  const businessType = meRes.ok ? meRes.data.user.business_type : 'default';
   const menusRes = await j(await fetch(`${HOST}/api/menus`, { headers: { cookie } }));
   const menus = menusRes.ok ? menusRes.data.menus : [];
   if (menus.length === 0) {
@@ -134,13 +152,28 @@ async function fillAccount(email) {
     await fetch(`${HOST}/api/auth/logout`, { method: 'POST', headers: { cookie } });
     return;
   }
+
+  // 기존 30일 일평균 측정 → 미래 윈도우만큼만 비례해서 채움 (업태별 페이스 자동 반영).
+  const F30 = NOW - 30 * 86_400_000;
+  const pastR = await j(
+    await fetch(`${HOST}/api/sales?from=${F30}&to=${NOW}&limit=1`, { headers: { cookie } }),
+  );
+  const past30Total = pastR.ok ? pastR.data.total ?? 0 : 0;
+  const dailyRate = past30Total / 30;
+  const salesCount = Math.max(2, Math.round(dailyRate * WINDOW_DAYS));
+  // 니즈는 판매의 약 15% (옷가게처럼 일평균 5건이면 1~2건만 들어가게)
+  const needsCount = Math.max(1, Math.round(salesCount * 0.15));
+
   const wipedSales = await wipeFutureSales(cookie);
   const wipedNeeds = await wipeFutureNeeds(cookie);
+
+  const PURPOSE = PURPOSE_BY_TYPE[businessType] ?? PURPOSE_BY_TYPE.default;
+  const CHILD = CHILD_BY_TYPE[businessType] ?? CHILD_BY_TYPE.default;
 
   // 판매
   let salesOk = 0;
   let batch = [];
-  for (let i = 0; i < SALES_PER_ACCOUNT; i++) {
+  for (let i = 0; i < salesCount; i++) {
     const menu = menus[Math.floor(Math.random() * menus.length)];
     batch.push(
       fetch(`${HOST}/api/sales`, {
@@ -166,7 +199,7 @@ async function fillAccount(email) {
   const menuIdsAll = menus.map((m) => m.id);
   let needsOk = 0;
   batch = [];
-  for (let i = 0; i < NEEDS_PER_ACCOUNT; i++) {
+  for (let i = 0; i < needsCount; i++) {
     const want = Math.min(wpick(N_MENUS), menuIdsAll.length);
     const picked = [];
     let g = 0;
@@ -200,7 +233,9 @@ async function fillAccount(email) {
 
   await fetch(`${HOST}/api/auth/logout`, { method: 'POST', headers: { cookie } });
   console.log(
-    `  [${email}] 기존 미래(판매 ${wipedSales}/니즈 ${wipedNeeds}) 삭제 → 신규 판매 ${salesOk}/${SALES_PER_ACCOUNT}, 니즈 ${needsOk}/${NEEDS_PER_ACCOUNT}`,
+    `  [${email}] (${businessType}, 일평균 ${dailyRate.toFixed(1)}건) ` +
+      `기존 미래(판매 ${wipedSales}/니즈 ${wipedNeeds}) 삭제 → ` +
+      `신규 판매 ${salesOk}/${salesCount}, 니즈 ${needsOk}/${needsCount}`,
   );
 }
 

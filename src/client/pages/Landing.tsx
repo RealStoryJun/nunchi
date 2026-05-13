@@ -37,6 +37,12 @@ export default function Landing() {
                 로그인
               </Link>
             </div>
+            <Link
+              to="/guide"
+              className="mt-4 inline-block text-sub hover:text-ink text-sm"
+            >
+              먼저 둘러보기 →
+            </Link>
           </div>
           <div className="card p-6 md:p-8">
             <div className="text-sub text-sm mb-2">오늘의 매출</div>

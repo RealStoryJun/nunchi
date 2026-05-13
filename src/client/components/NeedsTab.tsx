@@ -220,8 +220,8 @@ export default function NeedsTab({
   return (
     <div>
       <p className="text-sub text-sm mb-4 break-keep">
-        손님 특성을 가볍게 남겨두면, 어떤 손님이 무엇을 찾는지 감이 잡혀요.
-        자주 오는 손님 기준으로 미리 골라뒀어요 — 다르면 바꿔서 기록하세요.
+        손님 특성을 가볍게 남겨두면 어떤 손님이 무엇을 찾는지 감이 잡혀요.
+        자주 오는 손님 기준으로 미리 골라뒀어요. 다르면 바꿔서 기록하세요.
       </p>
 
       <div className="card p-5 space-y-4">

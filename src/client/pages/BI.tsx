@@ -15,7 +15,7 @@ import { Link } from 'react-router-dom';
 import StatCard from '../components/StatCard';
 import { Skeleton } from '../components/Skeleton';
 import { apiGet, apiPost, apiPut, apiDelete } from '../lib/api';
-import { getCache, setCache, isFresh, invalidate } from '../lib/cache';
+import { getCache, setCache, isFresh, invalidate, invalidateByPrefix } from '../lib/cache';
 import { useAuth } from '../hooks/useAuth';
 import {
   dayLabel,
@@ -187,8 +187,8 @@ export default function BI() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [needsStats, setNeedsStats] = useState<NeedsStats | null>(null);
-  // AI 인사이트 — 기간 선택과 무관하게 항상 "이번 달" 기준 (오늘/사용자지정은 분석 의미가 약하고 호출만 늘어남)
-  const [monthStats, setMonthStats] = useState<Stats | null>(null);
+  // AI 인사이트는 주차/월차로 분리(아래 aiUnits) — 단위별로 stats 따로 호출.
+  // monthStats 캐시는 사전 채워둬 "월 전체" 칩 선택 시 즉시 보임 (state는 안 씀).
   const [monthNeedsStats, setMonthNeedsStats] = useState<NeedsStats | null>(null);
   // 이번 달 고정비 — null = 아직 안 불러옴, 빈 배열 = 등록 없음
   const [monthCostItems, setMonthCostItems] = useState<CostItem[] | null>(null);
@@ -197,8 +197,10 @@ export default function BI() {
   const [editingCosts, setEditingCosts] = useState<{ label: string; amount: string }[]>([]);
   const [costSaving, setCostSaving] = useState(false);
   const [costMsg, setCostMsg] = useState<string | null>(null);
-  const [insights, setInsights] = useState<string[] | null>(null);
-  const [insightsBump, setInsightsBump] = useState(0);
+  // AI 인사이트 — 주차·월차 cadence. aiUnit = 'w1'..'w5' | 'm'. aiByUnit[unit] = null(로딩)/[](빈약·실패)/[strings](OK)
+  const [aiUnit, setAiUnit] = useState<string>('');
+  const [aiByUnit, setAiByUnit] = useState<Record<string, string[] | null>>({});
+  const aiInflightRef = useRef<Set<string>>(new Set()); // 인플라이트 unit set — 중복 POST 방지, 자정초기화 stranded null 회피
   // 메뉴 등록 여부 — BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
   const [menuCount, setMenuCount] = useState<number | null>(() => {
     const c = getCache<{ id: number }[]>(`menus:${userId}`);
@@ -233,8 +235,50 @@ export default function BI() {
     () => (monthCostItems ? monthCostItems.reduce((s, x) => s + x.amount, 0) : 0),
     [monthCostItems],
   );
-  // 업종이 바뀌면 인사이트 톤도, 고정비가 바뀌면 손익 인사이트도 새로
-  const monthInsightsKey = `insights:${userId}:${user?.business_type ?? 'none'}:${monthFromMs}:${monthToMs}:fc${monthFixedCost}`;
+  // AI 인사이트 단위 목록 — 1~5주차 + 월 전체. 미래 주차는 제외.
+  const aiUnits = useMemo(() => {
+    const [y, m] = currentYm.split('-').map(Number);
+    const monthIdx = m - 1;
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const now = Date.now();
+    const monthName = `${m}월`;
+    type Status = 'done' | 'in-progress' | 'future';
+    interface U { unit: string; label: string; cardTitle: string; fromMs: number; toMs: number; status: Status; }
+    const list: U[] = [];
+    for (let w = 1; w <= 5; w++) {
+      const startDay = (w - 1) * 7 + 1;
+      if (startDay > daysInMonth) break;
+      const endDay = Math.min(w * 7, daysInMonth);
+      const fromMs = new Date(y, monthIdx, startDay, 0, 0, 0, 0).getTime();
+      const toMs = new Date(y, monthIdx, endDay, 23, 59, 59, 999).getTime();
+      const status: Status = now > toMs ? 'done' : now < fromMs ? 'future' : 'in-progress';
+      if (status === 'future') continue;
+      list.push({
+        unit: `w${w}`,
+        label: `${w}주차`,
+        cardTitle: status === 'in-progress' ? `${monthName} ${w}주차 (진행 중)` : `${monthName} ${w}주차`,
+        fromMs, toMs, status,
+      });
+    }
+    const mFrom = new Date(y, monthIdx, 1).getTime();
+    const mTo = new Date(y, monthIdx, daysInMonth, 23, 59, 59, 999).getTime();
+    const mStatus: Status = now > mTo ? 'done' : 'in-progress';
+    list.push({
+      unit: 'm',
+      label: '월 전체',
+      cardTitle: mStatus === 'in-progress' ? `${monthName} 전체 (진행 중)` : `${monthName} 전체`,
+      fromMs: mFrom, toMs: mTo, status: mStatus,
+    });
+    return list;
+  }, [currentYm]);
+  // Default 선택 — 가장 최근 완료된 주차, 없으면 진행 중 주차, 없으면 월 전체
+  const defaultAiUnit = useMemo(() => {
+    const doneWeeks = aiUnits.filter((u) => u.unit !== 'm' && u.status === 'done');
+    if (doneWeeks.length > 0) return doneWeeks[doneWeeks.length - 1].unit;
+    const inProgressWeek = aiUnits.find((u) => u.unit !== 'm' && u.status === 'in-progress');
+    if (inProgressWeek) return inProgressWeek.unit;
+    return aiUnits[aiUnits.length - 1]?.unit ?? '';
+  }, [aiUnits]);
 
   const statsCacheKey = `stats:${userId}:${fromMs}:${toMs}`;
   const tzOffset = -new Date().getTimezoneOffset();
@@ -253,7 +297,6 @@ export default function BI() {
     const d = await apiGet<Stats>(
       `/api/stats?from=${monthFromMs}&to=${monthToMs}&tz=${tzOffset}`,
     );
-    setMonthStats(d);
     setCache(monthStatsCacheKey, d);
   }, [monthStatsCacheKey, monthFromMs, monthToMs, tzOffset]);
 
@@ -370,16 +413,14 @@ export default function BI() {
     };
   }, [userId]);
 
-  // 이번 달 stats + 니즈 집계 (AI 인사이트용 — 기간 선택과 별개). "이번 달" 기간 선택 시 메인 effect와 캐시 공유.
+  // 이번 달 통합 prefetch — "월 전체" AI 인사이트 + 니즈 카드 + 고정비 카드용. 단위별 AI는 lazy.
   useEffect(() => {
     let alive = true;
-    const cached = getCache<Stats>(monthStatsCacheKey);
-    if (cached) setMonthStats(cached);
+    // monthStats 캐시 prefetch — 사장님이 "월 전체" 칩 클릭하면 cache hit
     if (!isFresh(monthStatsCacheKey, TTL_STATS)) {
       apiGet<Stats>(`/api/stats?from=${monthFromMs}&to=${monthToMs}&tz=${tzOffset}`)
         .then((d) => {
           if (!alive) return;
-          setMonthStats(d);
           setCache(monthStatsCacheKey, d);
         })
         .catch(() => {});
@@ -511,10 +552,14 @@ export default function BI() {
       );
       setMonthCostItems(d.items);
       setCache(monthCostsKey, d);
-      // 고정비가 바뀌었으니 인사이트 새로 — 캐시 무효화 + bump
-      invalidate(monthInsightsKey);
-      setInsights(null);
-      setInsightsBump((n) => n + 1);
+      // 고정비가 바뀌면 월차 인사이트만 영향 (주차 prompt엔 fc 안 들어감) → :m 캐시 + 'm' 메모리만
+      const bt = user?.business_type ?? 'none';
+      invalidateByPrefix(`insights:${userId}:${bt}:${currentYm}:m`);
+      setAiByUnit((prev) => {
+        const next = { ...prev };
+        delete next.m;
+        return next;
+      });
       setCostEditOpen(false);
     } catch (e) {
       setCostMsg(e instanceof Error ? e.message : '저장에 실패했어요.');
@@ -576,9 +621,9 @@ export default function BI() {
       } catch {
         /* 무시 — 인사이트 재호출은 계속 진행 */
       }
-      setInsights(null);
-      invalidate(monthInsightsKey);
-      setInsightsBump((n) => n + 1);
+      // 판매가 바뀌면 이번 달의 모든 단위(주차/월차) 인사이트가 영향 받음 → prefix 일괄 무효화
+      invalidateByPrefix(`insights:${userId}:`);
+      setAiByUnit({});
     }
   };
 
@@ -618,15 +663,6 @@ export default function BI() {
     return best;
   }, [hourly]);
 
-  // 이번 달 피크 시간대 (인사이트 프롬프트용)
-  const monthPeakHour = useMemo(() => {
-    let best: { hour: number; revenue: number } | null = null;
-    for (const b of monthStats?.byHour ?? [])
-      if (b.revenue > 0 && (!best || b.revenue > best.revenue))
-        best = { hour: b.hour, revenue: b.revenue };
-    return best;
-  }, [monthStats]);
-
   const ranked = useMemo(() => {
     if (!stats) return [];
     const sorted = [...stats.byMenu].sort((a, b) =>
@@ -635,45 +671,73 @@ export default function BI() {
     return sorted.slice(0, 10);
   }, [stats, rankBy]);
 
-  // AI 인사이트 — 항상 "이번 달" 기준 (기간 선택과 무관). 캐시 키가 이달로 고정이라 호출이 거의 안 늘어남.
-  // 매출 + 고객 니즈 둘 다 로드된 뒤에 호출 (니즈도 프롬프트에 포함).
+  // AI 인사이트 default 선택 — 처음 진입 시 가장 최근 완료된 주차로
   useEffect(() => {
-    if (!monthStats) {
-      setInsights(null);
-      return;
+    if (!aiUnit && defaultAiUnit) setAiUnit(defaultAiUnit);
+  }, [aiUnit, defaultAiUnit]);
+
+  // 선택된 unit에 대한 인사이트 fetch — 단위별 별도 stats 호출 + Groq 호출. 캐시 우선.
+  useEffect(() => {
+    if (!aiUnit || !user) return;
+    // 같은 unit에 대해 이미 로딩 중이면 중복 POST 방지 (Groq rate limit 보호)
+    // 이미 in-flight POST가 있으면 중복 안 함 (rapid click 같은 unit). cleanup 후에도 finally가 ref 정리.
+    if (aiInflightRef.current.has(aiUnit)) return;
+    const u = aiUnits.find((x) => x.unit === aiUnit);
+    if (!u) return;
+    // 월차는 고정비 변화에 영향 받으니 키에 fc 포함, 주차는 무관(주차 prompt에 fc 안 보냄)
+    const bt = user.business_type ?? 'none';
+    const key =
+      u.unit === 'm'
+        ? `insights:${userId}:${bt}:${currentYm}:m:fc${monthFixedCost}`
+        : `insights:${userId}:${bt}:${currentYm}:${u.unit}`;
+    // 완료된 단위는 30일 cache, 진행 중은 1시간
+    const ttl = u.status === 'done' ? 30 * 24 * 60 * 60 * 1000 : TTL_INSIGHTS;
+
+    const cached = getCache<string[]>(key);
+    if (cached) {
+      setAiByUnit((prev) => (prev[aiUnit] === cached ? prev : { ...prev, [aiUnit]: cached }));
+      if (isFresh(key, ttl)) return; // 신선 — 재호출 X
+    } else if (aiByUnit[aiUnit] === undefined) {
+      // 메모리에도 없으면 로딩 표시
+      setAiByUnit((prev) => ({ ...prev, [aiUnit]: null }));
     }
-    if (monthStats.qty < 5) {
-      // 이번 달 데이터가 빈약하면 카드 숨김 (Groq 호출 안 함)
-      setInsights([]);
-      return;
-    }
-    if (monthNeedsStats === null) return; // 니즈 집계 도착 대기 (도착하면 effect 재실행)
-    if (monthCostItems === null) return; // 고정비 도착 대기 (빈 배열로라도 와야 정확)
-    let alive = true;
-    const cached = getCache<string[]>(monthInsightsKey);
-    if (cached) setInsights(cached);
-    if (isFresh(monthInsightsKey, TTL_INSIGHTS)) return;
-    apiPost<{ insights: string[] }>('/api/insights', {
-      stats: { ...monthStats, peakHour: monthPeakHour?.hour ?? null },
-      rangeLabel: '이번 달',
-      needs: monthNeedsStats.total > 0 ? monthNeedsStats : undefined,
-      businessType: user?.business_type ?? undefined,
-      monthlyFixedCost: monthFixedCost > 0 ? monthFixedCost : undefined,
-    })
-      .then((d) => {
-        if (!alive) return;
-        setInsights(d.insights);
-        // 빈 결과(groq-fail / no-key)는 캐시하지 않음 — Groq 복구되면 다음 방문에 재시도
-        if (d.insights.length > 0) setCache(monthInsightsKey, d.insights);
-      })
-      .catch(() => {
-        if (alive) setInsights([]);
-      });
-    return () => {
-      alive = false;
-    };
+
+    // POST 시작 — alive 가드는 unmount용이 아니라 클로저 정합성용. setAiByUnit은 클로저의 aiUnit 키라 안전.
+    aiInflightRef.current.add(aiUnit);
+    const capturedUnit = aiUnit;
+    (async () => {
+      try {
+        const stats = await apiGet<Stats>(
+          `/api/stats?from=${u.fromMs}&to=${u.toMs}&tz=${tzOffset}`,
+        );
+        if (stats.qty < 5) {
+          setAiByUnit((prev) => ({ ...prev, [capturedUnit]: [] }));
+          return;
+        }
+        const peakHour =
+          stats.byHour && stats.byHour.length > 0
+            ? [...stats.byHour].sort((a, b) => b.revenue - a.revenue)[0]?.hour ?? null
+            : null;
+        const body: Record<string, unknown> = {
+          stats: { ...stats, peakHour },
+          rangeLabel: u.cardTitle,
+          businessType: bt === 'none' ? undefined : bt,
+        };
+        // 월차에만 고정비/니즈 포함 — 주차는 7일 단위라 월 합계와 단위 안 맞음
+        if (u.unit === 'm' && monthFixedCost > 0) body.monthlyFixedCost = monthFixedCost;
+        if (u.unit === 'm' && monthNeedsStats && monthNeedsStats.total > 0)
+          body.needs = monthNeedsStats;
+        const result = await apiPost<{ insights: string[] }>('/api/insights', body);
+        setAiByUnit((prev) => ({ ...prev, [capturedUnit]: result.insights }));
+        if (result.insights.length > 0) setCache(key, result.insights);
+      } catch {
+        setAiByUnit((prev) => ({ ...prev, [capturedUnit]: [] }));
+      } finally {
+        aiInflightRef.current.delete(capturedUnit);
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthStats, monthNeedsStats, monthCostItems, monthPeakHour, monthInsightsKey, insightsBump]);
+  }, [aiUnit, currentYm, monthFixedCost, monthNeedsStats, userId, user?.business_type]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
@@ -721,33 +785,71 @@ export default function BI() {
         )}
       </div>
 
-      {/* AI 인사이트 — 항상 "이번 달" 기준 (기간 선택과 무관) */}
-      {monthStats !== null &&
-        (insights === null ? (
-          <div className="card p-4 mb-4">
-            <div className="flex items-center gap-1.5 mb-3">
-              <span className="text-base">💡</span>
-              <Skeleton className="h-4 w-28" />
-            </div>
-            <Skeleton className="h-4 w-full mb-2" />
-            <Skeleton className="h-4 w-5/6" />
+      {/* AI 인사이트 — 주차/월차 chip + 단일 카드. 선택된 단위만 lazy fetch. */}
+      {aiUnits.length > 0 && (
+        <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03]">
+          <div className="flex items-center gap-1.5 mb-3">
+            <span className="text-base leading-none">💡</span>
+            <h3 className="font-semibold text-accent">
+              {aiUnits.find((u) => u.unit === aiUnit)?.cardTitle ?? '이번 달'} 분석
+            </h3>
           </div>
-        ) : insights.length > 0 ? (
-          <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03] anim-fade">
-            <div className="flex items-center gap-1.5 mb-2.5">
-              <span className="text-base leading-none">💡</span>
-              <h3 className="font-semibold text-accent">이번 달 AI 분석</h3>
-            </div>
-            <ul className="space-y-2 text-sm leading-relaxed">
-              {insights.map((t, i) => (
-                <li key={i} className="flex gap-2">
-                  <span className="text-accent/50 shrink-0 select-none">•</span>
-                  <span className="text-ink/90">{t}</span>
-                </li>
-              ))}
-            </ul>
+          {/* 단위 칩 — 모바일 가로 스크롤, 데스크탑 자연 wrap */}
+          <div className="flex flex-wrap gap-1.5 mb-3 -mx-1 px-1 overflow-x-auto">
+            {aiUnits.map((u) => {
+              const active = u.unit === aiUnit;
+              return (
+                <button
+                  key={u.unit}
+                  type="button"
+                  onClick={() => setAiUnit(u.unit)}
+                  className={`shrink-0 px-3 h-8 rounded-full text-xs font-medium border transition ${
+                    active
+                      ? 'bg-accent text-white border-accent'
+                      : 'bg-card text-sub border-border hover:border-accent/40'
+                  }`}
+                  aria-pressed={active}
+                >
+                  {u.label}
+                  {u.status === 'in-progress' && !active && (
+                    <span className="ml-0.5 text-accent">•</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-        ) : null)}
+          {/* 인사이트 본문 */}
+          {(() => {
+            const data = aiUnit ? aiByUnit[aiUnit] : undefined;
+            if (data === undefined || data === null) {
+              return (
+                <div className="space-y-2 anim-fade">
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-5/6" />
+                  <Skeleton className="h-4 w-4/5" />
+                </div>
+              );
+            }
+            if (data.length === 0) {
+              return (
+                <p className="text-sub text-sm py-2 break-keep">
+                  이 단위엔 데이터가 아직 적어요. 더 쌓이면 더 정확한 분석을 드릴 수 있어요.
+                </p>
+              );
+            }
+            return (
+              <ul className="space-y-2 text-sm leading-relaxed anim-fade">
+                {data.map((t, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="text-accent/50 shrink-0 select-none">•</span>
+                    <span className="text-ink/90">{t}</span>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+        </div>
+      )}
 
       {loading || !stats ? (
         <>
@@ -817,41 +919,29 @@ export default function BI() {
         )
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            <StatCard label="총매출" value={wonCompact(stats.revenue)} tone="accent" />
-            <StatCard label="총원가" value={wonCompact(stats.cost)} />
-            <StatCard
-              label="순이익"
-              value={wonCompact(stats.profit)}
-              tone={stats.profit >= 0 ? 'accent' : 'warm'}
-            />
-            <StatCard
-              label="마진율"
-              value={pct(stats.margin)}
-              hint={`${stats.qty}건 판매`}
-            />
-          </div>
-
-          {/* 실제 손익 — "이번 달" 보기 + 고정비 등록 시에만 (다른 기간엔 단위가 안 맞음) */}
-          {range === 'month' && monthFixedCost > 0 && (
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              <StatCard
-                label="실제 순이익"
-                value={wonCompact(stats.profit - monthFixedCost)}
-                hint={`고정비 ${wonCompact(monthFixedCost)} 차감 후`}
-                tone={stats.profit - monthFixedCost >= 0 ? 'accent' : 'warm'}
-              />
-              <StatCard
-                label="실제 마진율"
-                value={
-                  stats.revenue > 0
-                    ? pct((stats.profit - monthFixedCost) / stats.revenue)
-                    : '—'
-                }
-                hint="고정비 차감 후"
-              />
-            </div>
-          )}
+          {(() => {
+            // 순이익/마진율 dynamic — range=month + 고정비 등록 시 net(고정비까지 차감), 그 외엔 gross.
+            const hasFc = range === 'month' && monthFixedCost > 0;
+            const netProfit = hasFc ? stats.profit - monthFixedCost : stats.profit;
+            const netMargin = stats.revenue > 0 ? netProfit / stats.revenue : 0;
+            return (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                <StatCard label="총매출" value={wonCompact(stats.revenue)} tone="accent" />
+                <StatCard label="총원가" value={wonCompact(stats.cost)} />
+                <StatCard
+                  label="순이익"
+                  value={wonCompact(netProfit)}
+                  hint={hasFc ? `고정비 ${wonCompact(monthFixedCost)} 차감 후` : undefined}
+                  tone={netProfit >= 0 ? 'accent' : 'warm'}
+                />
+                <StatCard
+                  label="마진율"
+                  value={stats.revenue > 0 ? pct(netMargin) : '—'}
+                  hint={hasFc ? '고정비 차감 후' : `${stats.qty}건 판매`}
+                />
+              </div>
+            );
+          })()}
 
           {/* 이번 달 고정비 — 등록 권유 CTA 또는 요약 카드. 빈 상태 친근하게. */}
           {monthCostItems !== null && monthCostItems.length === 0 ? (
@@ -903,7 +993,7 @@ export default function BI() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="card p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">일별 매출 추이</h3>
+                <h3 className="font-semibold">일별 손익 추이</h3>
               </div>
               {stats.byDay.length === 0 ? (
                 <p className="text-sub text-sm py-12 text-center">
@@ -911,8 +1001,12 @@ export default function BI() {
                 </p>
               ) : stats.byDay.length === 1 ? (
                 <div className="py-8 text-center">
-                  <div className="num text-3xl md:text-4xl font-bold text-accent">
-                    {won(stats.byDay[0].revenue)}
+                  <div
+                    className={`num text-3xl md:text-4xl font-bold ${
+                      stats.byDay[0].profit >= 0 ? 'text-accent' : 'text-warm'
+                    }`}
+                  >
+                    {won(stats.byDay[0].profit)}
                   </div>
                   <p className="text-sub text-xs mt-2">
                     데이터가 더 쌓이면 일별 추이 차트로 보여드릴게요.
@@ -930,14 +1024,18 @@ export default function BI() {
                     <YAxis
                       tick={{ fontSize: 11, fill: '#767270' }}
                       tickFormatter={(v: number) =>
-                        v >= 10000 ? `${Math.round(v / 1000)}k` : `${v}`
+                        Math.abs(v) >= 10000 ? `${Math.round(v / 1000)}k` : `${v}`
                       }
                     />
                     <Tooltip
                       formatter={(v: number) => won(v)}
                       labelFormatter={(l) => l}
                     />
-                    <Bar dataKey="revenue" name="매출" fill="#1B4332" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="profit" name="손익" radius={[6, 6, 0, 0]}>
+                      {stats.byDay.map((d, i) => (
+                        <Cell key={i} fill={d.profit >= 0 ? '#1B4332' : '#E76F51'} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               )}

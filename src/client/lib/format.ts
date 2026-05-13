@@ -3,26 +3,30 @@ export const wonShort = (n: number) => n.toLocaleString('ko-KR');
 export const pct = (ratio: number, digits = 1) =>
   `${(ratio * 100).toFixed(digits)}%`;
 
-// BI 카드 요약용 — 자릿수 무관 항상 5~7자 이내. 한국 어법(이번 달 천구백만 / 1.5억) 맞춤.
-// 1만 미만: "9,999원" 그대로 / 1만~1억 미만: "194만원" 정수 만원 / 1억+: "1.5억원" 정수 또는 소수1자리
-// 정확값(원 단위)이 필요한 곳은 won()을 그대로 쓸 것. dashboard 요약 카드에만 사용.
+// BI 카드 요약용 — 카드 폭(text-xl/text-2xl, 좁은 컬럼 158-183px) 안에 안전하게 들어가는 raw 한계는
+// 음수 부호 포함 ~9자 (e.g. "-999,999원"). 1백만 이상은 만원 단위, 1억 이상은 억원 단위로 압축.
+// "999,999원" raw / "1,235만원" / "1.5억원" / "123억원". 음수 동일. 사장님 기조 #4 "되는데까지 raw" 안전 한계.
+// 정확값이 필요한 다른 곳(판매 내역·차트 tooltip·AI prompt)엔 won() 그대로 사용.
 export const wonCompact = (n: number): string => {
   if (!Number.isFinite(n) || n === 0) return '0원';
   const sign = n < 0 ? '-' : '';
   const abs = Math.abs(n);
+  // 1백만 미만: raw — 좁은 카드(158px) 부호 포함 max 9자까지 안전
+  if (abs < 1_000_000) {
+    return `${sign}${abs.toLocaleString('en-US')}원`;
+  }
+  // 1억 이상: 억원 단위 압축
   if (abs >= 100_000_000) {
     const v = abs / 100_000_000;
-    // 100억 이상은 소수점 없이 정수 (10,000억 = 1조 같은 큰 값은 자릿수 폭 줄이려고)
     if (v >= 100) return `${sign}${Math.round(v).toLocaleString('en-US')}억원`;
-    // 1억~99.9억: 소수1자리 (정수면 생략)
     const r = Math.round(v * 10) / 10;
     return `${sign}${r % 1 === 0 ? r.toFixed(0) : r.toFixed(1)}억원`;
   }
-  if (abs >= 10_000) {
-    const v = Math.round(abs / 10_000);
-    return `${sign}${v.toLocaleString('en-US')}만원`;
-  }
-  return `${sign}${abs.toLocaleString('en-US')}원`;
+  // 1백만 ~ 1억 미만: 정수 만원 단위 (e.g. "1,235만원" — 12,345,678원이 1,235만원으로 표시)
+  const v = Math.round(abs / 10_000);
+  // round 결과가 10,000(1억) 도달하면 만원 표기 자릿수 폭주 — "1억원"으로 fallback
+  if (v >= 10_000) return `${sign}1억원`;
+  return `${sign}${v.toLocaleString('en-US')}만원`;
 };
 
 export const formatDate = (ms: number) => {

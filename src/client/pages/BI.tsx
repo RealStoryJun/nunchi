@@ -101,7 +101,7 @@ type Range = 'today' | 'week' | 'month' | 'custom';
 const PIE_COLORS = ['#1B4332', '#2D6A4F', '#52796F', '#C99D52', '#E76F51', '#767270'];
 
 const TTL_STATS = 30 * 1000;
-const TTL_INSIGHTS = 60 * 60 * 1000; // AI 인사이트는 "이번 달" 고정 — 1시간 캐시면 충분
+// (이전 'TTL_INSIGHTS = 1h'는 이번 달 진행 중 케이스용이었음. AI는 지난 달 고정으로 단순화되면서 항상 30일 TTL 적용 — fetch effect 안에 인라인.)
 const SALES_PAGE = 30; // 판매내역 한 페이지 (스크롤 시 다음 페이지 로드)
 const COST_RECOMMENDED_LABELS = [
   '임대료',
@@ -187,9 +187,8 @@ export default function BI() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [needsStats, setNeedsStats] = useState<NeedsStats | null>(null);
-  // AI 인사이트는 주차/월차로 분리(아래 aiUnits) — 단위별로 stats 따로 호출.
-  // monthStats 캐시는 사전 채워둬 "월 전체" 칩 선택 시 즉시 보임 (state는 안 씀).
-  const [monthNeedsStats, setMonthNeedsStats] = useState<NeedsStats | null>(null);
+  // (monthNeedsStats prefetch는 AI 인사이트 cadence 단순화로 제거됨 — AI fetch effect가
+  //  지난 달 needs를 stats와 함께 fetch한다.)
   // 이번 달 고정비 — null = 아직 안 불러옴, 빈 배열 = 등록 없음
   const [monthCostItems, setMonthCostItems] = useState<CostItem[] | null>(null);
   const [costEditOpen, setCostEditOpen] = useState(false);
@@ -236,126 +235,23 @@ export default function BI() {
     () => (monthCostItems ? monthCostItems.reduce((s, x) => s + x.amount, 0) : 0),
     [monthCostItems],
   );
-  // range + 오늘 시각 → AI가 자동으로 분석할 기간. 진행 중 단위면 직전 완료 단위로 시프트.
-  // 사장님 발화: "오늘 5월 3주차잖아 그럼 2주차 인사이트 보여주는거지" → ISO 주(월~일) 기반.
-  // 주차 번호는 "그 달의 1일이 속한 ISO 주가 1주차"로 계산 (5/1 토라면 4/27-5/3 = 5월 1주차).
-  const aiWindow = useMemo((): {
-    unit: 'today' | 'week' | 'month' | 'custom';
-    cardTitle: string;
-    fromMs: number;
-    toMs: number;
-    ym: string | null;         // 영구 저장 키 (월 단위 시프트 시 'YYYY-MM')
-    shifted: boolean;
-    shiftReason?: string;
-  } => {
+  // AI 인사이트는 **항상 지난 달 전체** 고정. range selector(stats·차트용)와 연동 끊김.
+  // 사장님 결정: "오늘 2주차 이런거 의미없다. 저번달거 보여주고 니즈랑 판매해서 전략제시".
+  // 완료된 달이라 D1 영구 저장본 hit이면 LLM 호출 0회.
+  const aiWindow = useMemo(() => {
     const now = new Date();
-    const nowMs = now.getTime();
-    // 그 dt가 속한 달에서 몇 번째 ISO 주인지 — 그 달 1일이 속한 ISO 주가 1주차
-    const monthWeekNum = (dt: Date): number => {
-      const ws = startOfWeek(dt);
-      const firstOfMonth = new Date(dt.getFullYear(), dt.getMonth(), 1);
-      const firstWeekStart = startOfWeek(firstOfMonth);
-      const diffDays = Math.round((ws.getTime() - firstWeekStart.getTime()) / 86400000);
-      return Math.floor(diffDays / 7) + 1;
-    };
-    const ymOf = (d: Date) =>
-      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-
-    if (range === 'today') {
-      return {
-        unit: 'today',
-        cardTitle: `오늘 (${now.getMonth() + 1}월 ${now.getDate()}일) 분석`,
-        fromMs: startOfDay(now).getTime(),
-        toMs: endOfDay(now).getTime(),
-        ym: null,
-        shifted: false,
-      };
-    }
-    if (range === 'week') {
-      const thisWs = startOfWeek(now);
-      const thisWe = endOfDay(new Date(thisWs.getTime() + 6 * 86400000));
-      if (nowMs > thisWe.getTime()) {
-        // 이번 주 완료 (드문 케이스 — 일요일 자정 직후)
-        return {
-          unit: 'week',
-          cardTitle: `${thisWs.getMonth() + 1}월 ${monthWeekNum(thisWs)}주차 분석`,
-          fromMs: thisWs.getTime(),
-          toMs: thisWe.getTime(),
-          ym: null,
-          shifted: false,
-        };
-      }
-      // 진행 중 — 직전 주
-      const prevWs = new Date(thisWs.getTime() - 7 * 86400000);
-      const prevWe = new Date(thisWs.getTime() - 1);
-      // 직전 주의 끝(일요일)이 이번 달이 아니면 → 이전 달 전체로 시프트 (사장님: "전주차가 저번달이면 저번달꺼")
-      if (prevWe.getMonth() !== now.getMonth()) {
-        const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const pmEnd = endOfDay(new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0));
-        return {
-          unit: 'month',
-          cardTitle: `${prevMonth.getMonth() + 1}월 전체 분석`,
-          fromMs: prevMonth.getTime(),
-          toMs: pmEnd.getTime(),
-          ym: ymOf(prevMonth),
-          shifted: true,
-          shiftReason: '이번 주가 아직 진행 중이라, 지난 달 전체를 보여드려요.',
-        };
-      }
-      return {
-        unit: 'week',
-        cardTitle: `${prevWs.getMonth() + 1}월 ${monthWeekNum(prevWs)}주차 분석`,
-        fromMs: prevWs.getTime(),
-        toMs: prevWe.getTime(),
-        ym: null,
-        shifted: true,
-        shiftReason: '이번 주가 아직 진행 중이라, 지난 주를 보여드려요.',
-      };
-    }
-    if (range === 'month') {
-      const ms = startOfMonth(now);
-      const me = endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-      if (nowMs > me.getTime()) {
-        return {
-          unit: 'month',
-          cardTitle: `${now.getMonth() + 1}월 전체 분석`,
-          fromMs: ms.getTime(),
-          toMs: me.getTime(),
-          ym: ymOf(now),
-          shifted: false,
-        };
-      }
-      // 진행 중 — 저번 달 전체
-      const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const pmEnd = endOfDay(new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0));
-      return {
-        unit: 'month',
-        cardTitle: `${prevMonth.getMonth() + 1}월 전체 분석`,
-        fromMs: prevMonth.getTime(),
-        toMs: pmEnd.getTime(),
-        ym: ymOf(prevMonth),
-        shifted: true,
-        shiftReason: '이번 달이 아직 진행 중이라, 지난 달 전체를 보여드려요.',
-      };
-    }
-    // custom — 사장님이 명시적으로 고른 기간이라 시프트 안 함
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const pmEnd = endOfDay(new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0));
+    const ym = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
     return {
-      unit: 'custom',
-      cardTitle: '선택 기간 분석',
-      fromMs,
-      toMs,
-      ym: null,
-      shifted: false,
+      cardTitle: `${prevMonth.getMonth() + 1}월 전체 분석`,
+      fromMs: prevMonth.getTime(),
+      toMs: pmEnd.getTime(),
+      ym,
     };
-  }, [range, fromMs, toMs]);
-  // 기간 전체 일수 (헤딩 + LLM 메타). endOfDay가 23:59:59.999라 ceil(diff)로 정확히 N일치.
-  // 예: today from=00:00 to=23:59:59.999 → 0.99999일 → floor=0 → +1 = 1일치 ✓
-  // week 5/4-5/10: 6.99999일 → floor=6 → +1 = 7일치 ✓
-  // April: 29.99999일 → floor=29 → +1 = 30일치 ✓
-  const aiPeriodDays = Math.max(
-    1,
-    Math.floor((aiWindow.toMs - aiWindow.fromMs) / 86400000) + 1,
-  );
+  }, []);
+  // 지난 달 일수 (헤딩 + LLM 메타) — floor((to-from)/DAY)+1로 정확히 N일치
+  const aiPeriodDays = Math.floor((aiWindow.toMs - aiWindow.fromMs) / 86400000) + 1;
 
   const statsCacheKey = `stats:${userId}:${fromMs}:${toMs}`;
   const tzOffset = -new Date().getTimezoneOffset();
@@ -502,22 +398,6 @@ export default function BI() {
         })
         .catch(() => {});
     }
-    // 이번 달 고객 니즈 집계 — 인사이트 프롬프트에 포함. 실패해도 빈 집계로 두어 인사이트 생성은 진행.
-    apiGet<NeedsStats>(`/api/needs/stats?from=${monthFromMs}&to=${monthToMs}`)
-      .then((d) => alive && setMonthNeedsStats(d))
-      .catch(
-        () =>
-          alive &&
-          setMonthNeedsStats((p) => p ?? {
-            total: 0,
-            gender: {},
-            ageBand: {},
-            withChild: {},
-            purpose: {},
-            residence: {},
-            topMenus: [],
-          }),
-      );
     // 이번 달 고정비 — 캐시 우선, 백그라운드 갱신. 실패해도 빈 배열로 두어 BI 진행 계속
     const cachedCosts = getCache<{ items: CostItem[]; total: number }>(monthCostsKey);
     if (cachedCosts) setMonthCostItems(cachedCosts.items);
@@ -744,30 +624,16 @@ export default function BI() {
     return sorted.slice(0, 10);
   }, [stats, rankBy]);
 
-  // aiWindow/fc/needs 중 하나라도 바뀌면 비동기 fetch closure가 stale write 못 하도록 fingerprint 비교
-  // (period만 비교하면 같은 period에서 고정비 변경 후 도착한 OLD closure가 새 결과 자리에 덮어씀)
-  const aiFingerprintRef = useRef('');
-  useEffect(() => {
-    aiFingerprintRef.current = `${aiWindow.fromMs}:${aiWindow.toMs}:fc${monthFixedCost}:n${monthNeedsStats?.total ?? -1}`;
-  }, [aiWindow.fromMs, aiWindow.toMs, monthFixedCost, monthNeedsStats]);
-
-  // AI 인사이트 fetch — aiWindow 단위. range 토글 시 자동 시프트, 진행 중이면 직전 완료 단위.
-  // 과거 월 단위(aiWindow.ym 있고 < 현재 월)는 서버 D1 영구 저장본 우선 (LLM 호출 0).
+// AI 인사이트 fetch — 지난 달 전체 분석 1회. 완료된 달이라 D1 영구 저장본 hit 시 LLM 호출 0회.
+  // 사장님 결정: "니즈랑 판매해서 전략제시" — 지난 달 stats+needs를 함께 보내 LLM이 종합 분석.
   useEffect(() => {
     if (!user) return;
     const w = aiWindow;
     const periodKey = `${w.fromMs}:${w.toMs}`;
-    // fingerprint = period + fc + needs.total — fc·needs 바뀌면 새 fetch가 시작되도록 inflight 키 분리
-    const fingerprint = `${periodKey}:fc${monthFixedCost}:n${monthNeedsStats?.total ?? -1}`;
-    if (aiInflightRef.current.has(fingerprint)) return;
+    if (aiInflightRef.current.has(periodKey)) return;
     const bt = user.business_type ?? 'none';
-    // localStorage 캐시 키 — periodKey가 이미 유일(from:to)이라 unit 안 박음.
-    // fc 의존은 "이번 달 전체"일 때만 (과거 영구 저장본은 서버 hook이 ym 단위로 정리)
-    const isCurrentMonth = w.unit === 'month' && !w.shifted;
-    const fcSuffix = isCurrentMonth && monthFixedCost > 0 ? `:fc${monthFixedCost}` : '';
-    const key = `insights:${userId}:${bt}:${periodKey}${fcSuffix}`;
-    // 시프트 단위는 완료된 직전 단위라 30일 TTL, 시프트 안 된 진행 중 단위는 1h
-    const ttl = w.shifted || w.unit === 'month' ? 30 * 24 * 60 * 60 * 1000 : TTL_INSIGHTS;
+    const key = `insights:${userId}:${bt}:${periodKey}`;
+    const ttl = 30 * 24 * 60 * 60 * 1000; // 지난 달은 변하지 않음 — 30일 TTL
 
     const cached = getCache<string[]>(key);
     if (cached) {
@@ -777,48 +643,43 @@ export default function BI() {
       setAiByPeriod((prev) => ({ ...prev, [periodKey]: null }));
     }
 
-    aiInflightRef.current.add(fingerprint);
+    aiInflightRef.current.add(periodKey);
     const capturedKey = periodKey;
-    const capturedFingerprint = fingerprint;
-    const stillMine = () => aiFingerprintRef.current === capturedFingerprint;
     (async () => {
       try {
-        // 시프트로 도달한 과거 월 단위 → D1 영구 저장본 우선 조회 (LLM 호출 X)
-        if (w.ym && w.unit === 'month') {
-          const got = await apiGet<{ found: boolean; insights?: string[] }>(
-            `/api/insights?ym=${w.ym}`,
-          );
-          if (got.found && got.insights && got.insights.length > 0) {
-            if (stillMine()) {
-              setAiByPeriod((prev) => ({ ...prev, [capturedKey]: got.insights! }));
-              setCache(key, got.insights);
-            }
-            return;
-          }
+        // D1 영구 저장본 먼저 (LLM 호출 X)
+        const got = await apiGet<{ found: boolean; insights?: string[] }>(
+          `/api/insights?ym=${w.ym}`,
+        );
+        if (got.found && got.insights && got.insights.length > 0) {
+          setAiByPeriod((prev) => ({ ...prev, [capturedKey]: got.insights! }));
+          setCache(key, got.insights);
+          return;
         }
-        // BI 페이지 stats SWR 캐시와 키 공유 — 사용자가 그 range 본 적 있으면 캐시 hit
+        // miss → 지난 달 stats+needs 함께 fetch 후 LLM 호출 + D1 저장
         const aiStatsKey = `stats:${userId}:${w.fromMs}:${w.toMs}`;
-        let stats = getCache<Stats>(aiStatsKey);
-        if (!stats || !isFresh(aiStatsKey, TTL_STATS)) {
-          stats = await apiGet<Stats>(
-            `/api/stats?from=${w.fromMs}&to=${w.toMs}&tz=${tzOffset}`,
-          );
-          setCache(aiStatsKey, stats);
-        }
-        // 매출 발생 일수 (LLM이 "이 기간엔 영업일이 X일이라" 부연하도록)
+        const cachedStats = getCache<Stats>(aiStatsKey);
+        const statsPromise =
+          cachedStats && isFresh(aiStatsKey, TTL_STATS)
+            ? Promise.resolve(cachedStats)
+            : apiGet<Stats>(`/api/stats?from=${w.fromMs}&to=${w.toMs}&tz=${tzOffset}`).then((s) => {
+                setCache(aiStatsKey, s);
+                return s;
+              });
+        const needsPromise = apiGet<NeedsStats>(
+          `/api/needs/stats?from=${w.fromMs}&to=${w.toMs}`,
+        ).catch(() => null);
+        const [stats, needs] = await Promise.all([statsPromise, needsPromise]);
         const activeDays = (stats.byDay ?? []).filter((d) => d.revenue > 0).length;
         if (stats.qty < 5) {
-          if (stillMine()) {
-            setAiByPeriod((prev) => ({ ...prev, [capturedKey]: [] }));
-            setCache(key, []);
-          }
+          setAiByPeriod((prev) => ({ ...prev, [capturedKey]: [] }));
+          setCache(key, []);
           return;
         }
         const peakHour =
           stats.byHour && stats.byHour.length > 0
             ? [...stats.byHour].sort((a, b) => b.revenue - a.revenue)[0]?.hour ?? null
             : null;
-        // 기간 날짜 'YYYY-MM-DD' (KST local) — 서버 sanitize는 정규식 검증
         const ymdLocal = (ms: number) => {
           const d = new Date(ms);
           return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -831,27 +692,20 @@ export default function BI() {
           periodActiveDays: activeDays,
           periodStart: ymdLocal(w.fromMs),
           periodEnd: ymdLocal(w.toMs),
+          ym: w.ym, // 지난 달이라 서버가 D1에 영구 저장
         };
-        if (isCurrentMonth && monthFixedCost > 0) body.monthlyFixedCost = monthFixedCost;
-        if (isCurrentMonth && monthNeedsStats && monthNeedsStats.total > 0) body.needs = monthNeedsStats;
-        // 과거 월 단위면 ym 동봉 — 서버가 D1에 영구 저장
-        if (w.ym) body.ym = w.ym;
+        if (needs && needs.total > 0) body.needs = needs;
         const result = await apiPost<{ insights: string[] }>('/api/insights', body);
-        if (stillMine()) {
-          setAiByPeriod((prev) => ({ ...prev, [capturedKey]: result.insights }));
-          if (result.insights.length > 0) setCache(key, result.insights);
-        }
+        setAiByPeriod((prev) => ({ ...prev, [capturedKey]: result.insights }));
+        if (result.insights.length > 0) setCache(key, result.insights);
       } catch {
-        if (stillMine()) setAiByPeriod((prev) => ({ ...prev, [capturedKey]: [] }));
+        setAiByPeriod((prev) => ({ ...prev, [capturedKey]: [] }));
       } finally {
-        aiInflightRef.current.delete(capturedFingerprint);
+        aiInflightRef.current.delete(capturedKey);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    aiWindow.fromMs, aiWindow.toMs, aiWindow.unit, aiWindow.ym,
-    monthFixedCost, monthNeedsStats, userId, user?.business_type,
-  ]);
+  }, [aiWindow.fromMs, aiWindow.toMs, aiWindow.ym, userId, user?.business_type]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
@@ -899,22 +753,15 @@ export default function BI() {
         )}
       </div>
 
-      {/* AI 인사이트 — 상단 range selector에 자동 반응. 진행 중 단위면 직전 완료 단위로 시프트. */}
+      {/* AI 인사이트 — 항상 지난 달 전체 분석. range selector와 무관, 한 번 생성 후 D1 영구 저장. */}
       <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03]">
-        <div className="flex items-baseline gap-1.5 mb-1">
+        <div className="flex items-baseline gap-1.5 mb-3">
           <span className="text-base leading-none shrink-0">💡</span>
           <h3 className="font-semibold text-accent break-keep">
             {aiWindow.cardTitle}
           </h3>
           <span className="text-sub text-xs num shrink-0">· {aiPeriodDays}일치</span>
         </div>
-        {/* 시프트 시에만 부연 한 줄. 토글 시 카드 높이가 튀지 않도록 비시프트일 땐 invisible
-            placeholder로 같은 높이를 차지 (margin+leading 합쳐 ~20px). */}
-        {aiWindow.shifted && aiWindow.shiftReason ? (
-          <p className="text-sub text-xs mb-3 break-keep">{aiWindow.shiftReason}</p>
-        ) : (
-          <p className="text-xs mb-3 invisible" aria-hidden="true">&nbsp;</p>
-        )}
         {(() => {
           const periodKey = `${aiWindow.fromMs}:${aiWindow.toMs}`;
           const data = aiByPeriod[periodKey];

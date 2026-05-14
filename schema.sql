@@ -126,6 +126,20 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_at ON admin_audit_log(at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_admin ON admin_audit_log(admin_user_id, at DESC);
 
+-- 사용자 로그인 이벤트 — 새 IP/UA 첫 로그인 감지용. 의심 활동(=알려지지 않은 디바이스)을 admin이 추적.
+-- 90일 보관 후 cron 정리. PII는 ip/ua만(이메일·비번 X).
+CREATE TABLE IF NOT EXISTS user_login_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  ip TEXT,
+  ua TEXT,
+  is_new_device INTEGER NOT NULL DEFAULT 0,
+  at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_login_events_user_at ON user_login_events(user_id, at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_events_at ON user_login_events(at DESC);
+
 -- AI(Groq) 사용량 로그 — 모든 사용자의 LLM 호출 기록. 13개월 보관 후 cron 정리.
 CREATE TABLE IF NOT EXISTS ai_usage_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

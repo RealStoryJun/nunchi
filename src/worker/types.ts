@@ -2,6 +2,12 @@ export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   GROQ_API_KEY?: string;
+  // AES-256 키 (32바이트 base64). TOTP secret envelope encryption용.
+  // 없으면 평문 base32 fallback (개발/마이그레이션 호환).
+  TOTP_SECRET_KEY?: string;
+  // Cloudflare Turnstile secret (가입 봇 차단). site key는 public이지만 secret과 같이 묶어 보관.
+  TURNSTILE_SECRET?: string;
+  TURNSTILE_SITE_KEY?: string;
 }
 
 export interface SessionUser {
@@ -98,14 +104,31 @@ export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = { ok: false; error: string };
 export type ApiResponse<T> = ApiOk<T> | ApiErr;
 
-// 모든 응답에 일괄 적용할 보안 헤더 — 다운그레이드(HSTS)/clickjacking(X-Frame)/sniff/referrer/permissions
-// CSP는 React 동적 inject (Recharts·tailwind 등)로 인해 보수적: 'self' + inline 허용. 외부 origin은 Groq 만 (서버 직접).
+// 모든 응답에 일괄 적용할 보안 헤더 — 다운그레이드(HSTS)/clickjacking/sniff/referrer/permissions/CSP
+// CSP: React/Recharts inline style + Tailwind inline style 호환을 위해 'unsafe-inline' 허용.
+// script-src도 'unsafe-inline'은 Vite hashing 안 쓰는 dev 상태 호환 + production은 자기 origin script만.
+// connect-src 'self' — 워커 자체 fetch만. img-src에 qrserver.com (2FA QR), data: (favicon).
+// frame-ancestors 'none' — X-Frame-Options DENY 보강 (최신 브라우저).
 export const SECURITY_HEADERS: Record<string, string> = {
   'strict-transport-security': 'max-age=31536000; includeSubDomains',
   'x-frame-options': 'DENY',
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'strict-origin-when-cross-origin',
   'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+  'content-security-policy': [
+    "default-src 'self'",
+    // Cloudflare Turnstile script + 자체 origin + React/Vite inline.
+    "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https://api.qrserver.com",
+    "font-src 'self' data:",
+    "connect-src 'self' https://challenges.cloudflare.com",
+    // Turnstile widget은 iframe으로 렌더 — frame-src 허용 필요.
+    "frame-src https://challenges.cloudflare.com",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; '),
 };
 
 export const json = <T>(body: ApiResponse<T>, init: ResponseInit = {}): Response =>

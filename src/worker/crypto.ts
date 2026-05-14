@@ -66,3 +66,62 @@ export const validatePassword = (password: string): string | null => {
 
 export const validateEmail = (email: string): boolean =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+// ─── TOTP secret envelope encryption (AES-GCM) ─────────────────────────────────
+// 워커 시크릿 TOTP_SECRET_KEY (32바이트 base64)로 envelope. D1 dump 시 secret 즉시 사용 불가.
+// 형식: "v1.<ivB64>.<ctB64>" — v1 prefix로 마이그레이션 호환 (평문도 base32라 점·v1 없음으로 구분)
+// 키 없으면 평문 fallback (개발 환경 또는 키 설정 전 사용자 보호).
+
+const TOTP_VERSION = 'v1';
+let _totpKeyPromise: Promise<CryptoKey | null> | null = null;
+
+const getTotpKey = (keyB64: string | undefined): Promise<CryptoKey | null> => {
+  if (!keyB64) return Promise.resolve(null);
+  if (_totpKeyPromise) return _totpKeyPromise;
+  _totpKeyPromise = (async () => {
+    try {
+      const raw = fromB64(keyB64);
+      if (raw.length !== 32) return null; // AES-256 requires 32 bytes
+      return await crypto.subtle.importKey(
+        'raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'],
+      );
+    } catch {
+      return null;
+    }
+  })();
+  return _totpKeyPromise;
+};
+
+export const encryptTotpSecret = async (
+  secret: string,
+  keyB64: string | undefined,
+): Promise<string> => {
+  const key = await getTotpKey(keyB64);
+  if (!key) return secret; // 키 없으면 평문 fallback
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(secret));
+  return `${TOTP_VERSION}.${b64(iv)}.${b64(ct)}`;
+};
+
+export const decryptTotpSecret = async (
+  stored: string,
+  keyB64: string | undefined,
+): Promise<string> => {
+  // 평문 base32 (v1 prefix 없으면 — 마이그레이션 호환)
+  if (!stored.startsWith(`${TOTP_VERSION}.`)) return stored;
+  const key = await getTotpKey(keyB64);
+  if (!key) {
+    // 암호화된 상태인데 키 없으면 — 사장님이 키 분실. 빈 문자열로 반환 (TOTP 검증 자동 실패)
+    return '';
+  }
+  const parts = stored.split('.');
+  if (parts.length !== 3) return '';
+  try {
+    const iv = fromB64(parts[1]);
+    const ct = fromB64(parts[2]);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+    return new TextDecoder().decode(pt);
+  } catch {
+    return '';
+  }
+};

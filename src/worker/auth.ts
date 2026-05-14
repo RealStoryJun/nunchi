@@ -5,6 +5,8 @@ import {
   validateEmail,
   validatePassword,
   randomToken,
+  encryptTotpSecret,
+  decryptTotpSecret,
 } from './crypto';
 import {
   createSession,
@@ -69,11 +71,68 @@ const clientIp = (req: Request): string =>
   req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
   'unknown';
 
+// 새 IP/UA 첫 로그인 감지 → audit + user_login_events INSERT. 비동기 fire-and-forget.
+// 90일 보관 (cron 정리). 같은 IP+UA가 그 user에 있었으면 is_new_device=0, 처음이면 1.
+const logLoginEvent = async (
+  env: Env,
+  userId: number,
+  request: Request,
+): Promise<void> => {
+  try {
+    const ip = request.headers.get('cf-connecting-ip') ?? null;
+    const ua = (request.headers.get('user-agent') ?? '').slice(0, 200);
+    // 90일 안 같은 (ip, ua) 본 적 있는지 — 없으면 새 디바이스
+    const SEEN_WINDOW = 90 * 24 * 60 * 60 * 1000;
+    const seen = await env.DB.prepare(
+      `SELECT 1 FROM user_login_events
+       WHERE user_id = ? AND ip IS ? AND ua = ? AND at > ?
+       LIMIT 1`,
+    )
+      .bind(userId, ip, ua, Date.now() - SEEN_WINDOW)
+      .first();
+    const isNew = seen ? 0 : 1;
+    await env.DB.prepare(
+      `INSERT INTO user_login_events (user_id, ip, ua, is_new_device, at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+      .bind(userId, ip, ua, isNew, Date.now())
+      .run();
+  } catch {
+    /* 로그 실패는 본 응답 안 막음 */
+  }
+};
+
+// Cloudflare Turnstile 검증 — 봇 가입 차단. 토큰 없거나 검증 실패면 false.
+// TURNSTILE_SECRET 미설정 시 항상 true (graceful degradation — 키 박기 전엔 가입 그대로 작동).
+const verifyTurnstile = async (env: Env, token: string | undefined, ip: string | null): Promise<boolean> => {
+  if (!env.TURNSTILE_SECRET) return true; // 미설정 시 통과
+  if (!token) return false;
+  try {
+    const form = new URLSearchParams();
+    form.append('secret', env.TURNSTILE_SECRET);
+    form.append('response', token);
+    if (ip) form.append('remoteip', ip);
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: form,
+    });
+    const data = (await res.json()) as { success?: boolean };
+    return data.success === true;
+  } catch {
+    return false;
+  }
+};
+
 export const handleAuth = async (
   request: Request,
   env: Env,
   path: string,
 ): Promise<Response> => {
+  // GET /api/auth/turnstile/config — 클라가 widget 렌더링용 site_key 받음. site_key 없으면 widget 안 띄움.
+  if (path === '/turnstile/config' && request.method === 'GET') {
+    return ok({ site_key: env.TURNSTILE_SITE_KEY ?? null });
+  }
+
   // POST /api/auth/signup
   if (path === '/signup' && request.method === 'POST') {
     const body = await safeJson<{
@@ -82,8 +141,16 @@ export const handleAuth = async (
       businessName: string;
       recoveryQuestion: string;
       recoveryAnswer: string;
+      turnstile_token?: string;
     }>(request);
     if (!body) return err('잘못된 요청입니다.');
+    // Turnstile 검증 — TURNSTILE_SECRET 설정돼 있을 때만 실제 검증, 그 전엔 자동 통과
+    const turnstileOk = await verifyTurnstile(
+      env,
+      body.turnstile_token,
+      request.headers.get('cf-connecting-ip'),
+    );
+    if (!turnstileOk) return err('봇 검증에 실패했어요. 새로고침 후 다시 시도해주세요.');
     const email = body.email?.trim().toLowerCase();
     const businessName = body.businessName?.trim();
     const recoveryQuestion = body.recoveryQuestion?.trim();
@@ -181,7 +248,7 @@ export const handleAuth = async (
       return err('이메일 또는 비밀번호가 일치하지 않습니다.', 401);
     }
     // 2FA 활성 (setup 완료, totp_enabled_at NOT NULL) → 세션 발급 X. 10분 mfa_token만 발급.
-    // 이메일 카운터는 2단계 통과 시점에 리셋 (1단계만 통과 후 무한 mfa_token 발급으로 brute force 방어).
+    // (secret 자체는 mfa_token 검증 단계에서 복호화. 1단계에선 존재 여부만 확인.)
     if (user.totp_secret && user.totp_enabled_at) {
       const mfaToken = randomToken();
       const expiresAt = Date.now() + 10 * 60 * 1000;
@@ -203,6 +270,7 @@ export const handleAuth = async (
       env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run(),
     ]);
     const { token, expiresAt } = await createSession(env, user.id);
+    await logLoginEvent(env, user.id, request);
     return ok(
       {
         user: {
@@ -261,9 +329,10 @@ export const handleAuth = async (
 
     const code = body.code.trim().replace(/[\s-]/g, ''); // 공백·하이픈 제거 (백업코드 a1b2-c3d4 입력 호환)
     let pass = false;
-    // 1) TOTP 6자리 검증
+    // 1) TOTP 6자리 검증 — secret을 worker key로 복호화 (평문 fallback 호환)
     if (/^\d{6}$/.test(code)) {
-      pass = await verifyTotp(u.totp_secret, code);
+      const secret = await decryptTotpSecret(u.totp_secret, env.TOTP_SECRET_KEY);
+      if (secret) pass = await verifyTotp(secret, code);
     }
     // 2) 백업코드 8자리 hex 검증 (1회용). atomic UPDATE으로 race-safe.
     if (!pass && /^[a-f0-9]{8}$/i.test(code) && u.totp_backup_codes_hash) {
@@ -308,6 +377,7 @@ export const handleAuth = async (
       resetAttempts(env, `login:${u.email}`),
     ]);
     const { token, expiresAt } = await createSession(env, u.id);
+    await logLoginEvent(env, u.id, request);
     return ok(
       {
         user: {
@@ -349,17 +419,28 @@ export const handleAuth = async (
     }
     await resetAttempts(env, rlKey);
     // 미활성 secret 이미 있으면 재사용 — 사장님이 첫 QR 스캔 후 retry해도 같은 secret
-    const secret = row.totp_secret ?? generateSecret();
-    if (!row.totp_secret) {
+    // 저장은 envelope 암호화 형식, 응답엔 평문 base32 (QR/수동 입력용)
+    let secretPlain: string;
+    if (row.totp_secret) {
+      secretPlain = await decryptTotpSecret(row.totp_secret, env.TOTP_SECRET_KEY);
+      if (!secretPlain) {
+        // 복호화 실패 (키 분실 등) — 새 secret로 재시작
+        secretPlain = generateSecret();
+        const enc = await encryptTotpSecret(secretPlain, env.TOTP_SECRET_KEY);
+        await env.DB.prepare(
+          'UPDATE users SET totp_secret = ?, totp_enabled_at = NULL WHERE id = ?',
+        ).bind(enc, session.user.id).run();
+      }
+    } else {
+      secretPlain = generateSecret();
+      const enc = await encryptTotpSecret(secretPlain, env.TOTP_SECRET_KEY);
       await env.DB.prepare(
         'UPDATE users SET totp_secret = ?, totp_enabled_at = NULL WHERE id = ?',
-      )
-        .bind(secret, session.user.id)
-        .run();
+      ).bind(enc, session.user.id).run();
     }
     return ok({
-      secret,
-      otpauth_url: otpauthUrl(secret, session.user.email),
+      secret: secretPlain,
+      otpauth_url: otpauthUrl(secretPlain, session.user.email),
     });
   }
 
@@ -376,7 +457,8 @@ export const handleAuth = async (
       .bind(session.user.id)
       .first<{ totp_secret: string | null; totp_enabled_at: number | null }>();
     if (!row?.totp_secret) return err('먼저 인증 설정을 시작해주세요.');
-    if (!(await verifyTotp(row.totp_secret, body.code.trim()))) {
+    const secretPlain = await decryptTotpSecret(row.totp_secret, env.TOTP_SECRET_KEY);
+    if (!secretPlain || !(await verifyTotp(secretPlain, body.code.trim()))) {
       return err('인증 코드가 일치하지 않아요.', 401);
     }
     // 백업코드 생성 → hash 저장 + 평문 응답
@@ -407,7 +489,8 @@ export const handleAuth = async (
       .first<{ password_hash: string; totp_secret: string | null }>();
     if (!row?.totp_secret) return err('2단계 인증이 활성화되어 있지 않아요.');
     const pwOk = await verifyPassword(body.password, row.password_hash);
-    const codeOk = await verifyTotp(row.totp_secret, body.code.trim());
+    const secretPlain = await decryptTotpSecret(row.totp_secret, env.TOTP_SECRET_KEY);
+    const codeOk = secretPlain ? await verifyTotp(secretPlain, body.code.trim()) : false;
     if (!pwOk || !codeOk) {
       await recordAttempt(env, rlKey);
       return err('비밀번호 또는 코드가 일치하지 않아요.', 401);

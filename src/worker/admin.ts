@@ -273,5 +273,32 @@ export async function handleAdmin(
     return ok({ ym, by_model: results });
   }
 
+  // GET /api/admin/login-events?limit=50&newOnly=1 — 사용자 로그인 이벤트 (새 디바이스 위주)
+  if (rest === '/login-events' && request.method === 'GET') {
+    const limN = Number(url.searchParams.get('limit') ?? 50);
+    const limit = Math.min(Math.max(Number.isFinite(limN) ? limN : 50, 1), 200);
+    const newOnly = url.searchParams.get('newOnly') === '1';
+    const where = newOnly ? 'WHERE e.is_new_device = 1' : '';
+    const { results } = await env.DB.prepare(
+      `SELECT e.id, e.user_id, u.email, e.ip, e.ua, e.is_new_device, e.at
+       FROM user_login_events e LEFT JOIN users u ON u.id = e.user_id
+       ${where}
+       ORDER BY e.at DESC LIMIT ?`,
+    )
+      .bind(limit)
+      .all<{
+        id: number;
+        user_id: number;
+        email: string | null;
+        ip: string | null;
+        ua: string | null;
+        is_new_device: number;
+        at: number;
+      }>();
+    return ok({
+      events: results.map((r) => ({ ...r, is_new_device: !!r.is_new_device })),
+    });
+  }
+
   return err('찾을 수 없는 경로입니다.', 404);
 }

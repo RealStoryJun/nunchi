@@ -1,8 +1,8 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { useAuth, refreshAuth } from '../hooks/useAuth';
-import { apiPost } from '../lib/api';
+import { apiGet, apiPost } from '../lib/api';
 
 const PRESET_QUESTIONS = [
   '어릴 때 키운 첫 반려동물 이름은?',
@@ -10,6 +10,19 @@ const PRESET_QUESTIONS = [
   '초등학교 단짝의 이름은?',
   '내가 자주 가던 분식집 이름은?',
 ];
+
+// Turnstile global API 타입 (스크립트 로드 후 window.turnstile)
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: HTMLElement | string,
+        opts: { sitekey: string; callback: (token: string) => void; 'error-callback'?: () => void; theme?: 'light' | 'dark' | 'auto' },
+      ) => string;
+      reset: (widgetId?: string) => void;
+    };
+  }
+}
 
 export default function Signup() {
   const { user, loading } = useAuth();
@@ -22,6 +35,46 @@ export default function Signup() {
   const [recoveryAnswer, setRecoveryAnswer] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Turnstile site key — TURNSTILE_SITE_KEY env 설정돼 있으면 widget 노출, 아니면 자동 통과
+  const [siteKey, setSiteKey] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string>('');
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
+  const widgetIdRef = useRef<string | null>(null);
+
+  // 1. site key fetch
+  useEffect(() => {
+    apiGet<{ site_key: string | null }>('/api/auth/turnstile/config')
+      .then((d) => setSiteKey(d.site_key))
+      .catch(() => setSiteKey(null));
+  }, []);
+
+  // 2. site key 있으면 Turnstile script 로드 + widget 렌더링
+  useEffect(() => {
+    if (!siteKey || !turnstileRef.current) return;
+    const ensureScript = () =>
+      new Promise<void>((resolve) => {
+        if (window.turnstile) return resolve();
+        const existing = document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]');
+        if (existing) {
+          existing.addEventListener('load', () => resolve());
+          return;
+        }
+        const s = document.createElement('script');
+        s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+        s.async = true; s.defer = true;
+        s.onload = () => resolve();
+        document.head.appendChild(s);
+      });
+    ensureScript().then(() => {
+      if (!turnstileRef.current || !window.turnstile) return;
+      widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
+        sitekey: siteKey,
+        callback: (token) => setTurnstileToken(token),
+        'error-callback': () => setTurnstileToken(''),
+        theme: 'light',
+      });
+    });
+  }, [siteKey]);
 
   if (loading) return null;
   if (user) return <Navigate to="/sales" replace />;
@@ -29,6 +82,10 @@ export default function Signup() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (siteKey && !turnstileToken) {
+      setError('봇 검증을 완료해주세요.');
+      return;
+    }
     setPending(true);
     try {
       const q =
@@ -40,11 +97,17 @@ export default function Signup() {
         businessName,
         recoveryQuestion: q,
         recoveryAnswer,
+        ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
       });
       await refreshAuth();
       navigate('/onboarding');
     } catch (err) {
       setError(err instanceof Error ? err.message : '회원가입에 실패했습니다.');
+      // 봇 검증은 일회용 — 실패 후 widget 재발급
+      if (widgetIdRef.current && window.turnstile) {
+        window.turnstile.reset(widgetIdRef.current);
+        setTurnstileToken('');
+      }
     } finally {
       setPending(false);
     }
@@ -119,17 +182,24 @@ export default function Signup() {
               )}
             </div>
             <div>
-              <label className="label">답변</label>
+              <label className="label">답변 (4자 이상)</label>
               <input
                 required
+                minLength={4}
                 className="field"
                 value={recoveryAnswer}
                 onChange={(e) => setRecoveryAnswer(e.target.value)}
                 placeholder="대소문자/공백은 무시됩니다"
               />
             </div>
+            {/* Turnstile widget — site key 있을 때만 렌더 */}
+            {siteKey && <div ref={turnstileRef} className="flex justify-center" />}
             {error && <p className="text-warm text-sm">{error}</p>}
-            <button type="submit" disabled={pending} className="btn-primary w-full">
+            <button
+              type="submit"
+              disabled={pending || (!!siteKey && !turnstileToken)}
+              className="btn-primary w-full"
+            >
               {pending ? '가입 중…' : '가입하고 시작하기'}
             </button>
             <p className="text-sm text-sub text-center">

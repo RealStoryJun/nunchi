@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { apiGet, apiPost, apiDelete } from '../lib/api';
+import { invalidateByPrefix } from '../lib/cache';
 import { Skeleton } from './Skeleton';
 import { timeHM, startOfDay, endOfDay } from '../lib/format';
+import { useAuth } from '../hooks/useAuth';
 
 // 오늘 00:00 ~ 23:59 — 상한을 안 두면 시드/미래 데이터까지 끼어들어 "정렬 안 된 것처럼" 보임
 const TODAY_NEEDS_URL = () => {
@@ -136,6 +138,8 @@ export default function NeedsTab({
   menus: MenuLite[];
   menusLoaded?: boolean;
 }) {
+  const { user } = useAuth();
+  const userId = user?.id ?? 0;
   const [gender, setGender] = useState<Gender | null>(DEFAULTS.gender);
   const [age, setAge] = useState<Age | null>(DEFAULTS.age);
   const [child, setChild] = useState<'yes' | 'no' | null>(DEFAULTS.child);
@@ -208,6 +212,8 @@ export default function NeedsTab({
         menuIds,
       });
       await reloadRecent();
+      // BI 페이지의 needs 집계 캐시 무효화 — 사장님이 곧장 /bi로 가도 방금 기록한 게 반영됨
+      invalidateByPrefix(`needsStats:${userId}:`);
       reset();
       setToast('고객 니즈 기록됐어요');
       window.setTimeout(() => setToast(null), 2200);
@@ -223,6 +229,7 @@ export default function NeedsTab({
     try {
       await apiDelete(`/api/needs/${id}`);
       setRecent((prev) => prev?.filter((n) => n.id !== id) ?? prev);
+      invalidateByPrefix(`needsStats:${userId}:`);
     } catch (e) {
       alert(e instanceof Error ? e.message : '삭제에 실패했어요.');
     }

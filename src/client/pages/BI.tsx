@@ -201,6 +201,9 @@ export default function BI() {
   // period key = `${fromMs}:${toMs}` — 같은 기간 재선택 시 인메모리 캐시 hit.
   const [aiByPeriod, setAiByPeriod] = useState<Record<string, string[] | null>>({});
   const aiInflightRef = useRef<Set<string>>(new Set()); // 인플라이트 period key — 중복 POST 방지
+  // 판매/고정비 변경 시 AI fetch effect를 강제 재실행 — deps에 포함되는 nonce
+  // (aiByPeriod 비워도 effect deps는 안 바뀌어 effect 재발 안 함 → 영구 스켈레톤 락)
+  const [aiRefreshNonce, setAiRefreshNonce] = useState(0);
   // 메뉴 등록 여부 — BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
   const [menuCount, setMenuCount] = useState<number | null>(() => {
     const c = getCache<{ id: number }[]>(`menus:${userId}`);
@@ -515,9 +518,10 @@ export default function BI() {
       );
       setMonthCostItems(d.items);
       setCache(monthCostsKey, d);
-      // 고정비가 바뀌면 AI 인사이트(이번 달 단위) 캐시·메모리 모두 무효화
+      // 고정비가 바뀌면 AI 인사이트(이번 달 단위) 캐시·메모리 모두 무효화 + 재호출 트리거
       invalidateByPrefix(`insights:${userId}:`);
       setAiByPeriod({});
+      setAiRefreshNonce((n) => n + 1);
       setCostEditOpen(false);
     } catch (e) {
       setCostMsg(e instanceof Error ? e.message : '저장에 실패했어요.');
@@ -579,10 +583,11 @@ export default function BI() {
       } catch {
         /* 무시 — 인사이트 재호출은 계속 진행 */
       }
-      // 판매가 바뀌면 그 기간 AI 인사이트가 영향 받음 → 클라이언트 캐시·메모리 일괄 무효화
+      // 판매가 바뀌면 그 기간 AI 인사이트가 영향 받음 → 클라이언트 캐시·메모리 일괄 무효화 + 재호출 트리거
       // (서버는 sales.ts에서 sold_at→ym으로 ai_insights 행 자동 무효화)
       invalidateByPrefix(`insights:${userId}:`);
       setAiByPeriod({});
+      setAiRefreshNonce((n) => n + 1);
     }
   };
 
@@ -711,7 +716,7 @@ export default function BI() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiWindow.fromMs, aiWindow.toMs, aiWindow.ym, userId, user?.business_type]);
+  }, [aiWindow.fromMs, aiWindow.toMs, aiWindow.ym, userId, user?.business_type, aiRefreshNonce]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">

@@ -719,13 +719,14 @@ export default function BI() {
         <h1 className="font-display text-2xl md:text-3xl">BI 대시보드</h1>
       </div>
 
-      <div className="card p-3 mb-4 flex flex-wrap items-center gap-2">
+      {/* 5칩 한 줄 유지를 위해 모바일에선 padding·text·gap 축소, md↑에선 원래 크기. */}
+      <div className="card p-2.5 md:p-3 mb-4 flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap">
         {(['today', 'week', 'month', 'lastMonth', 'custom'] as Range[]).map((r) => (
           <button
             key={r}
             type="button"
             onClick={() => setRange(r)}
-            className={`px-3.5 h-10 rounded-lg text-sm border transition ${
+            className={`shrink-0 px-2 md:px-3.5 h-9 md:h-10 rounded-lg text-xs md:text-sm border transition ${
               range === r
                 ? 'bg-accent text-white border-accent'
                 : 'bg-card text-ink border-border'

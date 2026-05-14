@@ -7,6 +7,7 @@ import {
 } from '../lib/businessTypes';
 import { apiPost } from '../lib/api';
 import NavIcon from '../components/NavIcon';
+import TwoFactorCard from '../components/TwoFactorCard';
 
 export default function Account() {
   const { user } = useAuth();
@@ -178,6 +179,10 @@ export default function Account() {
         <button onClick={onLogout} className="btn-outline w-full">
           로그아웃
         </button>
+      </div>
+
+      <div className="mt-4">
+        <TwoFactorCard />
       </div>
 
       {user.is_admin && (

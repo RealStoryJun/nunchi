@@ -339,12 +339,21 @@ const cleanLine = (s: string): string => {
   return t;
 };
 
+interface GroqResult {
+  insights: string[] | null;
+  in_tokens: number;
+  out_tokens: number;
+  latency_ms: number;
+  error_code: string | null;
+}
+
 const callGroqWith = async (
   apiKey: string,
   summary: string,
   model: string,
   maxTokens: number,
-): Promise<string[] | null> => {
+): Promise<GroqResult> => {
+  const t0 = Date.now();
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
@@ -362,13 +371,19 @@ const callGroqWith = async (
         temperature: 0.4,
       }),
     });
+    const latency_ms = Date.now() - t0;
     // 429(rate limit) / 5xx → null 반환해서 다음 모델로 fallback
-    if (!res.ok) return null;
+    if (!res.ok) {
+      return { insights: null, in_tokens: 0, out_tokens: 0, latency_ms, error_code: `http_${res.status}` };
+    }
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
+    const in_tokens = data.usage?.prompt_tokens ?? 0;
+    const out_tokens = data.usage?.completion_tokens ?? 0;
     const raw = (data?.choices?.[0]?.message?.content ?? '').trim();
-    if (!raw) return null;
+    if (!raw) return { insights: null, in_tokens, out_tokens, latency_ms, error_code: 'empty_choice' };
     // JSON 배열 추출
     const m = raw.match(/\[[\s\S]*\]/);
     if (m) {
@@ -380,7 +395,7 @@ const callGroqWith = async (
             .map(cleanLine)
             .filter((x) => x.length > 4 && !NON_KOREAN.test(x))
             .slice(0, 5);
-          if (arr.length) return arr;
+          if (arr.length) return { insights: arr, in_tokens, out_tokens, latency_ms, error_code: null };
         }
       } catch {
         /* fall through */
@@ -392,9 +407,17 @@ const callGroqWith = async (
       .map((l) => cleanLine(l.replace(/^["\s\-*•\d.)]+/, '').replace(/["\s]+$/, '')))
       .filter((l) => l.length > 8 && !NON_KOREAN.test(l))
       .slice(0, 4);
-    return lines.length ? lines : null;
-  } catch {
-    return null;
+    return lines.length
+      ? { insights: lines, in_tokens, out_tokens, latency_ms, error_code: null }
+      : { insights: null, in_tokens, out_tokens, latency_ms, error_code: 'parse_fail' };
+  } catch (e) {
+    return {
+      insights: null,
+      in_tokens: 0,
+      out_tokens: 0,
+      latency_ms: Date.now() - t0,
+      error_code: e instanceof Error ? e.message.slice(0, 100) : 'fetch_error',
+    };
   }
 };
 
@@ -423,8 +446,29 @@ export async function handleInsights(
 
   const summary = buildSummary(body);
   for (const { model, maxTokens } of MODELS) {
-    const insights = await callGroqWith(apiKey, summary, model, maxTokens);
-    if (insights) {
+    const result = await callGroqWith(apiKey, summary, model, maxTokens);
+    // 모든 시도(성공·실패)를 ai_usage_log에 기록 — fire-and-forget
+    const logYm = body.ym ?? currentYmKst();
+    env.DB.prepare(
+      `INSERT INTO ai_usage_log
+       (user_id, model, year_month, in_tokens, out_tokens, latency_ms, ok, error_code, at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        userId,
+        model,
+        logYm,
+        result.in_tokens,
+        result.out_tokens,
+        result.latency_ms,
+        result.insights ? 1 : 0,
+        result.error_code,
+        Date.now(),
+      )
+      .run()
+      .catch(() => {/* 로그 실패는 본 응답 흐름 안 막음 */});
+    if (result.insights) {
+      const insights = result.insights;
       // 과거 월(완료 월)만 영구 저장 — 이번 달은 데이터 계속 변하므로 저장 X
       if (body.ym && body.ym < currentYmKst()) {
         await env.DB.prepare(

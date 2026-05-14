@@ -1,6 +1,8 @@
 import { Env, ok, err, SessionUser } from './types';
+import { verifyPassword } from './crypto';
 
-// 어드민 전용 — 계정 관리. 모든 핸들러는 is_admin 검증을 통과한 뒤에만 실행된다.
+// 어드민 전용 — 계정·통계·감사 로그. 모든 핸들러는 is_admin 검증 통과 후만 실행.
+// mutation(예: users/delete)은 추가로 sessions.admin_verified_until 검증 (step-up auth).
 
 interface AdminUserRow {
   id: number;
@@ -8,26 +10,104 @@ interface AdminUserRow {
   business_name: string;
   business_type: string | null;
   is_admin: number;
+  is_demo: number;
+  totp_enabled_at: number | null;
   created_at: number;
   sales_count: number;
   menu_count: number;
+}
+
+// step-up 통과 여부 확인 — sessions.admin_verified_until > now
+async function isAdminVerified(
+  env: Env,
+  sessionToken: string,
+): Promise<boolean> {
+  const row = await env.DB.prepare(
+    'SELECT admin_verified_until FROM sessions WHERE token = ?',
+  )
+    .bind(sessionToken)
+    .first<{ admin_verified_until: number }>();
+  return !!row && row.admin_verified_until > Date.now();
+}
+
+// 감사 로그 INSERT — 실패해도 본 응답에 영향 없게 try/catch
+async function audit(
+  env: Env,
+  adminUserId: number,
+  action: string,
+  targetJson: unknown,
+  request: Request,
+  okFlag = true,
+  errorMsg: string | null = null,
+): Promise<void> {
+  try {
+    const ip = request.headers.get('cf-connecting-ip') ?? null;
+    const ua = (request.headers.get('user-agent') ?? '').slice(0, 200);
+    await env.DB.prepare(
+      `INSERT INTO admin_audit_log
+       (admin_user_id, action, target_json, ip, ua, at, ok, error_msg)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        adminUserId,
+        action,
+        targetJson ? JSON.stringify(targetJson).slice(0, 1000) : null,
+        ip,
+        ua,
+        Date.now(),
+        okFlag ? 1 : 0,
+        errorMsg ? errorMsg.slice(0, 500) : null,
+      )
+      .run();
+  } catch {
+    /* audit 실패는 본 흐름 안 막음 */
+  }
 }
 
 export async function handleAdmin(
   request: Request,
   env: Env,
   user: SessionUser,
-  rest: string, // '/api/admin' 이후 경로 (예: '/users')
+  rest: string,
   url: URL,
+  sessionToken: string,
 ): Promise<Response> {
   if (!user.is_admin) return err('관리자 권한이 필요합니다.', 403);
 
-  // GET /api/admin/users?q=검색어 — 이메일/가게이름 부분 일치
+  // POST /api/admin/step-up { password } — 비밀번호 재확인 → 10분간 mutation 허용
+  if (rest === '/step-up' && request.method === 'POST') {
+    let body: { password?: unknown } | null = null;
+    try {
+      body = (await request.json()) as { password?: unknown };
+    } catch {
+      return err('잘못된 요청입니다.');
+    }
+    const pwd = typeof body?.password === 'string' ? body.password : '';
+    if (!pwd) return err('비밀번호를 입력해주세요.');
+    const row = await env.DB.prepare('SELECT password_hash FROM users WHERE id = ?')
+      .bind(user.id)
+      .first<{ password_hash: string }>();
+    if (!row || !(await verifyPassword(pwd, row.password_hash))) {
+      await audit(env, user.id, 'step_up', { ok: false }, request, false, '비밀번호 불일치');
+      return err('비밀번호가 일치하지 않습니다.', 401);
+    }
+    const verifiedUntil = Date.now() + 10 * 60 * 1000;
+    await env.DB.prepare(
+      'UPDATE sessions SET admin_verified_until = ? WHERE token = ?',
+    )
+      .bind(verifiedUntil, sessionToken)
+      .run();
+    await audit(env, user.id, 'step_up', { verified_until: verifiedUntil }, request);
+    return ok({ verified_until: verifiedUntil });
+  }
+
+  // GET /api/admin/users?q=검색어
   if (rest === '/users' && request.method === 'GET') {
     const q = (url.searchParams.get('q') ?? '').trim();
     const like = `%${q.replace(/[%_\\]/g, (m) => '\\' + m)}%`;
     const { results } = await env.DB.prepare(
-      `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, u.created_at,
+      `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, u.is_demo,
+              u.totp_enabled_at, u.created_at,
               (SELECT COUNT(*) FROM sales WHERE user_id = u.id) AS sales_count,
               (SELECT COUNT(*) FROM menus WHERE user_id = u.id AND archived = 0) AS menu_count
        FROM users u
@@ -38,14 +118,23 @@ export async function handleAdmin(
       .bind(q, like, like)
       .all<AdminUserRow>();
     const total = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
+    await audit(env, user.id, 'users.search', { q, count: results.length }, request);
     return ok({
-      users: results.map((r) => ({ ...r, is_admin: !!r.is_admin })),
+      users: results.map((r) => ({
+        ...r,
+        is_admin: !!r.is_admin,
+        is_demo: !!r.is_demo,
+        mfa_enabled: !!r.totp_enabled_at,
+      })),
       total: total?.n ?? results.length,
     });
   }
 
-  // POST /api/admin/users/delete  { ids: number[] } — 일괄 삭제 (본인 계정은 제외)
+  // POST /api/admin/users/delete — step-up 통과 필수
   if (rest === '/users/delete' && request.method === 'POST') {
+    if (!(await isAdminVerified(env, sessionToken))) {
+      return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
+    }
     let body: { ids?: unknown } | null = null;
     try {
       body = (await request.json()) as { ids?: unknown };
@@ -65,7 +154,6 @@ export async function handleAdmin(
     if (ids.length === 0) return ok({ deleted: 0, skippedSelf });
 
     const ph = ids.map(() => '?').join(',');
-    // 자식 행 → 사용자 순으로 삭제 (FK CASCADE가 있어도 명시적으로)
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM sales WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM customer_needs WHERE user_id IN (${ph})`).bind(...ids),
@@ -74,7 +162,108 @@ export async function handleAdmin(
       env.DB.prepare(`DELETE FROM sessions WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM users WHERE id IN (${ph})`).bind(...ids),
     ]);
+    await audit(env, user.id, 'users.delete', { ids, count: ids.length }, request);
     return ok({ deleted: ids.length, skippedSelf });
+  }
+
+  // GET /api/admin/stats — 시스템 통계 (데모 계정 제외)
+  if (rest === '/stats' && request.method === 'GET') {
+    const now = Date.now();
+    const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const ym = (() => {
+      const d = new Date(now + 9 * 3600 * 1000);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    })();
+    const [totalUsers, demoUsers, weekNew, totalSales, totalNeeds, monthAi] = await Promise.all([
+      env.DB.prepare('SELECT COUNT(*) AS n FROM users WHERE is_demo = 0').first<{ n: number }>(),
+      env.DB.prepare('SELECT COUNT(*) AS n FROM users WHERE is_demo = 1').first<{ n: number }>(),
+      env.DB.prepare(
+        'SELECT COUNT(*) AS n FROM users WHERE is_demo = 0 AND created_at >= ?',
+      ).bind(weekAgo).first<{ n: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM sales s JOIN users u ON u.id = s.user_id WHERE u.is_demo = 0`,
+      ).first<{ n: number }>(),
+      env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM customer_needs cn JOIN users u ON u.id = cn.user_id WHERE u.is_demo = 0`,
+      ).first<{ n: number }>(),
+      env.DB.prepare(
+        'SELECT COUNT(*) AS n FROM ai_usage_log WHERE year_month = ?',
+      ).bind(ym).first<{ n: number }>(),
+    ]);
+    await audit(env, user.id, 'stats.view', null, request);
+    return ok({
+      total_users: totalUsers?.n ?? 0,
+      demo_users: demoUsers?.n ?? 0,
+      week_new_users: weekNew?.n ?? 0,
+      total_sales: totalSales?.n ?? 0,
+      total_needs: totalNeeds?.n ?? 0,
+      month_ai_calls: monthAi?.n ?? 0,
+      year_month: ym,
+    });
+  }
+
+  // GET /api/admin/audit?limit=50&cursor=<id> — 감사 로그 (DESC, cursor 페이지네이션)
+  if (rest === '/audit' && request.method === 'GET') {
+    const limN = Number(url.searchParams.get('limit') ?? 50);
+    const limit = Math.min(Math.max(Number.isFinite(limN) ? limN : 50, 1), 200);
+    const cursor = Number(url.searchParams.get('cursor') ?? 0);
+    const sql = cursor > 0
+      ? `SELECT a.id, a.admin_user_id, u.email AS admin_email, a.action, a.target_json,
+                a.ip, a.ua, a.at, a.ok, a.error_msg
+         FROM admin_audit_log a LEFT JOIN users u ON u.id = a.admin_user_id
+         WHERE a.id < ? ORDER BY a.id DESC LIMIT ?`
+      : `SELECT a.id, a.admin_user_id, u.email AS admin_email, a.action, a.target_json,
+                a.ip, a.ua, a.at, a.ok, a.error_msg
+         FROM admin_audit_log a LEFT JOIN users u ON u.id = a.admin_user_id
+         ORDER BY a.id DESC LIMIT ?`;
+    const stmt = cursor > 0
+      ? env.DB.prepare(sql).bind(cursor, limit + 1)
+      : env.DB.prepare(sql).bind(limit + 1);
+    const { results } = await stmt.all<{
+      id: number;
+      admin_user_id: number;
+      admin_email: string | null;
+      action: string;
+      target_json: string | null;
+      ip: string | null;
+      ua: string | null;
+      at: number;
+      ok: number;
+      error_msg: string | null;
+    }>();
+    const hasMore = results.length > limit;
+    const rows = hasMore ? results.slice(0, limit) : results;
+    return ok({
+      entries: rows.map((r) => ({ ...r, ok: !!r.ok })),
+      next_cursor: hasMore ? rows[rows.length - 1].id : null,
+    });
+  }
+
+  // GET /api/admin/ai-usage?ym=YYYY-MM — 월별 AI 호출 집계 (모델·실패율·총 토큰)
+  if (rest === '/ai-usage' && request.method === 'GET') {
+    const ym = url.searchParams.get('ym') ?? '';
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)) return err('잘못된 월 형식이에요.');
+    const { results } = await env.DB.prepare(
+      `SELECT model,
+              COUNT(*) AS calls,
+              SUM(CASE WHEN ok = 1 THEN 1 ELSE 0 END) AS success,
+              SUM(in_tokens) AS in_tokens,
+              SUM(out_tokens) AS out_tokens,
+              AVG(latency_ms) AS avg_latency_ms
+       FROM ai_usage_log WHERE year_month = ?
+       GROUP BY model ORDER BY calls DESC`,
+    )
+      .bind(ym)
+      .all<{
+        model: string;
+        calls: number;
+        success: number;
+        in_tokens: number | null;
+        out_tokens: number | null;
+        avg_latency_ms: number | null;
+      }>();
+    await audit(env, user.id, 'ai_usage.view', { ym }, request);
+    return ok({ ym, by_model: results });
   }
 
   return err('찾을 수 없는 경로입니다.', 404);

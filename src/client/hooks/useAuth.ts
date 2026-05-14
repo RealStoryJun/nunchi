@@ -8,7 +8,13 @@ export interface User {
   business_name: string;
   business_type: string | null;
   is_admin?: boolean;
+  mfa_enabled?: boolean;
 }
+
+// 로그인 1단계 응답 — 2FA 활성이면 mfa_token 받아 2단계 진행
+export type LoginResult =
+  | { kind: 'ok'; user: User }
+  | { kind: 'mfa'; mfa_token: string; expires_in_sec: number };
 
 interface AuthState {
   user: User | null;
@@ -51,10 +57,21 @@ export function useAuth() {
       _listeners.delete(setLocal);
     };
   }, []);
-  const login = useCallback(async (email: string, password: string) => {
-    const data = await apiPost<{ user: User }>('/api/auth/login', { email, password });
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
+    const data = await apiPost<
+      { user: User } | { mfa_required: true; mfa_token: string; expires_in_sec: number }
+    >('/api/auth/login', { email, password });
+    if ('mfa_required' in data) {
+      return { kind: 'mfa', mfa_token: data.mfa_token, expires_in_sec: data.expires_in_sec };
+    }
+    setState({ user: data.user, loading: false });
+    return { kind: 'ok', user: data.user };
+  }, []);
+  // 2FA 2단계 — mfa_token + code → 세션 발급
+  const loginMfa = useCallback(async (mfa_token: string, code: string): Promise<User> => {
+    const data = await apiPost<{ user: User }>('/api/auth/login/mfa', { mfa_token, code });
     setState({ user: data.user, loading: false });
     return data.user;
   }, []);
-  return { ...state, login, logout, refresh: refreshAuth };
+  return { ...state, login, loginMfa, logout, refresh: refreshAuth };
 }

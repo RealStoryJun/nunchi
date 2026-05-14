@@ -11,15 +11,18 @@ import { handleMonthlyCosts } from './monthly-costs';
 import { getSessionUser } from './session';
 
 export default {
-  // 매시 0분 만료된 세션·1시간 이상 지난 auth_attempts 정리 (cron: 0 * * * *)
+  // 매시 0분 cleanup — 만료된 세션·1시간+ auth_attempts·만료된 2FA pending·13개월+ AI usage 로그
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const now = Date.now();
-    const ATTEMPT_WINDOW = 60 * 60 * 1000; // 1시간 이상 지난 시도 행은 정리
+    const ATTEMPT_WINDOW = 60 * 60 * 1000;
+    const AI_LOG_RETENTION = 13 * 31 * 24 * 60 * 60 * 1000; // 13개월
     await env.DB.batch([
       env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
       env.DB.prepare('DELETE FROM auth_attempts WHERE attempted_at < ?').bind(
         now - ATTEMPT_WINDOW,
       ),
+      env.DB.prepare('DELETE FROM auth_pending WHERE expires_at < ?').bind(now),
+      env.DB.prepare('DELETE FROM ai_usage_log WHERE at < ?').bind(now - AI_LOG_RETENTION),
     ]);
   },
 
@@ -64,6 +67,7 @@ export default {
           session.user,
           path.replace('/api/admin', ''),
           url,
+          session.token,
         );
       }
 

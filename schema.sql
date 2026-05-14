@@ -7,19 +7,32 @@ CREATE TABLE IF NOT EXISTS users (
   recovery_question TEXT NOT NULL,
   recovery_answer_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  is_admin INTEGER NOT NULL DEFAULT 0
+  is_admin INTEGER NOT NULL DEFAULT 0,
+  -- 2FA (TOTP) — opt-in. totp_secret NULL이면 비활성. backup_codes는 PBKDF2 hash JSON 배열.
+  totp_secret TEXT,
+  totp_backup_codes_hash TEXT,
+  totp_enabled_at INTEGER,
+  -- 데모/시드 계정 마킹 — 시스템 통계에서 제외 (guest1-5, mobile-qa, onboarding-qa)
+  is_demo INTEGER NOT NULL DEFAULT 0
 );
 
--- 기존 DB 마이그레이션: 컬럼 없으면 추가
+-- 기존 DB 마이그레이션 (apply by hand): 컬럼 없으면 추가
 -- ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+-- ALTER TABLE users ADD COLUMN totp_secret TEXT;
+-- ALTER TABLE users ADD COLUMN totp_backup_codes_hash TEXT;
+-- ALTER TABLE users ADD COLUMN totp_enabled_at INTEGER;
+-- ALTER TABLE users ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL,
+  -- Admin step-up auth — mutation 직전 비밀번호 재입력으로 10분 TTL 부여
+  admin_verified_until INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+-- 기존 DB: ALTER TABLE sessions ADD COLUMN admin_verified_until INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS menus (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +99,49 @@ CREATE TABLE IF NOT EXISTS monthly_cost_items (
   created_at INTEGER NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- 2FA 로그인 1단계 통과 후 발급되는 단명 토큰 — 2단계(TOTP 코드 입력) 위한 임시 보관.
+-- 쿠키 X (응답 body로만 전달, 새로고침 시 1단계부터). 10분 TTL.
+CREATE TABLE IF NOT EXISTS auth_pending (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_auth_pending_user ON auth_pending(user_id);
+
+-- 관리자 액션 감사 로그 — 검색·삭제 등 모든 admin 액션 기록. PII는 user_id만(이메일 본문 X).
+CREATE TABLE IF NOT EXISTS admin_audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_user_id INTEGER NOT NULL,
+  action TEXT NOT NULL,       -- 'users.search' | 'users.delete' | 'step_up' | ...
+  target_json TEXT,           -- 행동 맥락 JSON, 예 {"ids":[12,34]}. 정적 메시지만.
+  ip TEXT,
+  ua TEXT,
+  at INTEGER NOT NULL,
+  ok INTEGER NOT NULL DEFAULT 1,
+  error_msg TEXT,
+  FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_audit_at ON admin_audit_log(at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_admin ON admin_audit_log(admin_user_id, at DESC);
+
+-- AI(Groq) 사용량 로그 — 모든 사용자의 LLM 호출 기록. 13개월 보관 후 cron 정리.
+CREATE TABLE IF NOT EXISTS ai_usage_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  model TEXT NOT NULL,
+  year_month TEXT NOT NULL,   -- 'YYYY-MM' (집계용 인덱스 키)
+  in_tokens INTEGER,
+  out_tokens INTEGER,
+  latency_ms INTEGER,
+  ok INTEGER NOT NULL DEFAULT 1,
+  error_code TEXT,
+  at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_ym ON ai_usage_log(year_month, user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage_log(user_id, at DESC);
 
 -- 과거 월 AI 인사이트 영구 저장 — 한 번 생성된 결과 재진입 시 LLM 호출 없이 재현.
 -- 현재 월(이번 달)은 저장하지 않음(데이터 계속 변하므로 기존 클라 TTL 캐시 그대로).

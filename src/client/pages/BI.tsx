@@ -726,7 +726,7 @@ export default function BI() {
             key={r}
             type="button"
             onClick={() => setRange(r)}
-            className={`shrink-0 px-2 md:px-3.5 h-9 md:h-10 rounded-lg text-xs md:text-sm border transition ${
+            className={`flex-auto whitespace-nowrap px-2 md:px-3.5 h-9 md:h-10 rounded-lg text-xs md:text-sm border transition ${
               range === r
                 ? 'bg-accent text-white border-accent'
                 : 'bg-card text-ink border-border'

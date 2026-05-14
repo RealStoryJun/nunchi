@@ -7,7 +7,10 @@
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    // 기본은 asset이 worker보다 우선이라 / 요청이 워커에 안 도달 → www→root 301 못 함.
+    // run_worker_first=true로 모든 요청을 워커가 먼저 받고, 정적은 워커 안에서 env.ASSETS.fetch 호출.
+    "run_worker_first": true
   },
   "d1_databases": [
     {

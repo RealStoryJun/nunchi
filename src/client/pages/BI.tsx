@@ -918,7 +918,7 @@ export default function BI() {
                 <StatCard
                   label="순이익"
                   value={wonCompact(netProfit)}
-                  hint={hasFc ? `${activeFcLabel} 고정비 ${wonCompact(activeFcSum)} 차감 후` : undefined}
+                  hint={hasFc ? `${activeFcLabel} 고정비 차감 후` : undefined}
                   tone={netProfit >= 0 ? 'accent' : 'warm'}
                 />
                 <StatCard
@@ -971,11 +971,11 @@ export default function BI() {
                     </li>
                   ))}
                 {activeFcItems.length > 3 && (
-                  <li className="pt-0.5">
+                  <li>
                     <button
                       type="button"
                       onClick={() => setFcExpanded((v) => !v)}
-                      className="text-xs text-accent hover:underline"
+                      className="text-xs text-accent hover:underline py-2 -my-1 inline-block"
                     >
                       {fcExpanded ? '접기' : `외 ${activeFcItems.length - 3}개 더 보기`}
                     </button>

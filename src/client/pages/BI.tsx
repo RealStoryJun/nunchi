@@ -96,7 +96,7 @@ interface CostItem {
   sort_order: number;
 }
 
-type Range = 'today' | 'week' | 'month' | 'custom';
+type Range = 'today' | 'week' | 'month' | 'lastMonth' | 'custom';
 
 const PIE_COLORS = ['#1B4332', '#2D6A4F', '#52796F', '#C99D52', '#E76F51', '#767270'];
 
@@ -216,6 +216,12 @@ export default function BI() {
       return [startOfWeek(now).getTime(), endOfDay(now).getTime()];
     if (range === 'month')
       return [startOfMonth(now).getTime(), endOfDay(now).getTime()];
+    if (range === 'lastMonth') {
+      // 지난 달 1일 00:00 ~ 지난 달 말일 23:59:59 (KST 로컬)
+      const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const prevEnd = new Date(prev.getFullYear(), prev.getMonth() + 1, 0);
+      return [prev.getTime(), endOfDay(prevEnd).getTime()];
+    }
     return [
       startOfDay(new Date(from)).getTime(),
       endOfDay(new Date(to)).getTime(),
@@ -714,7 +720,7 @@ export default function BI() {
       </div>
 
       <div className="card p-3 mb-4 flex flex-wrap items-center gap-2">
-        {(['today', 'week', 'month', 'custom'] as Range[]).map((r) => (
+        {(['today', 'week', 'month', 'lastMonth', 'custom'] as Range[]).map((r) => (
           <button
             key={r}
             type="button"
@@ -731,6 +737,8 @@ export default function BI() {
               ? '이번 주'
               : r === 'month'
               ? '이번 달'
+              : r === 'lastMonth'
+              ? '지난달'
               : '사용자 지정'}
           </button>
         ))}

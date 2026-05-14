@@ -194,6 +194,8 @@ export default function BI() {
   // 지난달 고정비 — range='lastMonth' 클릭 시 4-카드 순이익에 차감 + 카드 표시
   const [lastMonthCostItems, setLastMonthCostItems] = useState<CostItem[] | null>(null);
   const [costEditOpen, setCostEditOpen] = useState(false);
+  // 고정비 카드 — 3개 초과 시 "외 N개 더 보기" 펼침/접기
+  const [fcExpanded, setFcExpanded] = useState(false);
   // 편집 버퍼 — amount는 input UX 위해 문자열로 유지, 저장 시 파싱
   const [editingCosts, setEditingCosts] = useState<{ label: string; amount: string }[]>([]);
   const [costSaving, setCostSaving] = useState(false);
@@ -960,14 +962,24 @@ export default function BI() {
                 )}
               </div>
               <ul className="space-y-1 text-sm">
-                {activeFcItems.slice(0, 3).map((it) => (
-                  <li key={it.id} className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-ink/80">{it.label}</span>
-                    <span className="num text-ink/90 shrink-0">{won(it.amount)}</span>
-                  </li>
-                ))}
+                {activeFcItems
+                  .slice(0, fcExpanded ? activeFcItems.length : 3)
+                  .map((it) => (
+                    <li key={it.id} className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-ink/80">{it.label}</span>
+                      <span className="num text-ink/90 shrink-0">{won(it.amount)}</span>
+                    </li>
+                  ))}
                 {activeFcItems.length > 3 && (
-                  <li className="text-xs text-sub pt-0.5">외 {activeFcItems.length - 3}개</li>
+                  <li className="pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setFcExpanded((v) => !v)}
+                      className="text-xs text-accent hover:underline"
+                    >
+                      {fcExpanded ? '접기' : `외 ${activeFcItems.length - 3}개 더 보기`}
+                    </button>
+                  </li>
                 )}
               </ul>
               <div className="mt-3 pt-2 border-t border-border flex items-baseline justify-between gap-2">

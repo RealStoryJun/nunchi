@@ -168,16 +168,17 @@ export const handleAuth = async (
     if (!recoveryAnswer || recoveryAnswer.trim().length < 4)
       return err('보안질문 답변은 4자 이상 입력해주세요.');
 
-    // IP 기반 rate limit (가입 봇 방어)
+    // IP 기반 rate limit (가입 봇 방어) — 시도 자체에 카운터 ↑ (unique email 봇이 우회 못 하게).
+    // Turnstile graceful degradation 상태(secret 미설정)에서도 IP 단위 봇 차단을 보장.
     const ipKey = `signup-ip:${clientIp(request)}`;
     const ipRl = await checkRateLimit(env, ipKey, 10, 60 * 60 * 1000);
     if (!ipRl.ok) return tooMany(ipRl.retryAfterMs);
+    await recordAttempt(env, ipKey);
 
     const existing = await env.DB.prepare('SELECT id FROM users WHERE email = ?')
       .bind(email)
       .first();
     if (existing) {
-      await recordAttempt(env, ipKey);
       return err('이미 가입된 이메일입니다.');
     }
 
@@ -192,6 +193,9 @@ export const handleAuth = async (
       .run();
     const userId = Number(result.meta.last_row_id);
     const { token, expiresAt } = await createSession(env, userId);
+    // 신규 가입 device도 user_login_events에 기록 (login 흐름과 동일 패턴)
+    if (ctx) ctx.waitUntil(logLoginEvent(env, userId, request));
+    else void logLoginEvent(env, userId, request);
     return ok(
       {
         user: {

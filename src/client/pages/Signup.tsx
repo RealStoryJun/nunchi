@@ -42,15 +42,16 @@ export default function Signup() {
   const turnstileRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
 
-  // 1. site key fetch — 공개 config라 1시간 캐시 (사장님이 wrangler put 으로만 바뀜)
+  // 1. site key fetch — 공개 config라 1시간 캐시 (사장님이 wrangler put 으로만 바뀜).
+  // `{ value }` wrap으로 cached null과 cache-miss 구분 (raw null이면 미스 / { value: null }이면 캐시된 미설정).
   useEffect(() => {
     const CACHE_KEY = 'turnstile:site_key';
     const TTL = 60 * 60 * 1000;
-    const cached = getCache<string | null>(CACHE_KEY);
-    if (cached !== null) setSiteKey(cached);
+    const cached = getCache<{ value: string | null }>(CACHE_KEY);
+    if (cached) setSiteKey(cached.value);
     if (isFresh(CACHE_KEY, TTL)) return;
     apiGet<{ site_key: string | null }>('/api/auth/turnstile/config')
-      .then((d) => { setSiteKey(d.site_key); setCache(CACHE_KEY, d.site_key); })
+      .then((d) => { setSiteKey(d.site_key); setCache(CACHE_KEY, { value: d.site_key }); })
       .catch(() => setSiteKey(null));
   }, []);
 

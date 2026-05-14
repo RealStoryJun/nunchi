@@ -336,7 +336,7 @@ function UsersTab({ meId }: { meId: number }) {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 anim-fade"
           onClick={(e) => { if (e.target === e.currentTarget) setStepUpOpen(false); }}
         >
-          <div className="card max-w-sm w-full p-5 anim-pop">
+          <div className="card max-w-sm md:max-w-md w-full p-5 anim-pop">
             <h2 className="font-semibold mb-2">관리자 인증</h2>
             <p className="text-sub text-sm mb-3 break-keep">
               위험한 작업이라 비밀번호를 한 번 더 확인합니다. 인증 후 10분 동안 같은 작업을 반복할 수 있어요.

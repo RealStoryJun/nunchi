@@ -275,7 +275,7 @@ export default function Sales() {
         {/* 왼쪽: 헤더 + 메뉴 타일 */}
         <div className="flex-1 min-w-0 pb-28 xl:pb-0">
           <div className="md:hidden mb-3">
-            <h1 className="font-display text-2xl">판매 입력</h1>
+            <h1 className="font-display text-2xl md:text-3xl">판매 입력</h1>
             <p className="text-sub text-xs">
               메뉴를 누르면 담기고, 확인하면 한 번에 기록돼요
             </p>

@@ -171,11 +171,11 @@ export default function NeedsTab({
     () => menus.filter((m) => menuIds.includes(m.id)),
     [menus, menuIds],
   );
-  // 오늘 기록 — 시간 ASC(오래된 → 새것 아래), 같은 시각은 id ASC. "일지" 형태.
+  // 오늘 기록 — 시간 DESC(최근이 위), 같은 시각은 id DESC. 사장님이 방금 입력한 게 즉시 위에 보임.
   const recentSorted = useMemo(
     () =>
       recent
-        ? [...recent].sort((a, b) => a.createdAt - b.createdAt || a.id - b.id)
+        ? [...recent].sort((a, b) => b.createdAt - a.createdAt || b.id - a.id)
         : null,
     [recent],
   );

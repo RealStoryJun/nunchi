@@ -947,18 +947,20 @@ export default function BI() {
             </div>
           ) : null}
 
-          {/* md:items-start — 좌·우 카드가 각자 콘텐츠 길이로 (좌측 빈공간 방지). */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 md:items-start">
-            <div className="card p-4">
-              <div className="flex items-center justify-between mb-3">
+          {/* 좌·우 카드 같은 높이 (grid stretch 디폴트). 좌측 차트는 카드 안을 다 채움. */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div className="card p-4 flex flex-col">
+              <div className="flex items-center justify-between mb-3 shrink-0">
                 <h3 className="font-semibold">일별 손익 추이</h3>
               </div>
               {stats.byDay.length === 0 ? (
-                <p className="text-sub text-sm py-12 text-center">
-                  이 기간에 판매 기록이 없습니다.
-                </p>
+                <div className="flex-1 min-h-[220px] flex items-center justify-center">
+                  <p className="text-sub text-sm text-center">
+                    이 기간에 판매 기록이 없습니다.
+                  </p>
+                </div>
               ) : stats.byDay.length === 1 ? (
-                <div className="min-h-[220px] flex flex-col items-center justify-center text-center">
+                <div className="flex-1 min-h-[220px] flex flex-col items-center justify-center text-center">
                   <div
                     className={`num text-3xl md:text-4xl font-bold ${
                       stats.byDay[0].profit >= 0 ? 'text-accent' : 'text-warm'
@@ -971,7 +973,10 @@ export default function BI() {
                   </p>
                 </div>
               ) : (
-                <ResponsiveContainer width="100%" height={220}>
+                /* 차트 영역 flex-1: 카드 안 남은 높이를 차트가 다 채움.
+                   min-h-[220px]로 모바일·짧은 카드일 때 차트 최소 높이 보장. */
+                <div className="flex-1 min-h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.byDay}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#E5DFD3" />
                     <XAxis
@@ -996,6 +1001,7 @@ export default function BI() {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
+                </div>
               )}
             </div>
             <div className="card p-4">

@@ -87,8 +87,9 @@ export const handleAuth = async (
     if (pwErr) return err(pwErr);
     if (!businessName) return err('가게 이름을 입력해주세요.');
     if (!recoveryQuestion) return err('보안질문을 입력해주세요.');
-    if (!recoveryAnswer || recoveryAnswer.trim().length < 1)
-      return err('보안질문 답변을 입력해주세요.');
+    // 복구 답변 최소 4자 — brute force 공간 확보 (rate-limit 5/30min과 합쳐 방어)
+    if (!recoveryAnswer || recoveryAnswer.trim().length < 4)
+      return err('보안질문 답변은 4자 이상 입력해주세요.');
 
     // IP 기반 rate limit (가입 봇 방어)
     const ipKey = `signup-ip:${clientIp(request)}`;

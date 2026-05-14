@@ -229,10 +229,10 @@ export default function Sales() {
     setSubmitting(false);
     const failed = items.filter((_, i) => results[i].status === 'rejected');
     if (failed.length === 0) {
+      // 수량 합. "5건 기록됐어요"는 사장님 입장에서 자연 (메뉴 수가 아닌 수량 단위).
       const n = items.reduce((s, it) => s + it.qty, 0);
-      // BI가 새 매출을 바로 반영하도록 통계/판매내역 캐시 무효화 (인사이트 캐시는 1h 그대로)
+      // BI가 새 매출을 바로 반영하도록 통계 캐시 무효화
       invalidateByPrefix(`stats:${userId}:`);
-      invalidateByPrefix(`sales:${userId}:`);
       setCart([]);
       setExpanded(false);
       showToast(`${n}건 기록됐어요`);

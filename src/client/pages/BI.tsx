@@ -194,8 +194,9 @@ export default function BI() {
   // 지난달 고정비 — range='lastMonth' 클릭 시 4-카드 순이익에 차감 + 카드 표시
   const [lastMonthCostItems, setLastMonthCostItems] = useState<CostItem[] | null>(null);
   const [costEditOpen, setCostEditOpen] = useState(false);
-  // 고정비 카드 — 3개 초과 시 "외 N개 더 보기" 펼침/접기
+  // 고정비 카드 — 3개 초과 시 "외 N개 더 보기" 펼침/접기. range 토글 시 자동 접기.
   const [fcExpanded, setFcExpanded] = useState(false);
+  useEffect(() => { setFcExpanded(false); }, [range]);
   // 편집 버퍼 — amount는 input UX 위해 문자열로 유지, 저장 시 파싱
   const [editingCosts, setEditingCosts] = useState<{ label: string; amount: string }[]>([]);
   const [costSaving, setCostSaving] = useState(false);
@@ -235,12 +236,19 @@ export default function BI() {
     ];
   }, [range, from, to]);
 
-  // 이번 달 윈도우 (세션 동안 고정) — "이번 달" 기간 선택과 동일한 from/to라 stats 캐시도 공유
+  // 이번 달 윈도우 — 자정 경계 대응을 위해 dayTick state로 강제 재계산
+  const [dayTick, setDayTick] = useState(0);
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === 'visible') setDayTick((t) => t + 1); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
   const [monthFromMs, monthToMs, currentYm] = useMemo(() => {
     const now = new Date();
     const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     return [startOfMonth(now).getTime(), endOfDay(now).getTime(), ym];
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayTick]);
   const monthStatsCacheKey = `stats:${userId}:${monthFromMs}:${monthToMs}`;
   const monthCostsKey = `fixedCosts:${userId}:${currentYm}`;
   // 지난달 ym 도출 (currentYm - 1)
@@ -416,8 +424,9 @@ export default function BI() {
   // 이번 달 통합 prefetch — "월 전체" AI 인사이트 + 니즈 카드 + 고정비 카드용. 단위별 AI는 lazy.
   useEffect(() => {
     let alive = true;
-    // monthStats 캐시 prefetch — 사장님이 "월 전체" 칩 클릭하면 cache hit
-    if (!isFresh(monthStatsCacheKey, TTL_STATS)) {
+    // monthStats 캐시 prefetch — 사장님이 "이번 달" 칩 클릭하면 cache hit.
+    // 현재 range가 이미 'month'면 메인 stats fetch가 같은 키 채우므로 중복 skip.
+    if (monthStatsCacheKey !== statsCacheKey && !isFresh(monthStatsCacheKey, TTL_STATS)) {
       apiGet<Stats>(`/api/stats?from=${monthFromMs}&to=${monthToMs}&tz=${tzOffset}`)
         .then((d) => {
           if (!alive) return;
@@ -452,7 +461,7 @@ export default function BI() {
     return () => {
       alive = false;
     };
-  }, [monthStatsCacheKey, monthCostsKey, lastMonthCostsKey, monthFromMs, monthToMs, tzOffset, currentYm, lastMonthYm]);
+  }, [monthStatsCacheKey, statsCacheKey, monthCostsKey, lastMonthCostsKey, monthFromMs, monthToMs, tzOffset, currentYm, lastMonthYm]);
 
   // 고객 니즈 집계 (선택 기간) — /needs 페이지와 별개, BI에 요약 카드로
   useEffect(() => {
@@ -551,6 +560,7 @@ export default function BI() {
       // 고정비가 바뀌면 AI 인사이트(이번 달 단위) 캐시·메모리 모두 무효화 + 재호출 트리거
       invalidateByPrefix(`insights:${userId}:`);
       setAiByPeriod({});
+      aiInflightRef.current.clear(); // 인플라이트 stale closure 방어
       setAiRefreshNonce((n) => n + 1);
       setCostEditOpen(false);
     } catch (e) {
@@ -617,6 +627,7 @@ export default function BI() {
       // (서버는 sales.ts에서 sold_at→ym으로 ai_insights 행 자동 무효화)
       invalidateByPrefix(`insights:${userId}:`);
       setAiByPeriod({});
+      aiInflightRef.current.clear();
       setAiRefreshNonce((n) => n + 1);
     }
   };
@@ -749,7 +760,7 @@ export default function BI() {
   }, [aiWindow.fromMs, aiWindow.toMs, aiWindow.ym, userId, user?.business_type, aiRefreshNonce]);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
+    <div className="max-w-3xl xl:max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0">
       <div className="flex items-baseline justify-between mb-4">
         <h1 className="font-display text-2xl md:text-3xl">BI 대시보드</h1>
       </div>
@@ -1387,7 +1398,7 @@ export default function BI() {
 
       {/* 판매 내역 수정 — 모바일은 풀스크린, 데스크탑은 중앙 다이얼로그 */}
       {editOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-bg md:items-center md:justify-center md:bg-black/40 md:p-6">
+        <div className="fixed inset-0 z-50 flex flex-col bg-bg md:items-center md:justify-center md:bg-black/50 md:p-6">
           <div className="flex flex-col flex-1 min-h-0 w-full bg-bg overflow-hidden md:flex-none md:max-w-2xl md:max-h-[85vh] md:rounded-2xl md:border md:border-border md:shadow-2xl">
             <header className="px-4 h-14 flex items-center justify-between border-b border-border bg-card shrink-0">
               <h2 className="font-semibold">판매 내역 수정</h2>
@@ -1486,7 +1497,7 @@ export default function BI() {
 
       {/* 이번 달 고정비 편집 모달 — 모바일 풀스크린, 데스크탑 중앙 다이얼로그 */}
       {costEditOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-bg md:items-center md:justify-center md:bg-black/40 md:p-6">
+        <div className="fixed inset-0 z-50 flex flex-col bg-bg md:items-center md:justify-center md:bg-black/50 md:p-6">
           <div className="flex flex-col flex-1 min-h-0 w-full bg-bg overflow-hidden md:flex-none md:max-w-xl md:max-h-[85vh] md:rounded-2xl md:border md:border-border md:shadow-2xl">
             <header className="px-4 h-14 flex items-center justify-between border-b border-border bg-card shrink-0">
               <h2 className="font-semibold">이번 달 고정비</h2>

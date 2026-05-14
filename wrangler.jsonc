@@ -25,7 +25,9 @@
     "enabled": true
   },
   "triggers": {
-    "crons": ["0 3 * * *"]
+    // 매시 0분 cron — auth_attempts 1시간 이상 행 정리, 만료된 세션 정리.
+    // (트래픽 폭주 시 D1 storage 폭증 방지 — 이전 1일 1회는 너무 느림.)
+    "crons": ["0 * * * *"]
   },
   // Custom Domain — Cloudflare가 SSL·DNS 레코드를 자동 발급. 옛 workers.dev URL은 그대로 동시 작동.
   // www는 worker 안에서 root로 301 정규화.

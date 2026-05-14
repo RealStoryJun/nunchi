@@ -88,8 +88,9 @@ export const handleSales = async (
     const quantity = body.quantity ?? 1;
     if (!Number.isInteger(quantity) || quantity < 1)
       return err('수량은 1 이상의 정수여야 합니다.');
+    // archived 메뉴는 판매 기록 불가 — UI는 archived 안 노출하지만 외부 API 호출 방어
     const menu = await env.DB.prepare(
-      'SELECT * FROM menus WHERE id = ? AND user_id = ?',
+      'SELECT * FROM menus WHERE id = ? AND user_id = ? AND archived = 0',
     )
       .bind(body.menuId, user.id)
       .first<MenuRow>();

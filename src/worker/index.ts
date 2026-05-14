@@ -1,4 +1,4 @@
-import { Env, err, ok, isBusinessType } from './types';
+import { Env, err, ok, isBusinessType, SECURITY_HEADERS } from './types';
 import { handleAuth } from './auth';
 import { handleMenus } from './menus';
 import { handleSales } from './sales';
@@ -35,7 +35,11 @@ export default {
     }
 
     if (!path.startsWith('/api/')) {
-      return env.ASSETS.fetch(request);
+      // 정적 자산도 보안 헤더 일괄 추가 — HTML/CSS/JS 모두 적용
+      const res = await env.ASSETS.fetch(request);
+      const headers = new Headers(res.headers);
+      for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
     }
 
     try {

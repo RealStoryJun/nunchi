@@ -98,11 +98,22 @@ export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = { ok: false; error: string };
 export type ApiResponse<T> = ApiOk<T> | ApiErr;
 
+// 모든 응답에 일괄 적용할 보안 헤더 — 다운그레이드(HSTS)/clickjacking(X-Frame)/sniff/referrer/permissions
+// CSP는 React 동적 inject (Recharts·tailwind 등)로 인해 보수적: 'self' + inline 허용. 외부 origin은 Groq 만 (서버 직접).
+export const SECURITY_HEADERS: Record<string, string> = {
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+  'x-frame-options': 'DENY',
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+};
+
 export const json = <T>(body: ApiResponse<T>, init: ResponseInit = {}): Response =>
   new Response(JSON.stringify(body), {
     ...init,
     headers: {
       'content-type': 'application/json; charset=utf-8',
+      ...SECURITY_HEADERS,
       ...(init.headers || {}),
     },
   });

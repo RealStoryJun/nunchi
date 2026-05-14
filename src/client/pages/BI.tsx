@@ -197,12 +197,11 @@ export default function BI() {
   const [editingCosts, setEditingCosts] = useState<{ label: string; amount: string }[]>([]);
   const [costSaving, setCostSaving] = useState(false);
   const [costMsg, setCostMsg] = useState<string | null>(null);
-  // AI 인사이트 — 월 picker로 과거 월 조회 가능. selectedYm = 보고 있는 월.
-  // 이번 달이면 주차/월차 cadence(기존), 과거 월이면 '월 전체' 단일 — 서버 D1에서 저장본 조회, 없으면 생성·저장.
-  const [aiUnit, setAiUnit] = useState<string>('');
-  const [aiByUnit, setAiByUnit] = useState<Record<string, string[] | null>>({});
-  const aiInflightRef = useRef<Set<string>>(new Set()); // 인플라이트 unit set — 중복 POST 방지, 자정초기화 stranded null 회피
-  const [selectedYm, setSelectedYm] = useState<string>(''); // 빈 문자열 → currentYm 로 effect에서 초기화
+  // AI 인사이트 — 상단 range selector(오늘/이번 주/이번 달/사용자 지정)와 자동 연동.
+  // 진행 중 단위면 직전 완료 단위로 자동 시프트("1주차가 끝나지 않으면 전주차꺼"). aiWindow 참조.
+  // period key = `${fromMs}:${toMs}` — 같은 기간 재선택 시 인메모리 캐시 hit.
+  const [aiByPeriod, setAiByPeriod] = useState<Record<string, string[] | null>>({});
+  const aiInflightRef = useRef<Set<string>>(new Set()); // 인플라이트 period key — 중복 POST 방지
   // 메뉴 등록 여부 — BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
   const [menuCount, setMenuCount] = useState<number | null>(() => {
     const c = getCache<{ id: number }[]>(`menus:${userId}`);
@@ -237,82 +236,126 @@ export default function BI() {
     () => (monthCostItems ? monthCostItems.reduce((s, x) => s + x.amount, 0) : 0),
     [monthCostItems],
   );
-  // 월 picker — 현재 월부터 12개월 전까지 (가입 시점 정확히 모르므로 단순화)
-  const monthChips = useMemo(() => {
-    const out: { ym: string; label: string }[] = [];
-    let cur = currentYm;
-    for (let i = 0; i < 12; i++) {
-      out.push({
-        ym: cur,
-        label:
-          cur === currentYm
-            ? '이번 달'
-            : cur.slice(0, 4) === currentYm.slice(0, 4)
-            ? `${Number(cur.slice(5, 7))}월`
-            : `${cur.slice(2, 4)}년 ${Number(cur.slice(5, 7))}월`,
-      });
-      cur = prevYearMonth(cur);
+  // range + 오늘 시각 → AI가 자동으로 분석할 기간. 진행 중 단위면 직전 완료 단위로 시프트.
+  // 사장님 발화: "오늘 5월 3주차잖아 그럼 2주차 인사이트 보여주는거지" → ISO 주(월~일) 기반.
+  // 주차 번호는 "그 달의 1일이 속한 ISO 주가 1주차"로 계산 (5/1 토라면 4/27-5/3 = 5월 1주차).
+  const aiWindow = useMemo((): {
+    unit: 'today' | 'week' | 'month' | 'custom';
+    cardTitle: string;
+    fromMs: number;
+    toMs: number;
+    ym: string | null;         // 영구 저장 키 (월 단위 시프트 시 'YYYY-MM')
+    shifted: boolean;
+    shiftReason?: string;
+  } => {
+    const now = new Date();
+    const nowMs = now.getTime();
+    // 그 dt가 속한 달에서 몇 번째 ISO 주인지 — 그 달 1일이 속한 ISO 주가 1주차
+    const monthWeekNum = (dt: Date): number => {
+      const ws = startOfWeek(dt);
+      const firstOfMonth = new Date(dt.getFullYear(), dt.getMonth(), 1);
+      const firstWeekStart = startOfWeek(firstOfMonth);
+      const diffDays = Math.round((ws.getTime() - firstWeekStart.getTime()) / 86400000);
+      return Math.floor(diffDays / 7) + 1;
+    };
+    const ymOf = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+    if (range === 'today') {
+      return {
+        unit: 'today',
+        cardTitle: `오늘 (${now.getMonth() + 1}월 ${now.getDate()}일) 분석`,
+        fromMs: startOfDay(now).getTime(),
+        toMs: endOfDay(now).getTime(),
+        ym: null,
+        shifted: false,
+      };
     }
-    return out;
-  }, [currentYm]);
-  // 빈 selectedYm → currentYm 초기화 (auth/cache 흐름 늦게 도착해도 안전)
-  const activeYm = selectedYm || currentYm;
-  const isPastMonth = activeYm < currentYm;
-  // AI 인사이트 단위 목록 — 이번 달이면 1~5주차 + 월 전체(미래 주차 제외), 과거 월이면 '월 전체' 단일
-  const aiUnits = useMemo(() => {
-    const [y, m] = activeYm.split('-').map(Number);
-    const monthIdx = m - 1;
-    const daysInMonth = new Date(y, m, 0).getDate();
-    const monthName = `${m}월`;
-    type Status = 'done' | 'in-progress' | 'future';
-    interface U { unit: string; label: string; cardTitle: string; fromMs: number; toMs: number; status: Status; }
-    const mFrom = new Date(y, monthIdx, 1).getTime();
-    const mTo = new Date(y, monthIdx, daysInMonth, 23, 59, 59, 999).getTime();
-    // 과거 월: '월 전체' 1개만 (주차는 영구 저장 안 함)
-    if (isPastMonth) {
-      return [{
-        unit: 'm',
-        label: '월 전체',
-        cardTitle: `${monthName} 전체`,
-        fromMs: mFrom, toMs: mTo, status: 'done' as Status,
-      }];
+    if (range === 'week') {
+      const thisWs = startOfWeek(now);
+      const thisWe = endOfDay(new Date(thisWs.getTime() + 6 * 86400000));
+      if (nowMs > thisWe.getTime()) {
+        // 이번 주 완료 (드문 케이스 — 일요일 자정 직후)
+        return {
+          unit: 'week',
+          cardTitle: `${thisWs.getMonth() + 1}월 ${monthWeekNum(thisWs)}주차 분석`,
+          fromMs: thisWs.getTime(),
+          toMs: thisWe.getTime(),
+          ym: null,
+          shifted: false,
+        };
+      }
+      // 진행 중 — 직전 주
+      const prevWs = new Date(thisWs.getTime() - 7 * 86400000);
+      const prevWe = new Date(thisWs.getTime() - 1);
+      // 직전 주의 끝(일요일)이 이번 달이 아니면 → 이전 달 전체로 시프트 (사장님: "전주차가 저번달이면 저번달꺼")
+      if (prevWe.getMonth() !== now.getMonth()) {
+        const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const pmEnd = endOfDay(new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0));
+        return {
+          unit: 'month',
+          cardTitle: `${prevMonth.getMonth() + 1}월 전체 분석`,
+          fromMs: prevMonth.getTime(),
+          toMs: pmEnd.getTime(),
+          ym: ymOf(prevMonth),
+          shifted: true,
+          shiftReason: '이번 주가 아직 진행 중이라, 지난 달 전체를 보여드려요.',
+        };
+      }
+      return {
+        unit: 'week',
+        cardTitle: `${prevWs.getMonth() + 1}월 ${monthWeekNum(prevWs)}주차 분석`,
+        fromMs: prevWs.getTime(),
+        toMs: prevWe.getTime(),
+        ym: null,
+        shifted: true,
+        shiftReason: '이번 주가 아직 진행 중이라, 지난 주를 보여드려요.',
+      };
     }
-    // 이번 달: 주차 + 월 전체
-    const now = Date.now();
-    const list: U[] = [];
-    for (let w = 1; w <= 5; w++) {
-      const startDay = (w - 1) * 7 + 1;
-      if (startDay > daysInMonth) break;
-      const endDay = Math.min(w * 7, daysInMonth);
-      const wFrom = new Date(y, monthIdx, startDay, 0, 0, 0, 0).getTime();
-      const wTo = new Date(y, monthIdx, endDay, 23, 59, 59, 999).getTime();
-      const status: Status = now > wTo ? 'done' : now < wFrom ? 'future' : 'in-progress';
-      if (status === 'future') continue;
-      list.push({
-        unit: `w${w}`,
-        label: `${w}주차`,
-        cardTitle: status === 'in-progress' ? `${monthName} ${w}주차 (진행 중)` : `${monthName} ${w}주차`,
-        fromMs: wFrom, toMs: wTo, status,
-      });
+    if (range === 'month') {
+      const ms = startOfMonth(now);
+      const me = endOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+      if (nowMs > me.getTime()) {
+        return {
+          unit: 'month',
+          cardTitle: `${now.getMonth() + 1}월 전체 분석`,
+          fromMs: ms.getTime(),
+          toMs: me.getTime(),
+          ym: ymOf(now),
+          shifted: false,
+        };
+      }
+      // 진행 중 — 저번 달 전체
+      const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const pmEnd = endOfDay(new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0));
+      return {
+        unit: 'month',
+        cardTitle: `${prevMonth.getMonth() + 1}월 전체 분석`,
+        fromMs: prevMonth.getTime(),
+        toMs: pmEnd.getTime(),
+        ym: ymOf(prevMonth),
+        shifted: true,
+        shiftReason: '이번 달이 아직 진행 중이라, 지난 달 전체를 보여드려요.',
+      };
     }
-    const mStatus: Status = now > mTo ? 'done' : 'in-progress';
-    list.push({
-      unit: 'm',
-      label: '월 전체',
-      cardTitle: mStatus === 'in-progress' ? `${monthName} 전체 (진행 중)` : `${monthName} 전체`,
-      fromMs: mFrom, toMs: mTo, status: mStatus,
-    });
-    return list;
-  }, [activeYm, isPastMonth]);
-  // Default 선택 — 과거 월이면 'm', 이번 달이면 가장 최근 완료된 주차→진행중→월 전체
-  const defaultAiUnit = useMemo(() => {
-    if (isPastMonth) return 'm';
-    const doneWeeks = aiUnits.filter((u) => u.unit !== 'm' && u.status === 'done');
-    if (doneWeeks.length > 0) return doneWeeks[doneWeeks.length - 1].unit;
-    const inProgressWeek = aiUnits.find((u) => u.unit !== 'm' && u.status === 'in-progress');
-    if (inProgressWeek) return inProgressWeek.unit;
-    return aiUnits[aiUnits.length - 1]?.unit ?? '';
-  }, [aiUnits, isPastMonth]);
+    // custom — 사장님이 명시적으로 고른 기간이라 시프트 안 함
+    return {
+      unit: 'custom',
+      cardTitle: '선택 기간 분석',
+      fromMs,
+      toMs,
+      ym: null,
+      shifted: false,
+    };
+  }, [range, fromMs, toMs]);
+  // 기간 전체 일수 (헤딩 + LLM 메타). endOfDay가 23:59:59.999라 ceil(diff)로 정확히 N일치.
+  // 예: today from=00:00 to=23:59:59.999 → 0.99999일 → floor=0 → +1 = 1일치 ✓
+  // week 5/4-5/10: 6.99999일 → floor=6 → +1 = 7일치 ✓
+  // April: 29.99999일 → floor=29 → +1 = 30일치 ✓
+  const aiPeriodDays = Math.max(
+    1,
+    Math.floor((aiWindow.toMs - aiWindow.fromMs) / 86400000) + 1,
+  );
 
   const statsCacheKey = `stats:${userId}:${fromMs}:${toMs}`;
   const tzOffset = -new Date().getTimezoneOffset();
@@ -586,14 +629,9 @@ export default function BI() {
       );
       setMonthCostItems(d.items);
       setCache(monthCostsKey, d);
-      // 고정비가 바뀌면 월차 인사이트만 영향 (주차 prompt엔 fc 안 들어감) → :m 캐시 + 'm' 메모리만
-      const bt = user?.business_type ?? 'none';
-      invalidateByPrefix(`insights:${userId}:${bt}:${currentYm}:m`);
-      setAiByUnit((prev) => {
-        const next = { ...prev };
-        delete next.m;
-        return next;
-      });
+      // 고정비가 바뀌면 AI 인사이트(이번 달 단위) 캐시·메모리 모두 무효화
+      invalidateByPrefix(`insights:${userId}:`);
+      setAiByPeriod({});
       setCostEditOpen(false);
     } catch (e) {
       setCostMsg(e instanceof Error ? e.message : '저장에 실패했어요.');
@@ -655,9 +693,10 @@ export default function BI() {
       } catch {
         /* 무시 — 인사이트 재호출은 계속 진행 */
       }
-      // 판매가 바뀌면 이번 달의 모든 단위(주차/월차) 인사이트가 영향 받음 → prefix 일괄 무효화
+      // 판매가 바뀌면 그 기간 AI 인사이트가 영향 받음 → 클라이언트 캐시·메모리 일괄 무효화
+      // (서버는 sales.ts에서 sold_at→ym으로 ai_insights 행 자동 무효화)
       invalidateByPrefix(`insights:${userId}:`);
-      setAiByUnit({});
+      setAiByPeriod({});
     }
   };
 
@@ -705,87 +744,72 @@ export default function BI() {
     return sorted.slice(0, 10);
   }, [stats, rankBy]);
 
-  // AI 인사이트 default 선택 — 처음 진입 시 가장 최근 완료된 주차로
+  // aiWindow/fc/needs 중 하나라도 바뀌면 비동기 fetch closure가 stale write 못 하도록 fingerprint 비교
+  // (period만 비교하면 같은 period에서 고정비 변경 후 도착한 OLD closure가 새 결과 자리에 덮어씀)
+  const aiFingerprintRef = useRef('');
   useEffect(() => {
-    if (!aiUnit && defaultAiUnit) setAiUnit(defaultAiUnit);
-  }, [aiUnit, defaultAiUnit]);
-  // 월 picker로 selectedYm이 바뀌면 aiUnit·aiByUnit 동기화 — 이전 월 데이터 잔존 방지.
-  // aiInflightRef는 의도적으로 비우지 않음 — 기존 인플라이트 closure가 자기 finally에서 정리하게 둠
-  // (clear하면 같은 effect 재실행이 중복 POST → Groq rate-limit 2배 소모).
-  const prevYmRef = useRef<string>('');
-  // 인플라이트 fetch의 capturedYm 정합성 검사용 — 클로저가 결과 set 직전 ref와 비교해
-  // 그 사이 사용자가 다른 월로 갈아탔으면 stale write를 버린다 (cross-month state leak 방지).
-  const activeYmRef = useRef(activeYm);
-  useEffect(() => { activeYmRef.current = activeYm; }, [activeYm]);
-  useEffect(() => {
-    if (prevYmRef.current && prevYmRef.current !== activeYm) {
-      setAiByUnit({});
-      // setAiUnit('')만 — 위 default-init effect가 다음 tick에 새 월의 defaultAiUnit으로 set.
-      // (여기서 직접 defaultAiUnit으로 set하면 본 effect가 setAiUnit 후 1차 fire 하고
-      //  default-init effect가 또 setAiUnit해서 2차 fire — Groq 호출이 2배가 됨.)
-      setAiUnit('');
-    }
-    prevYmRef.current = activeYm;
-  }, [activeYm]);
+    aiFingerprintRef.current = `${aiWindow.fromMs}:${aiWindow.toMs}:fc${monthFixedCost}:n${monthNeedsStats?.total ?? -1}`;
+  }, [aiWindow.fromMs, aiWindow.toMs, monthFixedCost, monthNeedsStats]);
 
-  // 선택된 unit에 대한 인사이트 fetch — 단위별 별도 stats 호출 + Groq 호출. 캐시 우선.
-  // 과거 월 'm'은 서버 D1 lookup 먼저(LLM 호출 X), 없으면 생성·저장.
+  // AI 인사이트 fetch — aiWindow 단위. range 토글 시 자동 시프트, 진행 중이면 직전 완료 단위.
+  // 과거 월 단위(aiWindow.ym 있고 < 현재 월)는 서버 D1 영구 저장본 우선 (LLM 호출 0).
   useEffect(() => {
-    if (!aiUnit || !user) return;
-    // 인플라이트 키는 ym+unit 복합 — A→B로 빠르게 갈아탔을 때 A 'm'과 B 'm'이 다른 키라 충돌 없음
-    // (이전 코드는 'm' 단일 키라 같은 unit 다른 ym fetch가 서로 막거나 finally가 남 키 지움)
-    const inflightKey = `${activeYm}:${aiUnit}`;
-    if (aiInflightRef.current.has(inflightKey)) return;
-    const u = aiUnits.find((x) => x.unit === aiUnit);
-    if (!u) return;
+    if (!user) return;
+    const w = aiWindow;
+    const periodKey = `${w.fromMs}:${w.toMs}`;
+    // fingerprint = period + fc + needs.total — fc·needs 바뀌면 새 fetch가 시작되도록 inflight 키 분리
+    const fingerprint = `${periodKey}:fc${monthFixedCost}:n${monthNeedsStats?.total ?? -1}`;
+    if (aiInflightRef.current.has(fingerprint)) return;
     const bt = user.business_type ?? 'none';
-    // 캐시 키 — selectedYm/activeYm으로 (월 picker가 바꿀 때마다 다른 키)
-    // 이번 달 'm'은 고정비 의존, 주차/과거 월 'm'은 무관
-    const key =
-      u.unit === 'm' && !isPastMonth
-        ? `insights:${userId}:${bt}:${activeYm}:m:fc${monthFixedCost}`
-        : `insights:${userId}:${bt}:${activeYm}:${u.unit}`;
-    // 완료된 단위는 30일 cache, 진행 중은 1시간
-    const ttl = u.status === 'done' ? 30 * 24 * 60 * 60 * 1000 : TTL_INSIGHTS;
+    // localStorage 캐시 키 — periodKey가 이미 유일(from:to)이라 unit 안 박음.
+    // fc 의존은 "이번 달 전체"일 때만 (과거 영구 저장본은 서버 hook이 ym 단위로 정리)
+    const isCurrentMonth = w.unit === 'month' && !w.shifted;
+    const fcSuffix = isCurrentMonth && monthFixedCost > 0 ? `:fc${monthFixedCost}` : '';
+    const key = `insights:${userId}:${bt}:${periodKey}${fcSuffix}`;
+    // 시프트 단위는 완료된 직전 단위라 30일 TTL, 시프트 안 된 진행 중 단위는 1h
+    const ttl = w.shifted || w.unit === 'month' ? 30 * 24 * 60 * 60 * 1000 : TTL_INSIGHTS;
 
     const cached = getCache<string[]>(key);
     if (cached) {
-      setAiByUnit((prev) => (prev[aiUnit] === cached ? prev : { ...prev, [aiUnit]: cached }));
-      if (isFresh(key, ttl)) return; // 신선 — 재호출 X
-    } else if (aiByUnit[aiUnit] === undefined) {
-      setAiByUnit((prev) => ({ ...prev, [aiUnit]: null }));
+      setAiByPeriod((prev) => (prev[periodKey] === cached ? prev : { ...prev, [periodKey]: cached }));
+      if (isFresh(key, ttl)) return;
+    } else if (aiByPeriod[periodKey] === undefined) {
+      setAiByPeriod((prev) => ({ ...prev, [periodKey]: null }));
     }
 
-    aiInflightRef.current.add(inflightKey);
-    const capturedUnit = aiUnit;
-    const capturedYm = activeYm;
-    const capturedInflightKey = inflightKey;
-    // selectedYm이 도중에 바뀌면 stale 결과를 새 월 state에 쓰면 안 됨 — set 직전 ref와 비교
-    const stillMine = () => activeYmRef.current === capturedYm;
+    aiInflightRef.current.add(fingerprint);
+    const capturedKey = periodKey;
+    const capturedFingerprint = fingerprint;
+    const stillMine = () => aiFingerprintRef.current === capturedFingerprint;
     (async () => {
       try {
-        // 과거 월 '월 전체' — 서버 영구 저장본 먼저 조회 (LLM 호출 0)
-        if (isPastMonth && u.unit === 'm') {
+        // 시프트로 도달한 과거 월 단위 → D1 영구 저장본 우선 조회 (LLM 호출 X)
+        if (w.ym && w.unit === 'month') {
           const got = await apiGet<{ found: boolean; insights?: string[] }>(
-            `/api/insights?ym=${capturedYm}`,
+            `/api/insights?ym=${w.ym}`,
           );
           if (got.found && got.insights && got.insights.length > 0) {
             if (stillMine()) {
-              setAiByUnit((prev) => ({ ...prev, [capturedUnit]: got.insights! }));
+              setAiByPeriod((prev) => ({ ...prev, [capturedKey]: got.insights! }));
               setCache(key, got.insights);
             }
             return;
           }
-          // miss → 아래에서 생성·저장 흐름으로 진행
         }
-        const stats = await apiGet<Stats>(
-          `/api/stats?from=${u.fromMs}&to=${u.toMs}&tz=${tzOffset}`,
-        );
+        // BI 페이지 stats SWR 캐시와 키 공유 — 사용자가 그 range 본 적 있으면 캐시 hit
+        const aiStatsKey = `stats:${userId}:${w.fromMs}:${w.toMs}`;
+        let stats = getCache<Stats>(aiStatsKey);
+        if (!stats || !isFresh(aiStatsKey, TTL_STATS)) {
+          stats = await apiGet<Stats>(
+            `/api/stats?from=${w.fromMs}&to=${w.toMs}&tz=${tzOffset}`,
+          );
+          setCache(aiStatsKey, stats);
+        }
+        // 매출 발생 일수 (LLM이 "이 기간엔 영업일이 X일이라" 부연하도록)
+        const activeDays = (stats.byDay ?? []).filter((d) => d.revenue > 0).length;
         if (stats.qty < 5) {
           if (stillMine()) {
-            setAiByUnit((prev) => ({ ...prev, [capturedUnit]: [] }));
-            // 빈 데이터 과거 단위는 변할 일이 거의 없음 — 빈 배열도 캐시해 다음 방문 즉시 응답
-            // (완료 단위는 30일 TTL, 진행 중도 1h TTL 동안 stats 재호출 면제)
+            setAiByPeriod((prev) => ({ ...prev, [capturedKey]: [] }));
             setCache(key, []);
           }
           return;
@@ -794,30 +818,40 @@ export default function BI() {
           stats.byHour && stats.byHour.length > 0
             ? [...stats.byHour].sort((a, b) => b.revenue - a.revenue)[0]?.hour ?? null
             : null;
+        // 기간 날짜 'YYYY-MM-DD' (KST local) — 서버 sanitize는 정규식 검증
+        const ymdLocal = (ms: number) => {
+          const d = new Date(ms);
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        };
         const body: Record<string, unknown> = {
           stats: { ...stats, peakHour },
-          rangeLabel: u.cardTitle,
+          rangeLabel: w.cardTitle,
           businessType: bt === 'none' ? undefined : bt,
+          periodDays: aiPeriodDays,
+          periodActiveDays: activeDays,
+          periodStart: ymdLocal(w.fromMs),
+          periodEnd: ymdLocal(w.toMs),
         };
-        // 월차에만 고정비/니즈 포함 — 단, 과거 월은 현재 시점 fc·needs라 의미 흐림 → 이번 달 'm'에만
-        if (u.unit === 'm' && !isPastMonth && monthFixedCost > 0) body.monthlyFixedCost = monthFixedCost;
-        if (u.unit === 'm' && !isPastMonth && monthNeedsStats && monthNeedsStats.total > 0)
-          body.needs = monthNeedsStats;
-        // 과거 월 'm'은 ym을 보내 서버가 D1에 저장 (이번 달/주차는 ym 없이 → 저장 X)
-        if (isPastMonth && u.unit === 'm') body.ym = capturedYm;
+        if (isCurrentMonth && monthFixedCost > 0) body.monthlyFixedCost = monthFixedCost;
+        if (isCurrentMonth && monthNeedsStats && monthNeedsStats.total > 0) body.needs = monthNeedsStats;
+        // 과거 월 단위면 ym 동봉 — 서버가 D1에 영구 저장
+        if (w.ym) body.ym = w.ym;
         const result = await apiPost<{ insights: string[] }>('/api/insights', body);
         if (stillMine()) {
-          setAiByUnit((prev) => ({ ...prev, [capturedUnit]: result.insights }));
+          setAiByPeriod((prev) => ({ ...prev, [capturedKey]: result.insights }));
           if (result.insights.length > 0) setCache(key, result.insights);
         }
       } catch {
-        if (stillMine()) setAiByUnit((prev) => ({ ...prev, [capturedUnit]: [] }));
+        if (stillMine()) setAiByPeriod((prev) => ({ ...prev, [capturedKey]: [] }));
       } finally {
-        aiInflightRef.current.delete(capturedInflightKey);
+        aiInflightRef.current.delete(capturedFingerprint);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiUnit, activeYm, isPastMonth, monthFixedCost, monthNeedsStats, userId, user?.business_type]);
+  }, [
+    aiWindow.fromMs, aiWindow.toMs, aiWindow.unit, aiWindow.ym,
+    monthFixedCost, monthNeedsStats, userId, user?.business_type,
+  ]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
@@ -865,99 +899,53 @@ export default function BI() {
         )}
       </div>
 
-      {/* AI 인사이트 — 월 picker + (이번 달이면) 주차/월차 chip + 단일 카드 */}
-      {aiUnits.length > 0 && (
-        <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03]">
-          <div className="flex items-center gap-1.5 mb-3">
-            <span className="text-base leading-none">💡</span>
-            <h3 className="font-semibold text-accent">
-              {aiUnits.find((u) => u.unit === aiUnit)?.cardTitle ?? '이번 달'} 분석
-            </h3>
-          </div>
-          {/* 월 picker — 최근 12개월. 과거 월 클릭 시 저장된 분석 즉시 표시(없으면 1회만 생성·저장). */}
-          <div className="flex gap-1.5 mb-2 -mx-1 px-1 overflow-x-auto scrollbar-hide">
-            {monthChips.map((c) => {
-              const active = activeYm === c.ym;
-              return (
-                <button
-                  key={c.ym}
-                  type="button"
-                  onClick={(e) => {
-                    setSelectedYm(c.ym);
-                    // 활성 칩이 스크롤 영역 밖으로 밀려 있으면 가운데로 끌어와 사용자 방향 감각 유지
-                    e.currentTarget.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
-                  }}
-                  className={`shrink-0 px-3 h-8 rounded-full text-xs font-medium border transition ${
-                    active
-                      ? 'bg-ink text-white border-ink'
-                      : 'bg-card text-sub border-border hover:border-ink/40'
-                  }`}
-                  aria-pressed={active}
-                >
-                  {c.label}
-                </button>
-              );
-            })}
-          </div>
-          {/* 주차 chip 줄 — 이번 달일 때만 (과거 월은 '월 전체' 단일이라 칩 줄 생략).
-              wrap로 충분히 들어가니 overflow-x-auto 불필요 (디자인-리뷰 polish #3). */}
-          {!isPastMonth && (
-          <div className="flex flex-wrap gap-1.5 mb-3 -mx-1 px-1">
-            {aiUnits.map((u) => {
-              const active = u.unit === aiUnit;
-              return (
-                <button
-                  key={u.unit}
-                  type="button"
-                  onClick={() => setAiUnit(u.unit)}
-                  className={`shrink-0 px-3 h-8 rounded-full text-xs font-medium border transition ${
-                    active
-                      ? 'bg-accent text-white border-accent'
-                      : 'bg-card text-sub border-border hover:border-accent/40'
-                  }`}
-                  aria-pressed={active}
-                >
-                  {u.label}
-                  {u.status === 'in-progress' && !active && (
-                    <span className="ml-0.5 text-accent">•</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          )}
-          {/* 인사이트 본문 */}
-          {(() => {
-            const data = aiUnit ? aiByUnit[aiUnit] : undefined;
-            if (data === undefined || data === null) {
-              return (
-                <div className="space-y-2 anim-fade">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-5/6" />
-                  <Skeleton className="h-4 w-4/5" />
-                </div>
-              );
-            }
-            if (data.length === 0) {
-              return (
-                <p className="text-sub text-sm py-2 break-keep">
-                  이 단위엔 데이터가 아직 적어요. 더 쌓이면 더 정확한 분석을 드릴 수 있어요.
-                </p>
-              );
-            }
-            return (
-              <ul className="space-y-2 text-sm leading-relaxed anim-fade">
-                {data.map((t, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-accent/50 shrink-0 select-none">•</span>
-                    <span className="text-ink/90">{t}</span>
-                  </li>
-                ))}
-              </ul>
-            );
-          })()}
+      {/* AI 인사이트 — 상단 range selector에 자동 반응. 진행 중 단위면 직전 완료 단위로 시프트. */}
+      <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03]">
+        <div className="flex items-baseline gap-1.5 mb-1">
+          <span className="text-base leading-none shrink-0">💡</span>
+          <h3 className="font-semibold text-accent break-keep">
+            {aiWindow.cardTitle}
+          </h3>
+          <span className="text-sub text-xs num shrink-0">· {aiPeriodDays}일치</span>
         </div>
-      )}
+        {/* 시프트 시에만 부연 한 줄. 토글 시 카드 높이가 튀지 않도록 비시프트일 땐 invisible
+            placeholder로 같은 높이를 차지 (margin+leading 합쳐 ~20px). */}
+        {aiWindow.shifted && aiWindow.shiftReason ? (
+          <p className="text-sub text-xs mb-3 break-keep">{aiWindow.shiftReason}</p>
+        ) : (
+          <p className="text-xs mb-3 invisible" aria-hidden="true">&nbsp;</p>
+        )}
+        {(() => {
+          const periodKey = `${aiWindow.fromMs}:${aiWindow.toMs}`;
+          const data = aiByPeriod[periodKey];
+          if (data === undefined || data === null) {
+            return (
+              <div className="space-y-2 anim-fade">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-4/5" />
+              </div>
+            );
+          }
+          if (data.length === 0) {
+            return (
+              <p className="text-sub text-sm py-2 break-keep">
+                이 기간엔 데이터가 아직 적어요. 더 쌓이면 더 정확한 분석을 드릴 수 있어요.
+              </p>
+            );
+          }
+          return (
+            <ul className="space-y-2 text-sm leading-relaxed anim-fade">
+              {data.map((t, i) => (
+                <li key={i} className="flex gap-2">
+                  <span className="text-accent/50 shrink-0 select-none">•</span>
+                  <span className="text-ink/90">{t}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        })()}
+      </div>
 
       {loading || !stats ? (
         <>

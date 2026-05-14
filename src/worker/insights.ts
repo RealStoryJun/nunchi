@@ -47,6 +47,11 @@ interface InsightsBody {
   businessType?: BusinessType | null;
   monthlyFixedCost?: number;
   ym?: string; // 'YYYY-MM' — 과거 월이면 결과를 ai_insights에 영구 저장
+  // 기간 길이 메타 — "5월 1주차는 2일밖에 안 됨" 같은 컨텍스트를 LLM이 자연히 풀게 함
+  periodDays?: number;       // (toMs-fromMs+1)/24h 절상, 기간 전체 일수
+  periodActiveDays?: number; // 매출 발생 일수 (byDay 중 revenue>0)
+  periodStart?: string;      // 'YYYY-MM-DD' 사용자 timezone
+  periodEnd?: string;        // 'YYYY-MM-DD'
 }
 
 // 'YYYY-MM' 형식 검증
@@ -170,6 +175,12 @@ const sanitizeBody = (raw: unknown): InsightsBody | null => {
   // 사이트 어느 항목도 100억 넘는 게 비현실 — 그 이상은 0으로 떨궈 LLM이 헛소리 하지 않게.
   const MAX_FC = 10_000_000_000;
   const ymRaw = typeof o.ym === 'string' ? o.ym : '';
+  // 기간 메타 — 'YYYY-MM-DD' 강한 검증, 일수는 0~366
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const psRaw = typeof o.periodStart === 'string' ? o.periodStart : '';
+  const peRaw = typeof o.periodEnd === 'string' ? o.periodEnd : '';
+  const pd = num(o.periodDays);
+  const pad = num(o.periodActiveDays);
   return {
     stats,
     prevStats,
@@ -178,6 +189,10 @@ const sanitizeBody = (raw: unknown): InsightsBody | null => {
     businessType: isBusinessType(o.businessType) ? o.businessType : null,
     monthlyFixedCost: fc > 0 && Number.isFinite(fc) && fc <= MAX_FC ? Math.round(fc) : 0,
     ym: YM_RE.test(ymRaw) ? ymRaw : undefined,
+    periodDays: pd > 0 && pd <= 366 ? Math.round(pd) : undefined,
+    periodActiveDays: pad >= 0 && pad <= 366 ? Math.round(pad) : undefined,
+    periodStart: DATE_RE.test(psRaw) ? psRaw : undefined,
+    periodEnd: DATE_RE.test(peRaw) ? peRaw : undefined,
   };
 };
 
@@ -185,7 +200,15 @@ const buildSummary = (b: InsightsBody): string => {
   const s = b.stats!;
   const lines: string[] = [];
   if (b.businessType) lines.push(`- 업종: ${BUSINESS_TYPE_LABELS[b.businessType]}`);
-  lines.push(`- 기간: ${b.rangeLabel || '선택 기간'}`);
+  // 기간 한 줄 — 시작/끝/총 일수/매출 발생 일수 (LLM이 짧은 기간을 인지하고 부연하도록)
+  if (b.periodStart && b.periodEnd && b.periodDays) {
+    const active = b.periodActiveDays != null ? `, 매출 발생 ${b.periodActiveDays}일` : '';
+    lines.push(
+      `- 기간: ${b.rangeLabel || '선택 기간'} (${b.periodStart} ~ ${b.periodEnd}, ${b.periodDays}일치${active})`,
+    );
+  } else {
+    lines.push(`- 기간: ${b.rangeLabel || '선택 기간'}`);
+  }
   lines.push(
     `- 총매출 ${won(s.revenue)} / 총원가 ${won(s.cost)} / 순이익 ${won(s.profit)} / 마진율 ${pctStr(s.margin)} / 판매 ${s.qty}건`,
   );
@@ -279,6 +302,7 @@ const SYSTEM_PROMPT =
   '실질적으로 도움 되는 인사이트를 알려주는 분석가입니다.\n' +
   '규칙:\n' +
   '- 인사이트 2~4개. 각 1~2문장. "~예요/~네요/~어요" 같은 친근한 존댓말. ("에요" 아님 "예요")\n' +
+  '- 기간이 7일 미만이거나 매출 발생 일수가 평소보다 적으면, 매출 절댓값보다 일평균/영업일 한계를 우선 짚어주세요. 예: "5월 1주차는 2일치라 매출이 적게 보일 수 있어요. 일평균은 X원이에요."\n' +
   '- "업종"이 주어지면 그 업종 맥락에 맞는 표현·제안을 쓰세요(예: 카센터면 "오일 교환 회전율", 미용실이면 "시술 단가", 카페면 "피크 시간대 동선"). 식당 어휘를 옷가게에 쓰지 말 것.\n' +
   '- 반드시 데이터의 구체적 숫자를 인용하고, 가능하면 실행 가능한 제안 1가지를 포함.\n' +
   '- 반드시 한국어로만 작성. 한자(漢字)·일본어 가나·러시아어 키릴 문자 등 다른 문자를 절대 섞지 말 것 — 한자어가 떠오르면 한국어 표기로(예: "重点"→"핵심", "最高"→"최고", "戦略"→"전략").\n' +

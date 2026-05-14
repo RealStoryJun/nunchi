@@ -197,6 +197,19 @@ export default function BI() {
   // 고정비 카드 — 3개 초과 시 "외 N개 더 보기" 펼침/접기. range 토글 시 자동 접기.
   const [fcExpanded, setFcExpanded] = useState(false);
   useEffect(() => { setFcExpanded(false); }, [range]);
+  // Modal Escape — 둘 중 어느 modal이 열려 있어도 Escape로 닫기
+  useEffect(() => {
+    if (!editOpen && !costEditOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (costEditOpen) setCostEditOpen(false);
+        else if (editOpen) closeEdit();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editOpen, costEditOpen]);
   // 편집 버퍼 — amount는 input UX 위해 문자열로 유지, 저장 시 파싱
   const [editingCosts, setEditingCosts] = useState<{ label: string; amount: string }[]>([]);
   const [costSaving, setCostSaving] = useState(false);
@@ -214,8 +227,8 @@ export default function BI() {
     const c = getCache<{ id: number }[]>(`menus:${userId}`);
     return c ? c.length : null;
   });
-  // 수정 모달 안에서 판매가 바뀌었는지 — 닫을 때 인사이트 1회만 재호출(매 −/＋ 마다 X)
-  const editDirtyRef = useRef(false);
+  // 수정 모달 안에서 영향 받은 sale들의 ym 추적 — 닫을 때 그 ym들만 invalidate (전체 prefix 무효화 회피)
+  const editDirtyYmsRef = useRef<Set<string>>(new Set());
 
   const [fromMs, toMs] = useMemo(() => {
     const now = new Date();
@@ -583,7 +596,11 @@ export default function BI() {
     );
     try {
       await apiPut(`/api/sales/${sale.id}`, { quantity: q });
-      editDirtyRef.current = true;
+      // sale의 sold_at으로 ym 도출 → closeEdit에서 그 ym 인사이트 캐시만 무효화
+      const d = new Date(sale.sold_at);
+      editDirtyYmsRef.current.add(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      );
       await refetchStats();
     } catch (e) {
       alert(e instanceof Error ? e.message : '수정 실패');
@@ -604,7 +621,10 @@ export default function BI() {
     setSalesTotal((t) => (t != null ? t - 1 : t));
     try {
       await apiDelete(`/api/sales/${sale.id}`);
-      editDirtyRef.current = true;
+      const d = new Date(sale.sold_at);
+      editDirtyYmsRef.current.add(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      );
       await refetchStats();
     } catch (e) {
       alert(e instanceof Error ? e.message : '취소 실패');
@@ -621,17 +641,28 @@ export default function BI() {
   const closeEdit = async () => {
     setEditOpen(false);
     // 편집 결과는 이미 낙관적으로 sales에 반영됨 — 목록 재호출 안 함(페이지네이션 상태 유지). 집계만 갱신.
-    if (editDirtyRef.current) {
-      editDirtyRef.current = false;
+    const dirtyYms = editDirtyYmsRef.current;
+    if (dirtyYms.size > 0) {
+      editDirtyYmsRef.current = new Set();
       try {
         await refetchMonthStats(); // 수정이 이번 달에 반영됐을 수 있음
       } catch {
         /* 무시 — 인사이트 재호출은 계속 진행 */
       }
-      // 판매가 바뀌면 그 기간 AI 인사이트가 영향 받음 → 클라이언트 캐시·메모리 일괄 무효화 + 재호출 트리거
-      // (서버는 sales.ts에서 sold_at→ym으로 ai_insights 행 자동 무효화)
-      invalidateByPrefix(`insights:${userId}:`);
-      setAiByPeriod({});
+      // 영향 받은 ym들의 AI 캐시·메모리만 무효화 (전체 prefix 무효화 회피 — 다른 월 영구 저장본 보존)
+      // 캐시 키 형태: `insights:${userId}:${bt}:${fromMs}:${toMs}...` — ym→해당 월 from/to로 좁힘.
+      const bt = user?.business_type ?? 'none';
+      for (const ym of dirtyYms) {
+        const [y, m] = ym.split('-').map(Number);
+        const fromMs = new Date(y, m - 1, 1).getTime();
+        const toMs = new Date(y, m, 0, 23, 59, 59, 999).getTime();
+        invalidateByPrefix(`insights:${userId}:${bt}:${fromMs}:${toMs}`);
+        setAiByPeriod((prev) => {
+          const next = { ...prev };
+          delete next[`${fromMs}:${toMs}`];
+          return next;
+        });
+      }
       aiInflightRef.current.clear();
       setAiRefreshNonce((n) => n + 1);
     }
@@ -765,7 +796,7 @@ export default function BI() {
   }, [aiWindow.fromMs, aiWindow.toMs, aiWindow.ym, userId, user?.business_type, aiRefreshNonce]);
 
   return (
-    <div className="max-w-3xl xl:max-w-4xl mx-auto px-4 md:px-0 py-4 md:py-0">
+    <div className="max-w-3xl xl:max-w-4xl 2xl:max-w-5xl mx-auto px-4 md:px-0 py-4 md:py-0">
       <div className="flex items-baseline justify-between mb-4">
         <h1 className="font-display text-2xl md:text-3xl">BI 대시보드</h1>
       </div>

@@ -128,7 +128,8 @@ export default function Tutorial() {
         </button>
       </header>
 
-      <main className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-5 pt-4 pb-32 md:justify-center md:pt-0 md:pb-24">
+      {/* top 정렬 — slide 진행 시 제목/이모지 위치 점프 방지. md에선 위쪽 여백만 늘림. */}
+      <main className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-5 pt-4 pb-32 md:pt-12 md:pb-24">
         {/* 진행 인디케이터 */}
         <div className="flex items-center gap-1.5 mb-6">
           {SLIDES.map((_, i) => (
@@ -176,7 +177,7 @@ export default function Tutorial() {
             {slide.body}
           </p>
           <div
-            className="anim-slide-r mt-8 w-full"
+            className="anim-slide-r mt-8 w-full min-h-[220px] flex items-start justify-center"
             style={{ animationDelay: '240ms' }}
           >
             {slide.preview()}

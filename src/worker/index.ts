@@ -27,6 +27,13 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // www.nunchicheck.kr → nunchicheck.kr 301 정규화 (사장님 결정: root 정규화).
+    // 옛 워커 도메인 nunchi.realstoryjun.workers.dev는 그대로 둠 (둘 다 작동).
+    if (url.hostname === 'www.nunchicheck.kr') {
+      url.hostname = 'nunchicheck.kr';
+      return Response.redirect(url.toString(), 301);
+    }
+
     if (!path.startsWith('/api/')) {
       return env.ASSETS.fetch(request);
     }

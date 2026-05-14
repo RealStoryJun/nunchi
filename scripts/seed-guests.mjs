@@ -8,7 +8,10 @@
 const HOST = process.env.NUNCHI_HOST || 'https://nunchi.realstoryjun.workers.dev';
 const PW = '1q2w3e4r!@';
 const DAY = 86_400_000;
-const HISTORY_DAYS = 92; // 약 3개월
+// 시드 범위 고정 — 3·4·5월(14일까지). 총 75일. 데모 일관성을 위해 절대 날짜 사용.
+const SEED_START = (() => { const d = new Date(2026, 2, 1); d.setHours(0, 0, 0, 0); return d; })();
+const SEED_END   = (() => { const d = new Date(2026, 4, 14); d.setHours(23, 59, 59, 999); return d; })();
+const HISTORY_DAYS = Math.round((SEED_END.getTime() - SEED_START.getTime()) / DAY) + 1; // 75
 const POST_CONCURRENCY = 20;
 
 const RECOVERY_Q = '데모용 보안질문 - 답은 guest';
@@ -51,8 +54,9 @@ const DOW = {
   clothing:   [1.10, 0.70, 0.75, 0.80, 0.95, 1.30, 1.40],
   beauty:     [1.20, 0.00, 0.85, 0.90, 1.05, 1.25, 1.30], // 월요일 휴무
 };
-// 천천히 성장하는 추세 (가게가 자리잡는 느낌)
-const trendMult = (dayIdx) => 0.82 + 0.36 * (dayIdx / (HISTORY_DAYS - 1));
+// 평탄한 운영 톤 — 3월 초 0.93 → 5월 14일 1.07 (±7%). 안정기 가게 기준.
+// 사장님 목표: 3월부터 부가세 차감 후 net 500-800만 보장 → trend 폭 좁힘.
+const trendMult = (dayIdx) => 0.93 + 0.14 * (dayIdx / (HISTORY_DAYS - 1));
 const dailyNoise = () => rnd(0.78, 1.22);
 
 // ───────────────────────── 계정/메뉴 정의 ─────────────────────────
@@ -71,7 +75,7 @@ const accounts = [
       { name: '크루아상', category: '베이커리', cost: 1200, price: 4500 },
       { name: '아이스티', category: '음료', cost: 600, price: 4000 },
     ],
-    base: 23, // 하루 평균 거래(잔/건) 기준
+    base: 75, // 하루 평균 잔 수 — 동네에서 잘 되는 카페 수준 (월 매출 ~1,200만, net 500+)
     gen(date, dayIdx, menusByName) {
       const dow = date.getDay();
       const n = Math.max(0, Math.round(this.base * DOW.cafe[dow] * trendMult(dayIdx) * dailyNoise()));
@@ -102,7 +106,7 @@ const accounts = [
       { name: '라면', category: '분식', cost: 800, price: 4000 },
       { name: '떡볶이', category: '분식', cost: 1500, price: 5000 },
     ],
-    base: 11, // 하루 평균 "테이블" 수 (한 테이블 = 2~4건 POST)
+    base: 45, // 하루 평균 "테이블" 수 (한 테이블 = 2~4건 POST) — 고정비 538만 + 부가세 차감 후 net 500+ 위해 월 매출 ~2,200만
     gen(date, dayIdx, menusByName) {
       const dow = date.getDay();
       const tables = Math.max(0, Math.round(this.base * DOW.restaurant[dow] * trendMult(dayIdx) * dailyNoise()));
@@ -154,7 +158,7 @@ const accounts = [
       { name: '쿠키', category: '디저트', cost: 400, price: 2000 },
       { name: '스콘', category: '디저트', cost: 900, price: 3500 },
     ],
-    base: 26, // 하루 평균 "구매 항목" 수
+    base: 65, // 하루 평균 "구매 항목" 수 — 월 매출 ~1,300만
     gen(date, dayIdx, menusByName) {
       const dow = date.getDay();
       const n = Math.max(0, Math.round(this.base * DOW.bakery[dow] * trendMult(dayIdx) * dailyNoise()));
@@ -187,7 +191,7 @@ const accounts = [
       { name: '양말', category: '잡화', cost: 1500, price: 5000 },
       { name: '비니', category: '잡화', cost: 8000, price: 25000 },
     ],
-    base: 5, // 하루 평균 판매 점수 — 의류는 소량
+    base: 9, // 하루 평균 판매 점수 — 의류는 소량 (단가 高), 월 매출 ~1,300만
     gen(date, dayIdx, menusByName) {
       const dow = date.getDay();
       const n = Math.max(0, Math.round(this.base * DOW.clothing[dow] * trendMult(dayIdx) * dailyNoise()));
@@ -219,7 +223,7 @@ const accounts = [
       { name: '클리닉', category: '케어', cost: 8000, price: 40000 },
       { name: '두피스케일링', category: '케어', cost: 6000, price: 35000 },
     ],
-    base: 9, // 하루 평균 시술 건수 (의자 수 한정), 월요일 휴무
+    base: 12, // 하루 평균 시술 건수 (의자 수 한정), 월요일 휴무 — 월 매출 ~1,500만, 부가세 차감 후 net 500+ 안전 마진
     gen(date, dayIdx, menusByName) {
       const dow = date.getDay();
       const n = Math.max(0, Math.round(this.base * DOW.beauty[dow] * trendMult(dayIdx) * dailyNoise()));
@@ -270,7 +274,8 @@ async function runBatched(items, fn, size = POST_CONCURRENCY) {
 
 async function wipeSales() {
   let removed = 0;
-  // 한 번에 최대 100건씩(서버 상한) 가져와 삭제, 더 없을 때까지 반복
+  // 한 번에 최대 100건씩(서버 상한) 가져와 삭제, 더 없을 때까지 반복.
+  // GET은 cursor-less 첫 페이지 반복 — DELETE로 줄어드는 만큼 다음 페이지가 자연스럽게 채워짐.
   for (let guard = 0; guard < 1000; guard++) {
     const r = await j(await fetch(`${HOST}/api/sales?limit=100`, { headers: authHeaders() }));
     const sales = r.ok ? r.data.sales : [];
@@ -279,7 +284,7 @@ async function wipeSales() {
       fetch(`${HOST}/api/sales/${s.id}`, { method: 'DELETE', headers: authHeaders() }),
     );
     removed += sales.length;
-    if (sales.length < 500) break;
+    if (!r.data.hasMore) break;
   }
   return removed;
 }
@@ -325,10 +330,9 @@ async function seedAccount(acc) {
   // 기존 판매 전부 삭제 (재실행 안전)
   const wiped = await wipeSales();
 
-  // 3개월치 생성
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-  const startMs = todayStart.getTime() - (HISTORY_DAYS - 1) * DAY;
-  const now = Date.now();
+  // 3·4·5월(14일까지) 생성 — 절대 날짜 SEED_START~SEED_END 기준
+  const startMs = SEED_START.getTime();
+  const cap = SEED_END.getTime();
   const events = [];
   let missing = 0;
   for (let d = 0; d < HISTORY_DAYS; d++) {
@@ -337,7 +341,7 @@ async function seedAccount(acc) {
     for (const ev of acc.gen(date, d, menusByName)) {
       if (ev.menuId == null) { missing++; continue; }
       const soldAt = dayStartMs + ev.off;
-      if (soldAt > now) continue; // 오늘의 미래 시각 제외
+      if (soldAt > cap) continue; // 시드 종료일(5/14 23:59) 이후 시각 제외
       events.push({ menuId: ev.menuId, quantity: ev.quantity, soldAt });
     }
   }
@@ -357,7 +361,7 @@ async function seedAccount(acc) {
 
   // 요약
   const st = (await j(await fetch(
-    `${HOST}/api/stats?from=${startMs}&to=${now}&tz=${-new Date().getTimezoneOffset()}`,
+    `${HOST}/api/stats?from=${startMs}&to=${cap}&tz=${-new Date().getTimezoneOffset()}`,
     { headers: authHeaders() },
   ))).data;
   const won = (n) => Math.round(n || 0).toLocaleString('ko-KR');
@@ -369,8 +373,11 @@ async function seedAccount(acc) {
 }
 
 async function main() {
-  console.log(`시드 시작 → ${HOST}  (최근 ${HISTORY_DAYS}일, 동시 ${POST_CONCURRENCY})`);
-  for (const acc of accounts) {
+  // ONLY=guest2 / ONLY=guest2,guest4 — 특정 계정만 재시드. 미지정시 전체.
+  const only = process.env.ONLY ? new Set(process.env.ONLY.split(',').map((s) => s.trim() + '@nunchi.app')) : null;
+  const targets = only ? accounts.filter((a) => only.has(a.email)) : accounts;
+  console.log(`시드 시작 → ${HOST}  (최근 ${HISTORY_DAYS}일, 동시 ${POST_CONCURRENCY}, 대상 ${targets.length}개)`);
+  for (const acc of targets) {
     const t0 = Date.now();
     await seedAccount(acc);
     console.log(`     (${((Date.now() - t0) / 1000).toFixed(1)}s)`);

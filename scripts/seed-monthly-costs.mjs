@@ -5,8 +5,8 @@
 const HOST = process.env.NUNCHI_HOST || 'https://nunchi.realstoryjun.workers.dev';
 const PW = '1q2w3e4r!@';
 
-const now = new Date();
-const YM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+// 데모 일관성 — 3·4·5월 동일 고정비. 시즌별 미세 변동은 데모 의도 흐림.
+const MONTHS = ['2026-03', '2026-04', '2026-05'];
 
 // 업태별로 사실적인 항목 구성 — 카페면 원두 정기, 식당이면 식자재·가스, 미용이면 재료·광고 등.
 const SEED = {
@@ -64,24 +64,29 @@ async function login(email) {
 
 async function seedAccount(email, items) {
   const cookie = await login(email);
-  const body = {
-    items: items.map((it, i) => ({ ...it, sort_order: i })),
-  };
-  const r = await fetch(`${HOST}/api/monthly-costs?ym=${YM}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json; charset=utf-8', cookie },
-    body: JSON.stringify(body),
-  });
-  const d = await r.json();
+  const body = { items: items.map((it, i) => ({ ...it, sort_order: i })) };
+  const totals = {};
+  for (const ym of MONTHS) {
+    const r = await fetch(`${HOST}/api/monthly-costs?ym=${ym}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json; charset=utf-8', cookie },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    totals[ym] = d.ok ? d.data.total : `error: ${d.error}`;
+  }
   await fetch(`${HOST}/api/auth/logout`, { method: 'POST', headers: { cookie } });
-  return d.ok ? d.data.total : `error: ${d.error}`;
+  return totals;
 }
 
 async function main() {
-  console.log(`고정비 시드 (UTF-8 정확) → ${HOST} / YM=${YM}`);
+  console.log(`고정비 시드 (UTF-8 정확) → ${HOST} / months=${MONTHS.join(',')}`);
   for (const [email, items] of Object.entries(SEED)) {
-    const total = await seedAccount(email, items);
-    console.log(`  [${email}] 합계 ${total.toLocaleString?.('ko-KR') ?? total}`);
+    const totals = await seedAccount(email, items);
+    const fmt = (v) => (typeof v === 'number' ? v.toLocaleString('ko-KR') : v);
+    console.log(
+      `  [${email}] ` + MONTHS.map((ym) => `${ym}:${fmt(totals[ym])}`).join(' / '),
+    );
   }
   console.log('완료.');
 }

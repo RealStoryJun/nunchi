@@ -180,11 +180,8 @@ export const handleAuth = async (
       ]);
       return err('이메일 또는 비밀번호가 일치하지 않습니다.', 401);
     }
-    // 1단계 통과 — 이메일 카운터 리셋
-    await resetAttempts(env, emailKey);
-
     // 2FA 활성 (setup 완료, totp_enabled_at NOT NULL) → 세션 발급 X. 10분 mfa_token만 발급.
-    // setup/start 후 confirm 안 한 사용자(secret만 박힘)는 mfa_required 트리거 X — 일반 로그인.
+    // 이메일 카운터는 2단계 통과 시점에 리셋 (1단계만 통과 후 무한 mfa_token 발급으로 brute force 방어).
     if (user.totp_secret && user.totp_enabled_at) {
       const mfaToken = randomToken();
       const expiresAt = Date.now() + 10 * 60 * 1000;
@@ -200,8 +197,11 @@ export const handleAuth = async (
       });
     }
 
-    // 2FA 비활성 — 기존 흐름. 같은 user 기존 세션 invalidate 후 새 세션 발급.
-    await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run();
+    // 2FA 비활성 — 기존 흐름. 이메일 카운터 리셋 + 같은 user 기존 세션 invalidate + 새 세션 발급.
+    await Promise.all([
+      resetAttempts(env, emailKey),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run(),
+    ]);
     const { token, expiresAt } = await createSession(env, user.id);
     return ok(
       {
@@ -235,6 +235,10 @@ export const handleAuth = async (
       await recordAttempt(env, mfaKey);
       return err('인증이 만료되었어요. 다시 로그인해주세요.', 401);
     }
+    // 사용자 단위 rate-limit — 토큰 갈아끼우는 brute force 차단 (20/시간/유저)
+    const mfaUserKey = `mfa-user:${pending.user_id}`;
+    const userRl = await checkRateLimit(env, mfaUserKey, 20, 60 * 60 * 1000);
+    if (!userRl.ok) return tooMany(userRl.retryAfterMs);
 
     const u = await env.DB.prepare(
       'SELECT id, email, business_name, business_type, is_admin, totp_secret, totp_backup_codes_hash FROM users WHERE id = ?',
@@ -261,22 +265,29 @@ export const handleAuth = async (
     if (/^\d{6}$/.test(code)) {
       pass = await verifyTotp(u.totp_secret, code);
     }
-    // 2) 백업코드 8자리 hex 검증 (1회용)
+    // 2) 백업코드 8자리 hex 검증 (1회용). atomic UPDATE으로 race-safe.
     if (!pass && /^[a-f0-9]{8}$/i.test(code) && u.totp_backup_codes_hash) {
       try {
         const hashes = JSON.parse(u.totp_backup_codes_hash) as string[];
-        for (let i = 0; i < hashes.length; i++) {
-          if (await verifyPassword(code.toLowerCase(), hashes[i])) {
-            // 매칭된 코드 hash 제거 (1회용)
-            const remaining = hashes.filter((_, j) => j !== i);
-            await env.DB.prepare(
-              'UPDATE users SET totp_backup_codes_hash = ? WHERE id = ?',
-            )
-              .bind(JSON.stringify(remaining), u.id)
-              .run();
-            pass = true;
-            break;
-          }
+        let matchedHash: string | null = null;
+        for (const h of hashes) {
+          if (await verifyPassword(code.toLowerCase(), h)) { matchedHash = h; break; }
+        }
+        if (matchedHash) {
+          // SQLite JSON1 — 매칭된 hash와 다른 값만 남기는 atomic UPDATE.
+          // WHERE EXISTS(matchedHash) 가드로 race-safe — 이미 다른 요청이 그 hash 제거했으면 changes=0.
+          // (SQLite UPDATE changes는 "touched rows"라 EXISTS 가드 없으면 idempotent UPDATE도 changes=1 반환 → race fail.)
+          const r = await env.DB.prepare(
+            `UPDATE users
+             SET totp_backup_codes_hash = (
+               SELECT json_group_array(j.value) FROM json_each(totp_backup_codes_hash) AS j WHERE j.value != ?
+             )
+             WHERE id = ?
+               AND EXISTS (SELECT 1 FROM json_each(totp_backup_codes_hash) WHERE value = ?)`,
+          )
+            .bind(matchedHash, u.id, matchedHash)
+            .run();
+          if (r.meta.changes > 0) pass = true;
         }
       } catch {
         /* JSON parse 실패면 pass=false */
@@ -288,11 +299,13 @@ export const handleAuth = async (
       return err('인증 코드가 일치하지 않아요.', 401);
     }
 
-    // 성공 — auth_pending 정리, 기존 세션 invalidate, 새 세션 발급
+    // 성공 — auth_pending 정리, 기존 세션 invalidate, 새 세션 발급. 모든 rate-limit 카운터 리셋.
     await Promise.all([
       env.DB.prepare('DELETE FROM auth_pending WHERE token = ?').bind(body.mfa_token).run(),
       env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(u.id).run(),
       resetAttempts(env, mfaKey),
+      resetAttempts(env, mfaUserKey),
+      resetAttempts(env, `login:${u.email}`),
     ]);
     const { token, expiresAt } = await createSession(env, u.id);
     return ok(
@@ -310,39 +323,40 @@ export const handleAuth = async (
     );
   }
 
-  // POST /api/auth/2fa/setup/start — 인증된 사용자가 비밀번호 재확인 → secret + QR URL 반환 (DB 저장 X)
+  // POST /api/auth/2fa/setup/start — 인증된 사용자가 비밀번호 재확인 → secret + QR URL 반환.
+  // 이미 활성화된 2FA는 setup/start로 못 덮어씀 (silently 비활성화 우회 차단 — disable 먼저 필요).
+  // 세션 탈취 시 비밀번호 brute-force 방어 — pwd-confirm:userId rate-limit.
+  // 같은 setup 중 재호출은 기존 미활성 secret 그대로 반환 (overwrite 회피, 사장님 첫 QR 그대로 사용 가능).
   if (path === '/2fa/setup/start' && request.method === 'POST') {
     const session = await getSessionUser(request, env);
     if (!session) return err('로그인이 필요합니다.', 401);
     const body = await safeJson<{ password: string }>(request);
     if (!body?.password) return err('비밀번호를 입력해주세요.');
-    const row = await env.DB.prepare('SELECT password_hash FROM users WHERE id = ?')
+    const rlKey = `pwd-confirm:${session.user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 5, 15 * 60 * 1000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
+    const row = await env.DB.prepare(
+      'SELECT password_hash, totp_secret, totp_enabled_at FROM users WHERE id = ?',
+    )
       .bind(session.user.id)
-      .first<{ password_hash: string }>();
+      .first<{ password_hash: string; totp_secret: string | null; totp_enabled_at: number | null }>();
     if (!row || !(await verifyPassword(body.password, row.password_hash))) {
+      await recordAttempt(env, rlKey);
       return err('비밀번호가 일치하지 않습니다.', 401);
     }
-    const secret = generateSecret();
-    // 임시 secret을 sessions 행에 잠시 보관 (10분 — 그 안에 confirm 안 하면 폐기)
-    await env.DB.prepare(
-      'UPDATE sessions SET admin_verified_until = ? WHERE token = ?',
-    )
-      .bind(Date.now() + 10 * 60 * 1000, session.token)
-      .run();
-    // setup 캐시 — auth_pending 재사용 (token=session, user_id=user)
-    await env.DB.prepare(
-      'INSERT OR REPLACE INTO auth_pending (token, user_id, expires_at) VALUES (?, ?, ?)',
-    )
-      .bind(`setup:${session.token}`, session.user.id, Date.now() + 10 * 60 * 1000)
-      .run();
-    // secret을 임시 어디 저장? — auth_pending.token 컬럼에 prefix로 stash (저장은 setup 캐시 record로)
-    // 단순화: 클라가 secret을 들고 있다가 confirm 때 같이 보냄. 단 신뢰 못 함이라 server-side stash 필요.
-    // → users.totp_secret에 직접 저장하되 totp_enabled_at=NULL이면 미활성 표식으로 처리.
-    await env.DB.prepare(
-      'UPDATE users SET totp_secret = ?, totp_enabled_at = NULL WHERE id = ?',
-    )
-      .bind(secret, session.user.id)
-      .run();
+    if (row.totp_enabled_at) {
+      return err('이미 2단계 인증이 켜져 있어요. 끄기를 먼저 진행해주세요.');
+    }
+    await resetAttempts(env, rlKey);
+    // 미활성 secret 이미 있으면 재사용 — 사장님이 첫 QR 스캔 후 retry해도 같은 secret
+    const secret = row.totp_secret ?? generateSecret();
+    if (!row.totp_secret) {
+      await env.DB.prepare(
+        'UPDATE users SET totp_secret = ?, totp_enabled_at = NULL WHERE id = ?',
+      )
+        .bind(secret, session.user.id)
+        .run();
+    }
     return ok({
       secret,
       otpauth_url: otpauthUrl(secret, session.user.email),
@@ -377,11 +391,15 @@ export const handleAuth = async (
   }
 
   // POST /api/auth/2fa/disable — 비밀번호 + 현재 TOTP 코드 둘 다 검증 후 비활성
+  // pwd-confirm:userId rate-limit으로 세션 탈취 시 비번 brute-force 방어
   if (path === '/2fa/disable' && request.method === 'POST') {
     const session = await getSessionUser(request, env);
     if (!session) return err('로그인이 필요합니다.', 401);
     const body = await safeJson<{ password: string; code: string }>(request);
     if (!body?.password || !body?.code) return err('비밀번호와 인증 코드를 입력해주세요.');
+    const rlKey = `pwd-confirm:${session.user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 5, 15 * 60 * 1000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
     const row = await env.DB.prepare(
       'SELECT password_hash, totp_secret FROM users WHERE id = ?',
     )
@@ -390,12 +408,16 @@ export const handleAuth = async (
     if (!row?.totp_secret) return err('2단계 인증이 활성화되어 있지 않아요.');
     const pwOk = await verifyPassword(body.password, row.password_hash);
     const codeOk = await verifyTotp(row.totp_secret, body.code.trim());
-    if (!pwOk || !codeOk) return err('비밀번호 또는 코드가 일치하지 않아요.', 401);
-    await env.DB.prepare(
-      'UPDATE users SET totp_secret = NULL, totp_backup_codes_hash = NULL, totp_enabled_at = NULL WHERE id = ?',
-    )
-      .bind(session.user.id)
-      .run();
+    if (!pwOk || !codeOk) {
+      await recordAttempt(env, rlKey);
+      return err('비밀번호 또는 코드가 일치하지 않아요.', 401);
+    }
+    await Promise.all([
+      env.DB.prepare(
+        'UPDATE users SET totp_secret = NULL, totp_backup_codes_hash = NULL, totp_enabled_at = NULL WHERE id = ?',
+      ).bind(session.user.id).run(),
+      resetAttempts(env, rlKey),
+    ]);
     return ok({ disabled: true });
   }
 

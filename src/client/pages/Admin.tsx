@@ -92,8 +92,8 @@ function StatsTab() {
   if (err) return <p className="text-warm text-sm">{err}</p>;
   if (!data) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-20" />)}
       </div>
     );
   }
@@ -105,7 +105,7 @@ function StatsTab() {
     { label: `AI 호출 (${data.year_month})`, value: data.month_ai_calls.toLocaleString('ko-KR'), hint: '이번 달, 데모 포함' },
   ];
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
       {cards.map((c, i) => (
         <div key={i} className="card p-4">
           <div className="text-sub text-xs">{c.label}</div>
@@ -332,14 +332,23 @@ function UsersTab({ meId }: { meId: number }) {
       )}
 
       {stepUpOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 anim-fade">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 anim-fade"
+          onClick={(e) => { if (e.target === e.currentTarget) setStepUpOpen(false); }}
+        >
           <div className="card max-w-sm w-full p-5 anim-pop">
             <h2 className="font-semibold mb-2">관리자 인증</h2>
             <p className="text-sub text-sm mb-3 break-keep">
               위험한 작업이라 비밀번호를 한 번 더 확인합니다. 인증 후 10분 동안 같은 작업을 반복할 수 있어요.
             </p>
-            <input type="password" autoFocus className="field" value={stepUpPw}
-              onChange={(e) => setStepUpPw(e.target.value)} placeholder="비밀번호" />
+            <input
+              type="password" autoFocus className="field" value={stepUpPw}
+              onChange={(e) => setStepUpPw(e.target.value)} placeholder="비밀번호"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && stepUpPw && !stepUpBusy) doStepUpThenDelete();
+                else if (e.key === 'Escape') setStepUpOpen(false);
+              }}
+            />
             {stepUpErr && <p className="text-warm text-sm mt-2 break-keep">{stepUpErr}</p>}
             <div className="flex gap-2 mt-4">
               <button onClick={() => setStepUpOpen(false)} className="btn-outline flex-1">취소</button>

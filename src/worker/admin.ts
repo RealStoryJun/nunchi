@@ -1,5 +1,6 @@
 import { Env, ok, err, SessionUser } from './types';
 import { verifyPassword } from './crypto';
+import { checkRateLimit, recordAttempt, resetAttempts, tooMany } from './ratelimit';
 
 // 어드민 전용 — 계정·통계·감사 로그. 모든 핸들러는 is_admin 검증 통과 후만 실행.
 // mutation(예: users/delete)은 추가로 sessions.admin_verified_until 검증 (step-up auth).
@@ -74,7 +75,8 @@ export async function handleAdmin(
 ): Promise<Response> {
   if (!user.is_admin) return err('관리자 권한이 필요합니다.', 403);
 
-  // POST /api/admin/step-up { password } — 비밀번호 재확인 → 10분간 mutation 허용
+  // POST /api/admin/step-up { password } — 비밀번호 재확인 → 10분간 mutation 허용.
+  // 세션 탈취 시 비밀번호 brute-force 방어 — pwd-confirm:userId rate-limit.
   if (rest === '/step-up' && request.method === 'POST') {
     let body: { password?: unknown } | null = null;
     try {
@@ -84,19 +86,26 @@ export async function handleAdmin(
     }
     const pwd = typeof body?.password === 'string' ? body.password : '';
     if (!pwd) return err('비밀번호를 입력해주세요.');
+    const rlKey = `pwd-confirm:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 5, 15 * 60 * 1000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
     const row = await env.DB.prepare('SELECT password_hash FROM users WHERE id = ?')
       .bind(user.id)
       .first<{ password_hash: string }>();
     if (!row || !(await verifyPassword(pwd, row.password_hash))) {
+      await recordAttempt(env, rlKey);
       await audit(env, user.id, 'step_up', { ok: false }, request, false, '비밀번호 불일치');
       return err('비밀번호가 일치하지 않습니다.', 401);
     }
     const verifiedUntil = Date.now() + 10 * 60 * 1000;
-    await env.DB.prepare(
-      'UPDATE sessions SET admin_verified_until = ? WHERE token = ?',
-    )
-      .bind(verifiedUntil, sessionToken)
-      .run();
+    await Promise.all([
+      env.DB.prepare(
+        'UPDATE sessions SET admin_verified_until = ? WHERE token = ?',
+      )
+        .bind(verifiedUntil, sessionToken)
+        .run(),
+      resetAttempts(env, rlKey),
+    ]);
     await audit(env, user.id, 'step_up', { verified_until: verifiedUntil }, request);
     return ok({ verified_until: verifiedUntil });
   }
@@ -118,7 +127,7 @@ export async function handleAdmin(
       .bind(q, like, like)
       .all<AdminUserRow>();
     const total = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
-    await audit(env, user.id, 'users.search', { q, count: results.length }, request);
+    // 검색은 view-only — audit log 노이즈 회피 (mutation만 기록)
     return ok({
       users: results.map((r) => ({
         ...r,
@@ -190,7 +199,6 @@ export async function handleAdmin(
         'SELECT COUNT(*) AS n FROM ai_usage_log WHERE year_month = ?',
       ).bind(ym).first<{ n: number }>(),
     ]);
-    await audit(env, user.id, 'stats.view', null, request);
     return ok({
       total_users: totalUsers?.n ?? 0,
       demo_users: demoUsers?.n ?? 0,
@@ -262,7 +270,6 @@ export async function handleAdmin(
         out_tokens: number | null;
         avg_latency_ms: number | null;
       }>();
-    await audit(env, user.id, 'ai_usage.view', { ym }, request);
     return ok({ ym, by_model: results });
   }
 

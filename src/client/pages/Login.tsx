@@ -76,7 +76,6 @@ export default function Login() {
                   <input
                     type="text"
                     required
-                    inputMode="numeric"
                     autoComplete="one-time-code"
                     className="field num text-2xl tracking-widest text-center"
                     value={code}

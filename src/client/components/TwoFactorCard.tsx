@@ -98,7 +98,7 @@ export default function TwoFactorCard() {
         <div className="mt-3 space-y-3">
           <p className="text-sm text-sub break-keep">현재 비밀번호를 입력해주세요.</p>
           <input
-            type="password" autoFocus className="field" value={password}
+            type="password" autoFocus className="field md:max-w-sm md:mx-auto md:block" value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="비밀번호"
           />
@@ -117,7 +117,6 @@ export default function TwoFactorCard() {
           <p className="text-sm break-keep">
             인증 앱(Google Authenticator·Authy·1Password 등)에서 아래 QR을 스캔하거나 비밀키를 직접 입력해주세요.
           </p>
-          {/* Google Chart API QR — 외부 라이브러리 없이 SVG 표시 */}
           <div className="flex justify-center">
             <img
               src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(otpauthUrl)}`}
@@ -126,14 +125,17 @@ export default function TwoFactorCard() {
           </div>
           <div className="text-center">
             <p className="text-xs text-sub mb-1">비밀키 (수동 입력용)</p>
-            <code className="num text-sm font-mono break-all px-3 py-2 bg-bg rounded-lg inline-block">
-              {secret.match(/.{1,4}/g)?.join(' ')}
-            </code>
+            <div className="flex flex-wrap justify-center gap-1.5 px-3 py-2 bg-bg rounded-lg">
+              {/* 4자 그룹 inline-block — wrap 시에도 그룹 단위 유지 (break-all 시 그룹 중간 자름 회피) */}
+              {(secret.match(/.{1,4}/g) ?? []).map((g, i) => (
+                <code key={i} className="num text-sm font-mono">{g}</code>
+              ))}
+            </div>
           </div>
           <p className="text-sm text-sub break-keep">앱에 등록한 뒤 6자리 코드를 입력하세요.</p>
           <input
             type="text" inputMode="numeric" autoComplete="one-time-code"
-            className="field num text-2xl tracking-widest text-center"
+            className="field num text-2xl tracking-widest text-center md:max-w-[220px] md:mx-auto md:block"
             value={code} onChange={(e) => setCode(e.target.value.replace(/\s/g, ''))}
             placeholder="123456" maxLength={6}
           />
@@ -175,14 +177,17 @@ export default function TwoFactorCard() {
           <p className="text-sm text-sub break-keep">
             비활성화하려면 비밀번호와 현재 6자리 인증 코드를 입력해주세요.
           </p>
+          <p className="text-xs text-sub break-keep">
+            코드를 받을 수 없으면 <a href="/recover" className="text-accent hover:underline">비밀번호 재설정</a>으로도 자동 해제됩니다.
+          </p>
           <input
-            type="password" className="field" value={password}
+            type="password" className="field md:max-w-sm md:mx-auto md:block" value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="비밀번호"
           />
           <input
             type="text" inputMode="numeric"
-            className="field num text-xl tracking-widest text-center"
+            className="field num text-xl tracking-widest text-center md:max-w-[220px] md:mx-auto md:block"
             value={code} onChange={(e) => setCode(e.target.value.replace(/\s/g, ''))}
             placeholder="123456" maxLength={6}
           />

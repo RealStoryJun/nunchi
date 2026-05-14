@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { useAuth, refreshAuth } from '../hooks/useAuth';
 import { apiGet, apiPost } from '../lib/api';
+import { getCache, setCache, isFresh } from '../lib/cache';
 
 const PRESET_QUESTIONS = [
   '어릴 때 키운 첫 반려동물 이름은?',
@@ -41,10 +42,15 @@ export default function Signup() {
   const turnstileRef = useRef<HTMLDivElement | null>(null);
   const widgetIdRef = useRef<string | null>(null);
 
-  // 1. site key fetch
+  // 1. site key fetch — 공개 config라 1시간 캐시 (사장님이 wrangler put 으로만 바뀜)
   useEffect(() => {
+    const CACHE_KEY = 'turnstile:site_key';
+    const TTL = 60 * 60 * 1000;
+    const cached = getCache<string | null>(CACHE_KEY);
+    if (cached !== null) setSiteKey(cached);
+    if (isFresh(CACHE_KEY, TTL)) return;
     apiGet<{ site_key: string | null }>('/api/auth/turnstile/config')
-      .then((d) => setSiteKey(d.site_key))
+      .then((d) => { setSiteKey(d.site_key); setCache(CACHE_KEY, d.site_key); })
       .catch(() => setSiteKey(null));
   }, []);
 

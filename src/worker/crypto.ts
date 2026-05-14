@@ -73,12 +73,15 @@ export const validateEmail = (email: string): boolean =>
 // 키 없으면 평문 fallback (개발 환경 또는 키 설정 전 사용자 보호).
 
 const TOTP_VERSION = 'v1';
-let _totpKeyPromise: Promise<CryptoKey | null> | null = null;
+// key 값(base64)별 캐시 — 같은 isolate에서 같은 키 반복 import 회피.
+// rotation 시 새 키 값으로 hit → 자동으로 새 CryptoKey 사용 (이전 키도 잔존하지만 isolate 재활용 시 GC).
+const _totpKeyCache = new Map<string, Promise<CryptoKey | null>>();
 
 const getTotpKey = (keyB64: string | undefined): Promise<CryptoKey | null> => {
   if (!keyB64) return Promise.resolve(null);
-  if (_totpKeyPromise) return _totpKeyPromise;
-  _totpKeyPromise = (async () => {
+  const cached = _totpKeyCache.get(keyB64);
+  if (cached) return cached;
+  const promise = (async () => {
     try {
       const raw = fromB64(keyB64);
       if (raw.length !== 32) return null; // AES-256 requires 32 bytes
@@ -89,7 +92,8 @@ const getTotpKey = (keyB64: string | undefined): Promise<CryptoKey | null> => {
       return null;
     }
   })();
-  return _totpKeyPromise;
+  _totpKeyCache.set(keyB64, promise);
+  return promise;
 };
 
 export const encryptTotpSecret = async (

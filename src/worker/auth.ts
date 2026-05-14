@@ -337,7 +337,20 @@ export const handleAuth = async (
     // 1) TOTP 6자리 검증 — secret을 worker key로 복호화 (평문 fallback 호환)
     if (/^\d{6}$/.test(code)) {
       const secret = await decryptTotpSecret(u.totp_secret, env.TOTP_SECRET_KEY);
-      if (secret) pass = await verifyTotp(secret, code);
+      if (secret) {
+        pass = await verifyTotp(secret, code);
+        // 마이그레이션: 평문 base32 저장본을 envelope 암호화로 자동 업그레이드 (키 설정 후 첫 로그인 시).
+        // enc === secret이면 키 설정 무효(잘못된 길이 등) — no-op UPDATE 회피.
+        if (pass && env.TOTP_SECRET_KEY && !u.totp_secret.startsWith('v1.')) {
+          const enc = await encryptTotpSecret(secret, env.TOTP_SECRET_KEY);
+          if (enc !== secret) {
+            ctx?.waitUntil(
+              env.DB.prepare('UPDATE users SET totp_secret = ? WHERE id = ?')
+                .bind(enc, u.id).run().then(() => undefined),
+            );
+          }
+        }
+      }
     }
     // 2) 백업코드 8자리 hex 검증 (1회용). atomic UPDATE으로 race-safe.
     if (!pass && /^[a-f0-9]{8}$/i.test(code) && u.totp_backup_codes_hash) {

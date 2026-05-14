@@ -11,7 +11,7 @@ import { handleMonthlyCosts } from './monthly-costs';
 import { getSessionUser } from './session';
 
 export default {
-  // 일 1회(03:00 UTC) 만료된 세션·오래된 auth_attempts 정리
+  // 매시 0분 만료된 세션·1시간 이상 지난 auth_attempts 정리 (cron: 0 * * * *)
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const now = Date.now();
     const ATTEMPT_WINDOW = 60 * 60 * 1000; // 1시간 이상 지난 시도 행은 정리

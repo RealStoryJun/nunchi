@@ -236,12 +236,17 @@ export default function BI() {
     ];
   }, [range, from, to]);
 
-  // 이번 달 윈도우 — 자정 경계 대응을 위해 dayTick state로 강제 재계산
+  // 이번 달 윈도우 — 자정 경계 대응. visibilitychange + 60s interval (always-visible 탭도 cover).
   const [dayTick, setDayTick] = useState(0);
   useEffect(() => {
-    const onVis = () => { if (document.visibilityState === 'visible') setDayTick((t) => t + 1); };
+    const bump = () => setDayTick((t) => t + 1);
+    const onVis = () => { if (document.visibilityState === 'visible') bump(); };
     document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
+    const id = window.setInterval(bump, 60_000); // 1분마다 — useMemo가 같은 ym이면 no-op
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      clearInterval(id);
+    };
   }, []);
   const [monthFromMs, monthToMs, currentYm] = useMemo(() => {
     const now = new Date();

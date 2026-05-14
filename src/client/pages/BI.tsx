@@ -947,7 +947,8 @@ export default function BI() {
             </div>
           ) : null}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* md:items-start — 좌·우 카드가 각자 콘텐츠 길이로 (좌측 빈공간 방지). */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 md:items-start">
             <div className="card p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold">일별 손익 추이</h3>
@@ -957,7 +958,7 @@ export default function BI() {
                   이 기간에 판매 기록이 없습니다.
                 </p>
               ) : stats.byDay.length === 1 ? (
-                <div className="py-8 text-center">
+                <div className="min-h-[220px] flex flex-col items-center justify-center text-center">
                   <div
                     className={`num text-3xl md:text-4xl font-bold ${
                       stats.byDay[0].profit >= 0 ? 'text-accent' : 'text-warm'
@@ -965,7 +966,7 @@ export default function BI() {
                   >
                     {won(stats.byDay[0].profit)}
                   </div>
-                  <p className="text-sub text-xs mt-2">
+                  <p className="text-sub text-xs mt-2 break-keep px-4">
                     데이터가 더 쌓이면 일별 추이 차트로 보여드릴게요.
                   </p>
                 </div>

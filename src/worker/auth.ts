@@ -112,9 +112,11 @@ const verifyTurnstile = async (env: Env, token: string | undefined, ip: string |
     form.append('secret', env.TURNSTILE_SECRET);
     form.append('response', token);
     if (ip) form.append('remoteip', ip);
+    // 5초 timeout — Cloudflare siteverify 응답 지연 시 가입 행성 hang 회피
     const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
       method: 'POST',
       body: form,
+      signal: AbortSignal.timeout(5000),
     });
     const data = (await res.json()) as { success?: boolean };
     return data.success === true;
@@ -127,6 +129,7 @@ export const handleAuth = async (
   request: Request,
   env: Env,
   path: string,
+  ctx?: ExecutionContext,
 ): Promise<Response> => {
   // GET /api/auth/turnstile/config — 클라가 widget 렌더링용 site_key 받음. site_key 없으면 widget 안 띄움.
   if (path === '/turnstile/config' && request.method === 'GET') {
@@ -270,7 +273,9 @@ export const handleAuth = async (
       env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run(),
     ]);
     const { token, expiresAt } = await createSession(env, user.id);
-    await logLoginEvent(env, user.id, request);
+    // fire-and-forget — 응답 안 막음. ctx.waitUntil로 워커 종료 후에도 완료 보장.
+    if (ctx) ctx.waitUntil(logLoginEvent(env, user.id, request));
+    else void logLoginEvent(env, user.id, request);
     return ok(
       {
         user: {
@@ -377,7 +382,8 @@ export const handleAuth = async (
       resetAttempts(env, `login:${u.email}`),
     ]);
     const { token, expiresAt } = await createSession(env, u.id);
-    await logLoginEvent(env, u.id, request);
+    if (ctx) ctx.waitUntil(logLoginEvent(env, u.id, request));
+    else void logLoginEvent(env, u.id, request);
     return ok(
       {
         user: {

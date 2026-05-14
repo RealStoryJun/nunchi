@@ -28,7 +28,7 @@ export default {
     ]);
   },
 
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -50,14 +50,14 @@ export default {
     try {
       // /api/auth/* — 인증 불필요
       if (path.startsWith('/api/auth/')) {
-        return await handleAuth(request, env, path.replace('/api/auth', ''));
+        return await handleAuth(request, env, path.replace('/api/auth', ''), ctx);
       }
 
       // 그 외는 모두 인증 필요
       const session = await getSessionUser(request, env);
 
       if (path === '/api/me') {
-        return await handleAuth(request, env, '/me');
+        return await handleAuth(request, env, '/me', ctx);
       }
 
       if (!session) return err('로그인이 필요합니다.', 401);

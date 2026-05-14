@@ -1,4 +1,4 @@
-import { Env } from './types';
+import { Env, SECURITY_HEADERS } from './types';
 
 interface RateLimitOk {
   ok: true;
@@ -65,12 +65,8 @@ export const tooMany = (retryAfterMs: number): Response => {
       headers: {
         'content-type': 'application/json; charset=utf-8',
         'retry-after': String(seconds),
-        // 429도 다른 응답과 동일한 보안 헤더 — 인라인 (types.ts 의 SECURITY_HEADERS와 sync)
-        'strict-transport-security': 'max-age=31536000; includeSubDomains',
-        'x-frame-options': 'DENY',
-        'x-content-type-options': 'nosniff',
-        'referrer-policy': 'strict-origin-when-cross-origin',
-        'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+        // 429도 다른 응답과 동일한 보안 헤더 (CSP 포함)
+        ...SECURITY_HEADERS,
       },
     },
   );

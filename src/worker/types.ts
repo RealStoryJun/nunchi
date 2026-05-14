@@ -119,11 +119,12 @@ export const SECURITY_HEADERS: Record<string, string> = {
     "default-src 'self'",
     // Cloudflare Turnstile script + 자체 origin + React/Vite inline.
     "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
-    "style-src 'self' 'unsafe-inline'",
+    // 브랜드 폰트 CSS @import — Pretendard(jsdelivr) + Gowun Batang/JetBrains Mono(googleapis)
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
     "img-src 'self' data: https://api.qrserver.com",
-    "font-src 'self' data:",
+    // 폰트 woff2 파일 origin (gstatic은 Google Fonts, jsdelivr는 Pretendard)
+    "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net",
     "connect-src 'self' https://challenges.cloudflare.com",
-    // Turnstile widget은 iframe으로 렌더 — frame-src 허용 필요.
     "frame-src https://challenges.cloudflare.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",

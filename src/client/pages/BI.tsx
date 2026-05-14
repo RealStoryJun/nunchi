@@ -191,6 +191,8 @@ export default function BI() {
   //  지난 달 needs를 stats와 함께 fetch한다.)
   // 이번 달 고정비 — null = 아직 안 불러옴, 빈 배열 = 등록 없음
   const [monthCostItems, setMonthCostItems] = useState<CostItem[] | null>(null);
+  // 지난달 고정비 — range='lastMonth' 클릭 시 4-카드 순이익에 차감 + 카드 표시
+  const [lastMonthCostItems, setLastMonthCostItems] = useState<CostItem[] | null>(null);
   const [costEditOpen, setCostEditOpen] = useState(false);
   // 편집 버퍼 — amount는 input UX 위해 문자열로 유지, 저장 시 파싱
   const [editingCosts, setEditingCosts] = useState<{ label: string; amount: string }[]>([]);
@@ -239,11 +241,25 @@ export default function BI() {
   }, []);
   const monthStatsCacheKey = `stats:${userId}:${monthFromMs}:${monthToMs}`;
   const monthCostsKey = `fixedCosts:${userId}:${currentYm}`;
+  // 지난달 ym 도출 (currentYm - 1)
+  const lastMonthYm = useMemo(() => prevYearMonth(currentYm), [currentYm]);
+  const lastMonthCostsKey = `fixedCosts:${userId}:${lastMonthYm}`;
   // 이번 달 고정비 총합 (useMemo로 파생) — 인사이트 키·prompt에 동봉
   const monthFixedCost = useMemo(
     () => (monthCostItems ? monthCostItems.reduce((s, x) => s + x.amount, 0) : 0),
     [monthCostItems],
   );
+  // 지난달 고정비 총합
+  const lastMonthFixedCost = useMemo(
+    () => (lastMonthCostItems ? lastMonthCostItems.reduce((s, x) => s + x.amount, 0) : 0),
+    [lastMonthCostItems],
+  );
+  // range별 활성 고정비 (4-카드 순이익·고정비 카드용) — 이번 달/지난달만 의미, 그 외는 0
+  const activeFcSum =
+    range === 'month' ? monthFixedCost : range === 'lastMonth' ? lastMonthFixedCost : 0;
+  const activeFcItems =
+    range === 'month' ? monthCostItems : range === 'lastMonth' ? lastMonthCostItems : null;
+  const activeFcLabel = range === 'lastMonth' ? '지난달' : '이번 달';
   // AI 인사이트는 **항상 지난 달 전체** 고정. range selector(stats·차트용)와 연동 끊김.
   // 사장님 결정: "오늘 2주차 이런거 의미없다. 저번달거 보여주고 니즈랑 판매해서 전략제시".
   // 완료된 달이라 D1 영구 저장본 hit이면 LLM 호출 0회.
@@ -419,10 +435,22 @@ export default function BI() {
         })
         .catch(() => alive && setMonthCostItems((p) => p ?? []));
     }
+    // 지난달 고정비도 prefetch — range='lastMonth' 클릭 시 즉시 4-카드 net 표시
+    const cachedLm = getCache<{ items: CostItem[]; total: number }>(lastMonthCostsKey);
+    if (cachedLm) setLastMonthCostItems(cachedLm.items);
+    if (!isFresh(lastMonthCostsKey, TTL_STATS)) {
+      apiGet<{ items: CostItem[]; total: number }>(`/api/monthly-costs?ym=${lastMonthYm}`)
+        .then((d) => {
+          if (!alive) return;
+          setLastMonthCostItems(d.items);
+          setCache(lastMonthCostsKey, d);
+        })
+        .catch(() => alive && setLastMonthCostItems((p) => p ?? []));
+    }
     return () => {
       alive = false;
     };
-  }, [monthStatsCacheKey, monthCostsKey, monthFromMs, monthToMs, tzOffset, currentYm]);
+  }, [monthStatsCacheKey, monthCostsKey, lastMonthCostsKey, monthFromMs, monthToMs, tzOffset, currentYm, lastMonthYm]);
 
   // 고객 니즈 집계 (선택 기간) — /needs 페이지와 별개, BI에 요약 카드로
   useEffect(() => {
@@ -877,9 +905,9 @@ export default function BI() {
       ) : (
         <>
           {(() => {
-            // 순이익/마진율 dynamic — range=month + 고정비 등록 시 net(고정비까지 차감), 그 외엔 gross.
-            const hasFc = range === 'month' && monthFixedCost > 0;
-            const netProfit = hasFc ? stats.profit - monthFixedCost : stats.profit;
+            // 순이익/마진율 dynamic — range=month/lastMonth + 그 달 고정비 등록 시 net, 그 외엔 gross.
+            const hasFc = (range === 'month' || range === 'lastMonth') && activeFcSum > 0;
+            const netProfit = hasFc ? stats.profit - activeFcSum : stats.profit;
             const netMargin = stats.revenue > 0 ? netProfit / stats.revenue : 0;
             return (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -888,7 +916,7 @@ export default function BI() {
                 <StatCard
                   label="순이익"
                   value={wonCompact(netProfit)}
-                  hint={hasFc ? `고정비 ${wonCompact(monthFixedCost)} 차감 후` : undefined}
+                  hint={hasFc ? `${activeFcLabel} 고정비 ${wonCompact(activeFcSum)} 차감 후` : undefined}
                   tone={netProfit >= 0 ? 'accent' : 'warm'}
                 />
                 <StatCard
@@ -900,8 +928,8 @@ export default function BI() {
             );
           })()}
 
-          {/* 이번 달 고정비 — 등록 권유 CTA 또는 요약 카드. 빈 상태 친근하게. */}
-          {monthCostItems !== null && monthCostItems.length === 0 ? (
+          {/* 활성 월(이번 달/지난달) 고정비 카드. 편집은 이번 달만(과거 월 편집 미지원). */}
+          {activeFcItems !== null && activeFcItems.length === 0 && range === 'month' ? (
             <button
               type="button"
               onClick={openCostEdit}
@@ -917,32 +945,34 @@ export default function BI() {
               </div>
               <span className="text-sub group-hover:text-accent transition shrink-0 ml-3">→</span>
             </button>
-          ) : monthCostItems && monthCostItems.length > 0 ? (
+          ) : activeFcItems && activeFcItems.length > 0 ? (
             <div className="card p-4 mb-6">
               <div className="flex items-baseline justify-between mb-2">
-                <h3 className="font-semibold text-sm">이번 달 고정비</h3>
-                <button
-                  type="button"
-                  onClick={openCostEdit}
-                  className="text-sm text-accent font-medium px-3 h-10 rounded-lg hover:bg-accent/10 -my-1"
-                >
-                  수정
-                </button>
+                <h3 className="font-semibold text-sm">{activeFcLabel} 고정비</h3>
+                {range === 'month' && (
+                  <button
+                    type="button"
+                    onClick={openCostEdit}
+                    className="text-sm text-accent font-medium px-3 h-10 rounded-lg hover:bg-accent/10 -my-1"
+                  >
+                    수정
+                  </button>
+                )}
               </div>
               <ul className="space-y-1 text-sm">
-                {monthCostItems.slice(0, 3).map((it) => (
+                {activeFcItems.slice(0, 3).map((it) => (
                   <li key={it.id} className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-ink/80">{it.label}</span>
                     <span className="num text-ink/90 shrink-0">{won(it.amount)}</span>
                   </li>
                 ))}
-                {monthCostItems.length > 3 && (
-                  <li className="text-xs text-sub pt-0.5">외 {monthCostItems.length - 3}개</li>
+                {activeFcItems.length > 3 && (
+                  <li className="text-xs text-sub pt-0.5">외 {activeFcItems.length - 3}개</li>
                 )}
               </ul>
               <div className="mt-3 pt-2 border-t border-border flex items-baseline justify-between gap-2">
                 <span className="text-sm font-medium">합계</span>
-                <span className="num font-semibold">{won(monthFixedCost)}</span>
+                <span className="num font-semibold">{won(activeFcSum)}</span>
               </div>
             </div>
           ) : null}

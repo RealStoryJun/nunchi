@@ -87,6 +87,20 @@ CREATE TABLE IF NOT EXISTS monthly_cost_items (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- 과거 월 AI 인사이트 영구 저장 — 한 번 생성된 결과 재진입 시 LLM 호출 없이 재현.
+-- 현재 월(이번 달)은 저장하지 않음(데이터 계속 변하므로 기존 클라 TTL 캐시 그대로).
+-- 무효화: 해당 월 sales 편집/삭제, 해당 월 고정비 변경, business_type 변경 시 서버에서 DELETE.
+CREATE TABLE IF NOT EXISTS ai_insights (
+  user_id INTEGER NOT NULL,
+  year_month TEXT NOT NULL,        -- 'YYYY-MM'
+  business_type TEXT,              -- 저장 시점 업종 (참조용)
+  monthly_fixed_cost INTEGER NOT NULL DEFAULT 0,  -- 저장 시점 고정비 합계 (참조용)
+  insights_json TEXT NOT NULL,     -- string[] JSON
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, year_month),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_sales_user_date ON sales(user_id, sold_at);
 CREATE INDEX IF NOT EXISTS idx_menus_user ON menus(user_id, archived);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

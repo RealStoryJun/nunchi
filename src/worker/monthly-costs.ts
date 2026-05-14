@@ -116,6 +116,12 @@ export async function handleMonthlyCosts(
       ),
     ];
     await env.DB.batch(stmts);
+    // 그 ym 저장 인사이트는 고정비 합계가 변했으므로 stale — 삭제(다음 조회 시 새로 생성)
+    await env.DB.prepare(
+      'DELETE FROM ai_insights WHERE user_id = ? AND year_month = ?',
+    )
+      .bind(user.id, ym)
+      .run();
     return ok(await readMonth(env, user.id, ym));
   }
 

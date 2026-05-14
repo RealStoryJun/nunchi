@@ -1,4 +1,12 @@
 import { Env, ok, err, SessionUser, SaleRow, MenuRow } from './types';
+import { msToYmKst } from './insights';
+
+// 과거 월 AI 인사이트 저장본은 그 월 판매가 변하면 stale — 해당 ym 행 삭제(다음 조회 시 새로 생성).
+// 'this 달'(아직 ai_insights에 저장 안 됨)이면 DELETE 0 rows라 비용 무시 가능.
+const invalidateInsightsForMonth = (env: Env, userId: number, soldAt: number) =>
+  env.DB.prepare('DELETE FROM ai_insights WHERE user_id = ? AND year_month = ?')
+    .bind(userId, msToYmKst(soldAt))
+    .run();
 
 const safeJson = async <T>(req: Request): Promise<T | null> => {
   try {
@@ -93,6 +101,7 @@ export const handleSales = async (
     )
       .bind(user.id, menu.id, quantity, menu.cost, menu.price, soldAt)
       .run();
+    await invalidateInsightsForMonth(env, user.id, soldAt);
     return ok({
       sale: {
         id: Number(r.meta.last_row_id),
@@ -117,12 +126,19 @@ export const handleSales = async (
     const quantity = body.quantity;
     if (!Number.isInteger(quantity) || quantity < 1)
       return err('수량은 1 이상의 정수여야 합니다.');
-    const r = await env.DB.prepare(
+    // 판매가 속한 월의 인사이트를 무효화하려면 sold_at을 먼저 알아야 함
+    const existing = await env.DB.prepare(
+      'SELECT sold_at FROM sales WHERE id = ? AND user_id = ?',
+    )
+      .bind(id, user.id)
+      .first<{ sold_at: number }>();
+    if (!existing) return err('판매 기록을 찾을 수 없습니다.', 404);
+    await env.DB.prepare(
       'UPDATE sales SET quantity = ? WHERE id = ? AND user_id = ?',
     )
       .bind(quantity, id, user.id)
       .run();
-    if (!r.meta.changes) return err('판매 기록을 찾을 수 없습니다.', 404);
+    await invalidateInsightsForMonth(env, user.id, existing.sold_at);
     return ok({});
   }
 
@@ -130,12 +146,17 @@ export const handleSales = async (
   const m = rest.match(/^\/(\d+)$/);
   if (m && request.method === 'DELETE') {
     const id = Number(m[1]);
-    const r = await env.DB.prepare(
-      'DELETE FROM sales WHERE id = ? AND user_id = ?',
+    // 삭제 전에 sold_at 확보 — 삭제 후엔 알 수 없음
+    const existing = await env.DB.prepare(
+      'SELECT sold_at FROM sales WHERE id = ? AND user_id = ?',
     )
       .bind(id, user.id)
+      .first<{ sold_at: number }>();
+    if (!existing) return err('판매 기록을 찾을 수 없습니다.', 404);
+    await env.DB.prepare('DELETE FROM sales WHERE id = ? AND user_id = ?')
+      .bind(id, user.id)
       .run();
-    if (!r.meta.changes) return err('판매 기록을 찾을 수 없습니다.', 404);
+    await invalidateInsightsForMonth(env, user.id, existing.sold_at);
     return ok({});
   }
 

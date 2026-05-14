@@ -46,7 +46,21 @@ interface InsightsBody {
   needs?: NeedsAgg | null;
   businessType?: BusinessType | null;
   monthlyFixedCost?: number;
+  ym?: string; // 'YYYY-MM' — 과거 월이면 결과를 ai_insights에 영구 저장
 }
+
+// 'YYYY-MM' 형식 검증
+export const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+// KST(UTC+9) 기준 현재 'YYYY-MM' — 사장님 표시 시간대와 일치
+export const currentYmKst = (now = Date.now()): string => {
+  const d = new Date(now + 9 * 3600 * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+// ms epoch → KST 'YYYY-MM' (sales.sold_at → 그 판매가 속한 월)
+export const msToYmKst = (ms: number): string => {
+  const d = new Date(ms + 9 * 3600 * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
 
 // 니즈 항목 코드 → 한글 라벨 (프롬프트용)
 const NEEDS_LABEL: Record<string, string> = {
@@ -155,6 +169,7 @@ const sanitizeBody = (raw: unknown): InsightsBody | null => {
   const fc = num(o.monthlyFixedCost);
   // 사이트 어느 항목도 100억 넘는 게 비현실 — 그 이상은 0으로 떨궈 LLM이 헛소리 하지 않게.
   const MAX_FC = 10_000_000_000;
+  const ymRaw = typeof o.ym === 'string' ? o.ym : '';
   return {
     stats,
     prevStats,
@@ -162,6 +177,7 @@ const sanitizeBody = (raw: unknown): InsightsBody | null => {
     needs: sanitizeNeeds(o.needs),
     businessType: isBusinessType(o.businessType) ? o.businessType : null,
     monthlyFixedCost: fc > 0 && Number.isFinite(fc) && fc <= MAX_FC ? Math.round(fc) : 0,
+    ym: YM_RE.test(ymRaw) ? ymRaw : undefined,
   };
 };
 
@@ -364,7 +380,9 @@ export async function handleInsights(
 ): Promise<Response> {
   const body = sanitizeBody(raw);
   if (!body) return err('잘못된 요청입니다.');
-  // 데이터 빈약: AI 호출 안 하고 안내만
+  // 미래 월은 호출 자체가 무의미 — 거절 (클라 버그 방어)
+  if (body.ym && body.ym > currentYmKst()) return err('미래 월은 분석할 수 없어요.');
+  // 데이터 빈약: AI 호출 안 하고 안내만 (저장도 안 함)
   if (body.stats!.qty < 5) {
     return ok({
       insights: ['데이터가 더 쌓이면 더 정확한 분석을 드릴 수 있어요.'],
@@ -381,7 +399,58 @@ export async function handleInsights(
   const summary = buildSummary(body);
   for (const { model, maxTokens } of MODELS) {
     const insights = await callGroqWith(apiKey, summary, model, maxTokens);
-    if (insights) return ok({ insights, source: 'groq', model });
+    if (insights) {
+      // 과거 월(완료 월)만 영구 저장 — 이번 달은 데이터 계속 변하므로 저장 X
+      if (body.ym && body.ym < currentYmKst()) {
+        await env.DB.prepare(
+          `INSERT INTO ai_insights (user_id, year_month, business_type, monthly_fixed_cost, insights_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, year_month) DO UPDATE SET
+             business_type = excluded.business_type,
+             monthly_fixed_cost = excluded.monthly_fixed_cost,
+             insights_json = excluded.insights_json,
+             created_at = excluded.created_at`,
+        )
+          .bind(
+            userId,
+            body.ym,
+            body.businessType ?? null,
+            body.monthlyFixedCost ?? 0,
+            JSON.stringify(insights),
+            Date.now(),
+          )
+          .run();
+      }
+      return ok({ insights, source: 'groq', model });
+    }
   }
   return ok({ insights: [], source: 'groq-fail' });
+}
+
+// GET /api/insights?ym=YYYY-MM — 저장된 과거 월 결과 조회. 현재/미래 월은 항상 found:false.
+export async function handleInsightsGet(
+  env: Env,
+  userId: number,
+  ym: string,
+): Promise<Response> {
+  if (!YM_RE.test(ym)) return err('잘못된 월 형식이에요.');
+  if (ym >= currentYmKst()) return ok({ found: false });
+  const row = await env.DB.prepare(
+    `SELECT insights_json, created_at FROM ai_insights
+     WHERE user_id = ? AND year_month = ?`,
+  )
+    .bind(userId, ym)
+    .first<{ insights_json: string; created_at: number }>();
+  if (!row) return ok({ found: false });
+  let insights: string[] = [];
+  try {
+    const parsed = JSON.parse(row.insights_json) as unknown;
+    if (Array.isArray(parsed)) {
+      insights = parsed.filter((x): x is string => typeof x === 'string');
+    }
+  } catch {
+    // 파싱 실패면 stale data — 모르게 처리하고 새로 생성하도록 안내
+    return ok({ found: false });
+  }
+  return ok({ found: true, insights, created_at: row.created_at });
 }

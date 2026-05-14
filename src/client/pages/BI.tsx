@@ -197,10 +197,12 @@ export default function BI() {
   const [editingCosts, setEditingCosts] = useState<{ label: string; amount: string }[]>([]);
   const [costSaving, setCostSaving] = useState(false);
   const [costMsg, setCostMsg] = useState<string | null>(null);
-  // AI 인사이트 — 주차·월차 cadence. aiUnit = 'w1'..'w5' | 'm'. aiByUnit[unit] = null(로딩)/[](빈약·실패)/[strings](OK)
+  // AI 인사이트 — 월 picker로 과거 월 조회 가능. selectedYm = 보고 있는 월.
+  // 이번 달이면 주차/월차 cadence(기존), 과거 월이면 '월 전체' 단일 — 서버 D1에서 저장본 조회, 없으면 생성·저장.
   const [aiUnit, setAiUnit] = useState<string>('');
   const [aiByUnit, setAiByUnit] = useState<Record<string, string[] | null>>({});
   const aiInflightRef = useRef<Set<string>>(new Set()); // 인플라이트 unit set — 중복 POST 방지, 자정초기화 stranded null 회피
+  const [selectedYm, setSelectedYm] = useState<string>(''); // 빈 문자열 → currentYm 로 effect에서 초기화
   // 메뉴 등록 여부 — BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
   const [menuCount, setMenuCount] = useState<number | null>(() => {
     const c = getCache<{ id: number }[]>(`menus:${userId}`);
@@ -235,33 +237,64 @@ export default function BI() {
     () => (monthCostItems ? monthCostItems.reduce((s, x) => s + x.amount, 0) : 0),
     [monthCostItems],
   );
-  // AI 인사이트 단위 목록 — 1~5주차 + 월 전체. 미래 주차는 제외.
+  // 월 picker — 현재 월부터 12개월 전까지 (가입 시점 정확히 모르므로 단순화)
+  const monthChips = useMemo(() => {
+    const out: { ym: string; label: string }[] = [];
+    let cur = currentYm;
+    for (let i = 0; i < 12; i++) {
+      out.push({
+        ym: cur,
+        label:
+          cur === currentYm
+            ? '이번 달'
+            : cur.slice(0, 4) === currentYm.slice(0, 4)
+            ? `${Number(cur.slice(5, 7))}월`
+            : `${cur.slice(2, 4)}년 ${Number(cur.slice(5, 7))}월`,
+      });
+      cur = prevYearMonth(cur);
+    }
+    return out;
+  }, [currentYm]);
+  // 빈 selectedYm → currentYm 초기화 (auth/cache 흐름 늦게 도착해도 안전)
+  const activeYm = selectedYm || currentYm;
+  const isPastMonth = activeYm < currentYm;
+  // AI 인사이트 단위 목록 — 이번 달이면 1~5주차 + 월 전체(미래 주차 제외), 과거 월이면 '월 전체' 단일
   const aiUnits = useMemo(() => {
-    const [y, m] = currentYm.split('-').map(Number);
+    const [y, m] = activeYm.split('-').map(Number);
     const monthIdx = m - 1;
     const daysInMonth = new Date(y, m, 0).getDate();
-    const now = Date.now();
     const monthName = `${m}월`;
     type Status = 'done' | 'in-progress' | 'future';
     interface U { unit: string; label: string; cardTitle: string; fromMs: number; toMs: number; status: Status; }
+    const mFrom = new Date(y, monthIdx, 1).getTime();
+    const mTo = new Date(y, monthIdx, daysInMonth, 23, 59, 59, 999).getTime();
+    // 과거 월: '월 전체' 1개만 (주차는 영구 저장 안 함)
+    if (isPastMonth) {
+      return [{
+        unit: 'm',
+        label: '월 전체',
+        cardTitle: `${monthName} 전체`,
+        fromMs: mFrom, toMs: mTo, status: 'done' as Status,
+      }];
+    }
+    // 이번 달: 주차 + 월 전체
+    const now = Date.now();
     const list: U[] = [];
     for (let w = 1; w <= 5; w++) {
       const startDay = (w - 1) * 7 + 1;
       if (startDay > daysInMonth) break;
       const endDay = Math.min(w * 7, daysInMonth);
-      const fromMs = new Date(y, monthIdx, startDay, 0, 0, 0, 0).getTime();
-      const toMs = new Date(y, monthIdx, endDay, 23, 59, 59, 999).getTime();
-      const status: Status = now > toMs ? 'done' : now < fromMs ? 'future' : 'in-progress';
+      const wFrom = new Date(y, monthIdx, startDay, 0, 0, 0, 0).getTime();
+      const wTo = new Date(y, monthIdx, endDay, 23, 59, 59, 999).getTime();
+      const status: Status = now > wTo ? 'done' : now < wFrom ? 'future' : 'in-progress';
       if (status === 'future') continue;
       list.push({
         unit: `w${w}`,
         label: `${w}주차`,
         cardTitle: status === 'in-progress' ? `${monthName} ${w}주차 (진행 중)` : `${monthName} ${w}주차`,
-        fromMs, toMs, status,
+        fromMs: wFrom, toMs: wTo, status,
       });
     }
-    const mFrom = new Date(y, monthIdx, 1).getTime();
-    const mTo = new Date(y, monthIdx, daysInMonth, 23, 59, 59, 999).getTime();
     const mStatus: Status = now > mTo ? 'done' : 'in-progress';
     list.push({
       unit: 'm',
@@ -270,15 +303,16 @@ export default function BI() {
       fromMs: mFrom, toMs: mTo, status: mStatus,
     });
     return list;
-  }, [currentYm]);
-  // Default 선택 — 가장 최근 완료된 주차, 없으면 진행 중 주차, 없으면 월 전체
+  }, [activeYm, isPastMonth]);
+  // Default 선택 — 과거 월이면 'm', 이번 달이면 가장 최근 완료된 주차→진행중→월 전체
   const defaultAiUnit = useMemo(() => {
+    if (isPastMonth) return 'm';
     const doneWeeks = aiUnits.filter((u) => u.unit !== 'm' && u.status === 'done');
     if (doneWeeks.length > 0) return doneWeeks[doneWeeks.length - 1].unit;
     const inProgressWeek = aiUnits.find((u) => u.unit !== 'm' && u.status === 'in-progress');
     if (inProgressWeek) return inProgressWeek.unit;
     return aiUnits[aiUnits.length - 1]?.unit ?? '';
-  }, [aiUnits]);
+  }, [aiUnits, isPastMonth]);
 
   const statsCacheKey = `stats:${userId}:${fromMs}:${toMs}`;
   const tzOffset = -new Date().getTimezoneOffset();
@@ -675,21 +709,42 @@ export default function BI() {
   useEffect(() => {
     if (!aiUnit && defaultAiUnit) setAiUnit(defaultAiUnit);
   }, [aiUnit, defaultAiUnit]);
+  // 월 picker로 selectedYm이 바뀌면 aiUnit·aiByUnit 동기화 — 이전 월 데이터 잔존 방지.
+  // aiInflightRef는 의도적으로 비우지 않음 — 기존 인플라이트 closure가 자기 finally에서 정리하게 둠
+  // (clear하면 같은 effect 재실행이 중복 POST → Groq rate-limit 2배 소모).
+  const prevYmRef = useRef<string>('');
+  // 인플라이트 fetch의 capturedYm 정합성 검사용 — 클로저가 결과 set 직전 ref와 비교해
+  // 그 사이 사용자가 다른 월로 갈아탔으면 stale write를 버린다 (cross-month state leak 방지).
+  const activeYmRef = useRef(activeYm);
+  useEffect(() => { activeYmRef.current = activeYm; }, [activeYm]);
+  useEffect(() => {
+    if (prevYmRef.current && prevYmRef.current !== activeYm) {
+      setAiByUnit({});
+      // setAiUnit('')만 — 위 default-init effect가 다음 tick에 새 월의 defaultAiUnit으로 set.
+      // (여기서 직접 defaultAiUnit으로 set하면 본 effect가 setAiUnit 후 1차 fire 하고
+      //  default-init effect가 또 setAiUnit해서 2차 fire — Groq 호출이 2배가 됨.)
+      setAiUnit('');
+    }
+    prevYmRef.current = activeYm;
+  }, [activeYm]);
 
   // 선택된 unit에 대한 인사이트 fetch — 단위별 별도 stats 호출 + Groq 호출. 캐시 우선.
+  // 과거 월 'm'은 서버 D1 lookup 먼저(LLM 호출 X), 없으면 생성·저장.
   useEffect(() => {
     if (!aiUnit || !user) return;
-    // 같은 unit에 대해 이미 로딩 중이면 중복 POST 방지 (Groq rate limit 보호)
-    // 이미 in-flight POST가 있으면 중복 안 함 (rapid click 같은 unit). cleanup 후에도 finally가 ref 정리.
-    if (aiInflightRef.current.has(aiUnit)) return;
+    // 인플라이트 키는 ym+unit 복합 — A→B로 빠르게 갈아탔을 때 A 'm'과 B 'm'이 다른 키라 충돌 없음
+    // (이전 코드는 'm' 단일 키라 같은 unit 다른 ym fetch가 서로 막거나 finally가 남 키 지움)
+    const inflightKey = `${activeYm}:${aiUnit}`;
+    if (aiInflightRef.current.has(inflightKey)) return;
     const u = aiUnits.find((x) => x.unit === aiUnit);
     if (!u) return;
-    // 월차는 고정비 변화에 영향 받으니 키에 fc 포함, 주차는 무관(주차 prompt에 fc 안 보냄)
     const bt = user.business_type ?? 'none';
+    // 캐시 키 — selectedYm/activeYm으로 (월 picker가 바꿀 때마다 다른 키)
+    // 이번 달 'm'은 고정비 의존, 주차/과거 월 'm'은 무관
     const key =
-      u.unit === 'm'
-        ? `insights:${userId}:${bt}:${currentYm}:m:fc${monthFixedCost}`
-        : `insights:${userId}:${bt}:${currentYm}:${u.unit}`;
+      u.unit === 'm' && !isPastMonth
+        ? `insights:${userId}:${bt}:${activeYm}:m:fc${monthFixedCost}`
+        : `insights:${userId}:${bt}:${activeYm}:${u.unit}`;
     // 완료된 단위는 30일 cache, 진행 중은 1시간
     const ttl = u.status === 'done' ? 30 * 24 * 60 * 60 * 1000 : TTL_INSIGHTS;
 
@@ -698,20 +753,41 @@ export default function BI() {
       setAiByUnit((prev) => (prev[aiUnit] === cached ? prev : { ...prev, [aiUnit]: cached }));
       if (isFresh(key, ttl)) return; // 신선 — 재호출 X
     } else if (aiByUnit[aiUnit] === undefined) {
-      // 메모리에도 없으면 로딩 표시
       setAiByUnit((prev) => ({ ...prev, [aiUnit]: null }));
     }
 
-    // POST 시작 — alive 가드는 unmount용이 아니라 클로저 정합성용. setAiByUnit은 클로저의 aiUnit 키라 안전.
-    aiInflightRef.current.add(aiUnit);
+    aiInflightRef.current.add(inflightKey);
     const capturedUnit = aiUnit;
+    const capturedYm = activeYm;
+    const capturedInflightKey = inflightKey;
+    // selectedYm이 도중에 바뀌면 stale 결과를 새 월 state에 쓰면 안 됨 — set 직전 ref와 비교
+    const stillMine = () => activeYmRef.current === capturedYm;
     (async () => {
       try {
+        // 과거 월 '월 전체' — 서버 영구 저장본 먼저 조회 (LLM 호출 0)
+        if (isPastMonth && u.unit === 'm') {
+          const got = await apiGet<{ found: boolean; insights?: string[] }>(
+            `/api/insights?ym=${capturedYm}`,
+          );
+          if (got.found && got.insights && got.insights.length > 0) {
+            if (stillMine()) {
+              setAiByUnit((prev) => ({ ...prev, [capturedUnit]: got.insights! }));
+              setCache(key, got.insights);
+            }
+            return;
+          }
+          // miss → 아래에서 생성·저장 흐름으로 진행
+        }
         const stats = await apiGet<Stats>(
           `/api/stats?from=${u.fromMs}&to=${u.toMs}&tz=${tzOffset}`,
         );
         if (stats.qty < 5) {
-          setAiByUnit((prev) => ({ ...prev, [capturedUnit]: [] }));
+          if (stillMine()) {
+            setAiByUnit((prev) => ({ ...prev, [capturedUnit]: [] }));
+            // 빈 데이터 과거 단위는 변할 일이 거의 없음 — 빈 배열도 캐시해 다음 방문 즉시 응답
+            // (완료 단위는 30일 TTL, 진행 중도 1h TTL 동안 stats 재호출 면제)
+            setCache(key, []);
+          }
           return;
         }
         const peakHour =
@@ -723,21 +799,25 @@ export default function BI() {
           rangeLabel: u.cardTitle,
           businessType: bt === 'none' ? undefined : bt,
         };
-        // 월차에만 고정비/니즈 포함 — 주차는 7일 단위라 월 합계와 단위 안 맞음
-        if (u.unit === 'm' && monthFixedCost > 0) body.monthlyFixedCost = monthFixedCost;
-        if (u.unit === 'm' && monthNeedsStats && monthNeedsStats.total > 0)
+        // 월차에만 고정비/니즈 포함 — 단, 과거 월은 현재 시점 fc·needs라 의미 흐림 → 이번 달 'm'에만
+        if (u.unit === 'm' && !isPastMonth && monthFixedCost > 0) body.monthlyFixedCost = monthFixedCost;
+        if (u.unit === 'm' && !isPastMonth && monthNeedsStats && monthNeedsStats.total > 0)
           body.needs = monthNeedsStats;
+        // 과거 월 'm'은 ym을 보내 서버가 D1에 저장 (이번 달/주차는 ym 없이 → 저장 X)
+        if (isPastMonth && u.unit === 'm') body.ym = capturedYm;
         const result = await apiPost<{ insights: string[] }>('/api/insights', body);
-        setAiByUnit((prev) => ({ ...prev, [capturedUnit]: result.insights }));
-        if (result.insights.length > 0) setCache(key, result.insights);
+        if (stillMine()) {
+          setAiByUnit((prev) => ({ ...prev, [capturedUnit]: result.insights }));
+          if (result.insights.length > 0) setCache(key, result.insights);
+        }
       } catch {
-        setAiByUnit((prev) => ({ ...prev, [capturedUnit]: [] }));
+        if (stillMine()) setAiByUnit((prev) => ({ ...prev, [capturedUnit]: [] }));
       } finally {
-        aiInflightRef.current.delete(capturedUnit);
+        aiInflightRef.current.delete(capturedInflightKey);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiUnit, currentYm, monthFixedCost, monthNeedsStats, userId, user?.business_type]);
+  }, [aiUnit, activeYm, isPastMonth, monthFixedCost, monthNeedsStats, userId, user?.business_type]);
 
   return (
     <div className="max-w-3xl mx-auto px-4 md:px-0 py-4 md:py-0">
@@ -785,7 +865,7 @@ export default function BI() {
         )}
       </div>
 
-      {/* AI 인사이트 — 주차/월차 chip + 단일 카드. 선택된 단위만 lazy fetch. */}
+      {/* AI 인사이트 — 월 picker + (이번 달이면) 주차/월차 chip + 단일 카드 */}
       {aiUnits.length > 0 && (
         <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03]">
           <div className="flex items-center gap-1.5 mb-3">
@@ -794,8 +874,35 @@ export default function BI() {
               {aiUnits.find((u) => u.unit === aiUnit)?.cardTitle ?? '이번 달'} 분석
             </h3>
           </div>
-          {/* 단위 칩 — 모바일 가로 스크롤, 데스크탑 자연 wrap */}
-          <div className="flex flex-wrap gap-1.5 mb-3 -mx-1 px-1 overflow-x-auto">
+          {/* 월 picker — 최근 12개월. 과거 월 클릭 시 저장된 분석 즉시 표시(없으면 1회만 생성·저장). */}
+          <div className="flex gap-1.5 mb-2 -mx-1 px-1 overflow-x-auto scrollbar-hide">
+            {monthChips.map((c) => {
+              const active = activeYm === c.ym;
+              return (
+                <button
+                  key={c.ym}
+                  type="button"
+                  onClick={(e) => {
+                    setSelectedYm(c.ym);
+                    // 활성 칩이 스크롤 영역 밖으로 밀려 있으면 가운데로 끌어와 사용자 방향 감각 유지
+                    e.currentTarget.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+                  }}
+                  className={`shrink-0 px-3 h-8 rounded-full text-xs font-medium border transition ${
+                    active
+                      ? 'bg-ink text-white border-ink'
+                      : 'bg-card text-sub border-border hover:border-ink/40'
+                  }`}
+                  aria-pressed={active}
+                >
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+          {/* 주차 chip 줄 — 이번 달일 때만 (과거 월은 '월 전체' 단일이라 칩 줄 생략).
+              wrap로 충분히 들어가니 overflow-x-auto 불필요 (디자인-리뷰 polish #3). */}
+          {!isPastMonth && (
+          <div className="flex flex-wrap gap-1.5 mb-3 -mx-1 px-1">
             {aiUnits.map((u) => {
               const active = u.unit === aiUnit;
               return (
@@ -818,6 +925,7 @@ export default function BI() {
               );
             })}
           </div>
+          )}
           {/* 인사이트 본문 */}
           {(() => {
             const data = aiUnit ? aiByUnit[aiUnit] : undefined;

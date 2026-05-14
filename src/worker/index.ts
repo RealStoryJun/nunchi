@@ -4,7 +4,7 @@ import { handleMenus } from './menus';
 import { handleSales } from './sales';
 import { handleStats } from './stats';
 import { handleInferEmoji } from './emoji';
-import { handleInsights } from './insights';
+import { handleInsights, handleInsightsGet } from './insights';
 import { handleAdmin } from './admin';
 import { handleNeeds } from './needs';
 import { handleMonthlyCosts } from './monthly-costs';
@@ -71,6 +71,12 @@ export default {
         return await handleInsights(env, session.user.id, body);
       }
 
+      // 저장된 과거 월 인사이트 조회 — LLM 호출 X, 빠른 readonly. 현재 월은 항상 found:false.
+      if (path === '/api/insights' && request.method === 'GET') {
+        const ym = url.searchParams.get('ym') ?? '';
+        return await handleInsightsGet(env, session.user.id, ym);
+      }
+
       if (path === '/api/needs' || path.startsWith('/api/needs/')) {
         return await handleNeeds(
           request,
@@ -102,6 +108,10 @@ export default {
         if (!isBusinessType(bt)) return err('지원하지 않는 업태입니다.');
         await env.DB.prepare('UPDATE users SET business_type = ? WHERE id = ?')
           .bind(bt, session.user.id)
+          .run();
+        // 업종 톤이 인사이트에 강하게 묶여 있어 과거 저장본 모두 무효화 — 다음 조회 시 재생성
+        await env.DB.prepare('DELETE FROM ai_insights WHERE user_id = ?')
+          .bind(session.user.id)
           .run();
         return ok({ business_type: bt });
       }

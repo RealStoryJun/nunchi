@@ -38,6 +38,13 @@
   .card {
     @apply bg-card border border-border rounded-2xl shadow-soft;
   }
+  /* 가로 스크롤 영역에서 네이티브 스크롤바를 숨김 — 칩 row 등 데스크탑 청크 스크롤바 정리용 */
+  .scrollbar-hide {
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
   .btn {
     @apply inline-flex items-center justify-center px-4 h-12 rounded-xl font-medium
            transition active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;

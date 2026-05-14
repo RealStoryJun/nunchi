@@ -16,10 +16,18 @@
       "database_id": "15671f48-7350-49c4-8c9a-23c4d7d505f4"
     }
   ],
+  // 사장님 요청: nunchicheck.kr Custom Domain 추가 후에도 옛 workers.dev URL은 그대로 작동시킴
+  "workers_dev": true,
   "observability": {
     "enabled": true
   },
   "triggers": {
     "crons": ["0 3 * * *"]
-  }
+  },
+  // Custom Domain — Cloudflare가 SSL·DNS 레코드를 자동 발급. 옛 workers.dev URL은 그대로 동시 작동.
+  // www는 worker 안에서 root로 301 정규화.
+  "routes": [
+    { "pattern": "nunchicheck.kr", "custom_domain": true },
+    { "pattern": "www.nunchicheck.kr", "custom_domain": true }
+  ]
 }

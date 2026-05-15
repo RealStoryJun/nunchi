@@ -37,11 +37,32 @@ export default function Landing() {
                 로그인
               </Link>
             </div>
+            {/* 사용법 + 새 소식 두 CTA — text 링크가 작아서 못 알아보던 문제(2026-05) + changelog 분리 */}
             <Link
               to="/guide"
-              className="mt-4 inline-block text-sub hover:text-ink text-sm"
+              className="mt-6 block rounded-2xl border border-border bg-card p-4 hover:border-accent/50 hover:shadow-sm transition-all"
             >
-              먼저 둘러보기 →
+              <div className="flex items-center gap-3">
+                <span className="text-2xl" aria-hidden>📖</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-ink">30초만에 사용법 보기</div>
+                  <div className="text-sm text-sub mt-0.5">메뉴 → 한 탭 판매 → AI 분석</div>
+                </div>
+                <span className="text-sub" aria-hidden>→</span>
+              </div>
+            </Link>
+            <Link
+              to="/whats-new"
+              className="mt-3 block rounded-2xl border border-border bg-card p-4 hover:border-accent/50 hover:shadow-sm transition-all"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-2xl" aria-hidden>⚡</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-ink">5월 새로워진 점 보기</div>
+                  <div className="text-sm text-sub mt-0.5">봇 차단 · 2단계 인증 · 암호화 강화</div>
+                </div>
+                <span className="text-sub" aria-hidden>→</span>
+              </div>
             </Link>
           </div>
           <div className="card p-6 md:p-8">

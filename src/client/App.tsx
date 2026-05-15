@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Recover from './pages/Recover';
 import Guide from './pages/Guide';
+import WhatsNew from './pages/WhatsNew';
 import Onboarding from './pages/Onboarding';
 import Tutorial from './pages/Tutorial';
 import Sales from './pages/Sales';
@@ -32,6 +33,7 @@ export default function App() {
       <Route path="/signup" element={<Signup />} />
       <Route path="/recover" element={<Recover />} />
       <Route path="/guide" element={<Guide />} />
+      <Route path="/whats-new" element={<WhatsNew />} />
       <Route
         path="/onboarding"
         element={

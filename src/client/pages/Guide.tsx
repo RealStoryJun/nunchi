@@ -146,10 +146,34 @@ export default function Guide() {
 
           <section className="mt-14">
             <h2 className="font-display text-2xl md:text-3xl mb-3">⑧ 내 데이터는 안전한가요</h2>
-            <p className="text-ink/80 leading-relaxed">
+            <p className="text-ink/80 leading-relaxed mb-4">
               모든 데이터는 사장님 본인의 계정에 묶여 저장돼요. 로그인한 본인만
               조회·수정·삭제할 수 있고, 다른 사장님은 접근할 수 없습니다(서버에서 강제).
               위 ⑦의 묶음 데이터만 분석을 위해 잠깐 외부로 나가고, 그 외에는 외부로 나가지 않아요.
+            </p>
+            <ul className="space-y-2 text-ink/80 leading-relaxed list-disc pl-5">
+              <li>비밀번호는 한 방향 암호화(PBKDF2)로 저장 — 서버도 원본을 못 봐요</li>
+              <li>가입 시 봇 자동 차단 (Cloudflare Turnstile)</li>
+              <li>2단계 인증(2FA) 옵션 — 다음 ⑨번에서 켜는 법을 안내해드려요</li>
+            </ul>
+          </section>
+
+          <section className="mt-14">
+            <h2 className="font-display text-2xl md:text-3xl mb-3">⑨ 2단계 인증 켜기 (권장)</h2>
+            <p className="text-ink/80 leading-relaxed mb-3">
+              비밀번호만으론 부족하다 싶을 때, 인증 앱이 30초마다 바꿔주는 6자리 코드를
+              추가로 요구하는 옵션이에요. 누가 비밀번호를 알아도 폰이 없으면 못 들어옵니다.
+            </p>
+            <p className="text-ink/80 leading-relaxed mb-3">
+              <strong className="text-ink">켜는 법</strong>: 로그인 후
+              <strong className="text-ink"> 설정 → 2단계 인증 → "2단계 인증 켜기"</strong>를 누르고,
+              뜨는 QR 코드를 Google Authenticator·1Password·Authy 같은 인증 앱으로 한 번 스캔.
+              앱에 뜨는 6자리 코드를 한 번 입력하면 끝.
+            </p>
+            <p className="text-ink/80 leading-relaxed">
+              <strong className="text-ink">백업 코드</strong> 8개도 같이 발급돼요 — 폰을 잃어버렸을 때
+              한 번씩 쓰는 일회용 입장권이에요. 메모장이나 1Password 같은 안전한 곳에
+              꼭 따로 보관해주세요. 폰도 잃고 백업 코드도 없으면 비밀번호 찾기로만 복구할 수 있어요.
             </p>
           </section>
 

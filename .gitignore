@@ -14,3 +14,8 @@ dist
 /menus-*.md
 /sales-*.md
 graphify-out/
+
+# session cookies (Playwright reviewer artifacts)
+.qa-cookies.txt
+*.cookies.txt
+/cookies.txt

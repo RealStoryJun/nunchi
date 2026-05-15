@@ -102,8 +102,9 @@ const logLoginEvent = async (
   }
 };
 
-// Cloudflare Turnstile 검증 — 봇 가입 차단. 토큰 없거나 검증 실패면 false.
+// Cloudflare Turnstile 검증 — 봇 가입 차단. 4xx/명시적 success:false면 false.
 // TURNSTILE_SECRET 미설정 시 항상 true (graceful degradation — 키 박기 전엔 가입 그대로 작동).
+// 5xx/timeout/네트워크 실패는 fail-open으로 정상 사용자 가입 차단 회피 — IP rate-limit(10/시간)이 봇 floor.
 const verifyTurnstile = async (env: Env, token: string | undefined, ip: string | null): Promise<boolean> => {
   if (!env.TURNSTILE_SECRET) return true; // 미설정 시 통과
   if (!token) return false;
@@ -118,10 +119,13 @@ const verifyTurnstile = async (env: Env, token: string | undefined, ip: string |
       body: form,
       signal: AbortSignal.timeout(5000),
     });
+    // 5xx는 CF siteverify 장애 — fail-open. 봇이 5xx 일부러 노리는 공격은 비현실적이고 IP rate-limit이 floor.
+    if (res.status >= 500) return true;
     const data = (await res.json()) as { success?: boolean };
     return data.success === true;
   } catch {
-    return false;
+    // timeout/네트워크 실패도 fail-open (같은 이유). JSON parse 실패는 매우 드물고 봇이 유도 못 함.
+    return true;
   }
 };
 

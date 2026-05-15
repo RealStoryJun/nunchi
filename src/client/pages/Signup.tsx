@@ -18,7 +18,7 @@ declare global {
     turnstile?: {
       render: (
         container: HTMLElement | string,
-        opts: { sitekey: string; callback: (token: string) => void; 'error-callback'?: () => void; theme?: 'light' | 'dark' | 'auto' },
+        opts: { sitekey: string; callback: (token: string) => void; 'error-callback'?: () => void; 'expired-callback'?: () => void; language?: string; theme?: 'light' | 'dark' | 'auto' },
       ) => string;
       reset: (widgetId?: string) => void;
     };
@@ -45,7 +45,8 @@ export default function Signup() {
   // 1. site key fetch — 공개 config라 1시간 캐시 (사장님이 wrangler put 으로만 바뀜).
   // `{ value }` wrap으로 cached null과 cache-miss 구분 (raw null이면 미스 / { value: null }이면 캐시된 미설정).
   useEffect(() => {
-    const CACHE_KEY = 'turnstile:site_key';
+    // v2: secret 활성화(2026-05-15) 후 기존 캐시(site_key=null)된 사용자가 widget 못 보고 가입 차단되는 포이즌 회피
+    const CACHE_KEY = 'turnstile:site_key:v2';
     const TTL = 60 * 60 * 1000;
     const cached = getCache<{ value: string | null }>(CACHE_KEY);
     if (cached) setSiteKey(cached.value);
@@ -55,9 +56,11 @@ export default function Signup() {
       .catch(() => setSiteKey(null));
   }, []);
 
-  // 2. site key 있으면 Turnstile script 로드 + widget 렌더링
+  // 2. site key 있으면 Turnstile script 로드 + widget 렌더링.
+  // loading deps 중요 — `if (loading) return null`로 form 안 렌더되는 동안엔 ref가 null이라 effect 실패.
+  // loading=false 되면서 form 마운트 → ref attach → 이 시점에 effect 재실행돼 widget 렌더링.
   useEffect(() => {
-    if (!siteKey || !turnstileRef.current) return;
+    if (loading || !siteKey || !turnstileRef.current) return;
     const ensureScript = () =>
       new Promise<void>((resolve) => {
         if (window.turnstile) return resolve();
@@ -77,11 +80,18 @@ export default function Signup() {
       widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
         sitekey: siteKey,
         callback: (token) => setTurnstileToken(token),
-        'error-callback': () => setTurnstileToken(''),
+        // widget 로드/검증 실패 — 사용자에게 단서 없으면 버튼이 disabled로 갇혀서 갇힘 상태.
+        'error-callback': () => {
+          setTurnstileToken('');
+          setError('봇 검증을 불러오지 못했어요. 새로고침해 주세요.');
+        },
+        // 만료된 토큰 정리 — widget이 자동 reset해서 사용자에게 다시 풀어줌
+        'expired-callback': () => setTurnstileToken(''),
+        language: 'ko', // 브라우저 언어 무관 한국어 고정 (기본 'auto'는 독일어 등으로 떨어짐)
         theme: 'light',
       });
     });
-  }, [siteKey]);
+  }, [siteKey, loading]);
 
   if (loading) return null;
   if (user) return <Navigate to="/sales" replace />;

@@ -26,7 +26,7 @@ export const subscribe = (fn: Listener): (() => void) => {
 };
 
 // 풀스크린 LoadingScreen splash가 떠 있는 동안은 중앙 TopProgress 카드를 숨김
-// (둘 다 화면 중앙이라 겹침 방지). ref-count — 동시 마운트되어도 모두 unmount 시까지 active.
+// (둘 다 화면 중앙이라 겹침 방지). ref-count - 동시 마운트되어도 모두 unmount 시까지 active.
 type BoolListener = (v: boolean) => void;
 let _splashCount = 0;
 const _splashListeners = new Set<BoolListener>();

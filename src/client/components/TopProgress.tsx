@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { subscribe, subscribeSplash } from '../lib/progress';
 
-// "중앙 로딩바" — 화면 정중앙 작은 로딩 카드(% + accent 바).
+// "중앙 로딩바" - 화면 정중앙 작은 로딩 카드(% + accent 바).
 // 규칙: "풀스크린 눈치 로딩바"(LoadingScreen)가 떠 있으면(splashActive) 절대 안 뜸.
 //   splash 사라진 후 페이지 내 데이터 갱신 시에만 표시.
-//   "누가 봐도 기다린다"는 상황에서만 — fetch가 1초 미만이면 아예 안 뜸.
+//   "누가 봐도 기다린다"는 상황에서만 - fetch가 1초 미만이면 아예 안 뜸.
 
 export default function TopProgress() {
   const [count, setCount] = useState(0);

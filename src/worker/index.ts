@@ -11,7 +11,7 @@ import { handleMonthlyCosts } from './monthly-costs';
 import { getSessionUser } from './session';
 
 export default {
-  // 매시 0분 cleanup — 만료된 세션·1시간+ auth_attempts·만료된 2FA pending·13개월+ AI usage 로그
+  // 매시 0분 cleanup - 만료된 세션·1시간+ auth_attempts·만료된 2FA pending·13개월+ AI usage 로그
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const now = Date.now();
     const ATTEMPT_WINDOW = 60 * 60 * 1000;
@@ -40,7 +40,7 @@ export default {
     }
 
     if (!path.startsWith('/api/')) {
-      // 정적 자산도 보안 헤더 일괄 추가 — HTML/CSS/JS 모두 적용
+      // 정적 자산도 보안 헤더 일괄 추가 - HTML/CSS/JS 모두 적용
       const res = await env.ASSETS.fetch(request);
       const headers = new Headers(res.headers);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
@@ -48,7 +48,7 @@ export default {
     }
 
     try {
-      // /api/auth/* — 인증 불필요
+      // /api/auth/* - 인증 불필요
       if (path.startsWith('/api/auth/')) {
         return await handleAuth(request, env, path.replace('/api/auth', ''), ctx);
       }
@@ -88,7 +88,7 @@ export default {
         return await handleInsights(env, session.user.id, body);
       }
 
-      // 저장된 과거 월 인사이트 조회 — LLM 호출 X, 빠른 readonly. 현재 월은 항상 found:false.
+      // 저장된 과거 월 인사이트 조회 - LLM 호출 X, 빠른 readonly. 현재 월은 항상 found:false.
       if (path === '/api/insights' && request.method === 'GET') {
         const ym = url.searchParams.get('ym') ?? '';
         return await handleInsightsGet(env, session.user.id, ym);
@@ -126,7 +126,7 @@ export default {
         await env.DB.prepare('UPDATE users SET business_type = ? WHERE id = ?')
           .bind(bt, session.user.id)
           .run();
-        // 업종 톤이 인사이트에 강하게 묶여 있어 과거 저장본 모두 무효화 — 다음 조회 시 재생성
+        // 업종 톤이 인사이트에 강하게 묶여 있어 과거 저장본 모두 무효화 - 다음 조회 시 재생성
         await env.DB.prepare('DELETE FROM ai_insights WHERE user_id = ?')
           .bind(session.user.id)
           .run();

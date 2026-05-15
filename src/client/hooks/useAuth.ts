@@ -11,7 +11,7 @@ export interface User {
   mfa_enabled?: boolean;
 }
 
-// 로그인 1단계 응답 — 2FA 활성이면 mfa_token 받아 2단계 진행
+// 로그인 1단계 응답 - 2FA 활성이면 mfa_token 받아 2단계 진행
 export type LoginResult =
   | { kind: 'ok'; user: User }
   | { kind: 'mfa'; mfa_token: string; expires_in_sec: number };
@@ -67,7 +67,7 @@ export function useAuth() {
     setState({ user: data.user, loading: false });
     return { kind: 'ok', user: data.user };
   }, []);
-  // 2FA 2단계 — mfa_token + code → 세션 발급
+  // 2FA 2단계 - mfa_token + code → 세션 발급
   const loginMfa = useCallback(async (mfa_token: string, code: string): Promise<User> => {
     const data = await apiPost<{ user: User }>('/api/auth/login/mfa', { mfa_token, code });
     setState({ user: data.user, loading: false });

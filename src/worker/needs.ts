@@ -1,6 +1,6 @@
 import { Env, ok, err, SessionUser } from './types';
 
-// 고객 니즈 간이 조사 — 모든 항목 선택사항. 사용자 격리: user_id로만 조회/저장.
+// 고객 니즈 간이 조사 - 모든 항목 선택사항. 사용자 격리: user_id로만 조회/저장.
 
 const GENDERS = ['female', 'male'] as const;
 const AGE_BANDS = ['10s_20s', '30s_40s', '50plus'] as const;
@@ -46,7 +46,7 @@ export async function handleNeeds(
   rest: string,
   url: URL,
 ): Promise<Response> {
-  // GET /api/needs?from=&to=&limit=N — 기록 목록 (from/to로 기간 필터, limit+1로 hasMore 판단)
+  // GET /api/needs?from=&to=&limit=N - 기록 목록 (from/to로 기간 필터, limit+1로 hasMore 판단)
   if (rest === '' && request.method === 'GET') {
     const limitN = Number(url.searchParams.get('limit') ?? 20);
     const limit = Math.min(Math.max(Number.isFinite(limitN) ? limitN : 20, 1), 500);
@@ -88,7 +88,7 @@ export async function handleNeeds(
     });
   }
 
-  // POST /api/needs — 새 기록
+  // POST /api/needs - 새 기록
   if (rest === '' && request.method === 'POST') {
     let body: Record<string, unknown> | null = null;
     try {
@@ -157,7 +157,7 @@ export async function handleNeeds(
     return ok({ id: Number(r.meta.last_row_id) });
   }
 
-  // GET /api/needs/stats?from=&to= — 기간별 집계 (BI용)
+  // GET /api/needs/stats?from=&to= - 기간별 집계 (BI용)
   if (rest === '/stats' && request.method === 'GET') {
     const fromQ = url.searchParams.get('from');
     const toQ = url.searchParams.get('to');
@@ -235,7 +235,7 @@ export async function handleNeeds(
     });
   }
 
-  // DELETE /api/needs/:id — 기록 삭제
+  // DELETE /api/needs/:id - 기록 삭제
   const mDel = rest.match(/^\/(\d+)$/);
   if (mDel && request.method === 'DELETE') {
     const id = Number(mDel[1]);

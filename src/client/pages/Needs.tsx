@@ -16,7 +16,7 @@ export default function Needs() {
   const menuCacheKey = `menus:${userId}`;
   const TTL_MENUS = 5 * 60 * 1000;
 
-  // 메뉴 목록은 캐시에서 즉시 — 폼은 첫 렌더부터 바로 보임 (스켈레톤 없음)
+  // 메뉴 목록은 캐시에서 즉시 - 폼은 첫 렌더부터 바로 보임 (스켈레톤 없음)
   const [menus, setMenus] = useState<MenuLite[]>(
     () => getCache<MenuLite[]>(menuCacheKey) ?? [],
   );
@@ -34,7 +34,7 @@ export default function Needs() {
       setMenus(d.menus);
       setCache(menuCacheKey, d.menus);
     } catch {
-      /* 못 불러와도 폼은 동작 — 제품 선택만 비활성 */
+      /* 못 불러와도 폼은 동작 - 제품 선택만 비활성 */
     } finally {
       setMenusLoaded(true);
     }

@@ -1,7 +1,7 @@
 import { Env, ok, err, SessionUser, SaleRow, MenuRow } from './types';
 import { msToYmKst } from './insights';
 
-// 과거 월 AI 인사이트 저장본은 그 월 판매가 변하면 stale — 해당 ym 행 삭제(다음 조회 시 새로 생성).
+// 과거 월 AI 인사이트 저장본은 그 월 판매가 변하면 stale - 해당 ym 행 삭제(다음 조회 시 새로 생성).
 // 'this 달'(아직 ai_insights에 저장 안 됨)이면 DELETE 0 rows라 비용 무시 가능.
 const invalidateInsightsForMonth = (env: Env, userId: number, soldAt: number) =>
   env.DB.prepare('DELETE FROM ai_insights WHERE user_id = ? AND year_month = ?')
@@ -29,7 +29,7 @@ export const handleSales = async (
   url: URL,
 ): Promise<Response> => {
   // GET /api/sales?from=&to=&limit=&cursorAt=&cursorId=
-  // 커서 페이지네이션 — 정렬 sold_at DESC, id DESC. cursorAt/cursorId = 이전 페이지 마지막 항목 → 그 다음부터.
+  // 커서 페이지네이션 - 정렬 sold_at DESC, id DESC. cursorAt/cursorId = 이전 페이지 마지막 항목 → 그 다음부터.
   // limit+1로 hasMore 판정. 첫 페이지(커서 없음)일 때만 기간 내 전체 건수(total)도 함께 반환.
   if (rest === '' && request.method === 'GET') {
     const fromQ = url.searchParams.get('from');
@@ -38,7 +38,7 @@ export const handleSales = async (
     const limit = Math.min(Math.max(Number.isFinite(limN) ? limN : 30, 1), 100);
     const cursorAt = url.searchParams.get('cursorAt');
     const cursorId = url.searchParams.get('cursorId');
-    // 기간 필터 — 목록/COUNT 둘 다 쓰므로 따로 보관
+    // 기간 필터 - 목록/COUNT 둘 다 쓰므로 따로 보관
     const baseConds = ['s.user_id = ?'];
     const baseArgs: number[] = [user.id];
     if (fromQ) {
@@ -88,7 +88,7 @@ export const handleSales = async (
     const quantity = body.quantity ?? 1;
     if (!Number.isInteger(quantity) || quantity < 1)
       return err('수량은 1 이상의 정수여야 합니다.');
-    // archived 메뉴는 판매 기록 불가 — UI는 archived 안 노출하지만 외부 API 호출 방어
+    // archived 메뉴는 판매 기록 불가 - UI는 archived 안 노출하지만 외부 API 호출 방어
     const menu = await env.DB.prepare(
       'SELECT * FROM menus WHERE id = ? AND user_id = ? AND archived = 0',
     )
@@ -118,7 +118,7 @@ export const handleSales = async (
     });
   }
 
-  // PUT /api/sales/:id — 수량 수정 (cost/price 스냅샷은 유지)
+  // PUT /api/sales/:id - 수량 수정 (cost/price 스냅샷은 유지)
   const mPut = rest.match(/^\/(\d+)$/);
   if (mPut && request.method === 'PUT') {
     const id = Number(mPut[1]);
@@ -147,7 +147,7 @@ export const handleSales = async (
   const m = rest.match(/^\/(\d+)$/);
   if (m && request.method === 'DELETE') {
     const id = Number(m[1]);
-    // 삭제 전에 sold_at 확보 — 삭제 후엔 알 수 없음
+    // 삭제 전에 sold_at 확보 - 삭제 후엔 알 수 없음
     const existing = await env.DB.prepare(
       'SELECT sold_at FROM sales WHERE id = ? AND user_id = ?',
     )

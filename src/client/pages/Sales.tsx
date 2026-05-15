@@ -21,7 +21,7 @@ interface CartItem {
   qty: number;
 }
 
-// 담은 목록 본문 — 우측 컬럼/하단 패널 양쪽에서 공유 (모듈 레벨 컴포넌트라 리마운트 이슈 없음)
+// 담은 목록 본문 - 우측 컬럼/하단 패널 양쪽에서 공유 (모듈 레벨 컴포넌트라 리마운트 이슈 없음)
 function CartBody({
   cart,
   totalQty,
@@ -191,7 +191,7 @@ export default function Sales() {
       }
       return [...prev, { menuId: m.id, name: m.name, emoji: m.emoji, qty: 1 }];
     });
-    // 첫 항목 담을 때만 자동으로 펼침 — 사용자가 접어둔 걸 매 탭마다 다시 펴지 않게
+    // 첫 항목 담을 때만 자동으로 펼침 - 사용자가 접어둔 걸 매 탭마다 다시 펴지 않게
     if (wasEmpty) setExpanded(true);
   };
   const setQty = (menuId: number, qty: number) =>
@@ -338,7 +338,7 @@ export default function Sales() {
           )}
         </div>
 
-        {/* 오른쪽 고정 컬럼 (≥lg) — 담은 목록 */}
+        {/* 오른쪽 고정 컬럼 (≥lg) - 담은 목록 */}
         {menus.length > 0 && (
           <aside className="hidden xl:flex xl:flex-col xl:w-80 xl:shrink-0 xl:sticky xl:top-6 xl:h-[calc(100vh-3rem)] card p-4">
             <div className="flex items-baseline gap-2 mb-2 shrink-0">
@@ -354,7 +354,7 @@ export default function Sales() {
         )}
       </div>
 
-      {/* 하단 고정 패널 (<lg) — 모바일은 BottomNav 위, 태블릿은 화면 맨 아래 */}
+      {/* 하단 고정 패널 (<lg) - 모바일은 BottomNav 위, 태블릿은 화면 맨 아래 */}
       {menus.length > 0 && (
         <div
           className="xl:hidden fixed left-0 md:left-64 right-0 bottom-16 md:bottom-0 z-30

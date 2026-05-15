@@ -6,7 +6,7 @@ import { Skeleton } from './Skeleton';
 import { timeHM, startOfDay, endOfDay } from '../lib/format';
 import { useAuth } from '../hooks/useAuth';
 
-// 오늘 00:00 ~ 23:59 — 상한을 안 두면 시드/미래 데이터까지 끼어들어 "정렬 안 된 것처럼" 보임
+// 오늘 00:00 ~ 23:59 - 상한을 안 두면 시드/미래 데이터까지 끼어들어 "정렬 안 된 것처럼" 보임
 const TODAY_NEEDS_URL = () => {
   const now = new Date();
   return `/api/needs?from=${startOfDay(now).getTime()}&to=${endOfDay(now).getTime()}&limit=300`;
@@ -42,7 +42,7 @@ const AGE_OPTS = [
   { v: '30s_40s' as Age, l: '30–40대' },
   { v: '50plus' as Age, l: '50대+' },
 ];
-// 미동반·식사대용을 첫 옵션으로 — 기본값이 모두 맨 왼쪽에 와서 선택 표시가 일자로 정렬됨
+// 미동반·식사대용을 첫 옵션으로 - 기본값이 모두 맨 왼쪽에 와서 선택 표시가 일자로 정렬됨
 const CHILD_OPTS = [
   { v: 'no' as const, l: '미동반' },
   { v: 'yes' as const, l: '자녀 동반' },
@@ -151,7 +151,7 @@ export default function NeedsTab({
   const [recent, setRecent] = useState<NeedEntry[] | null>(null); // 오늘 기록만
   const [toast, setToast] = useState<string | null>(null);
 
-  // 오늘 기록만 — 어제까지의 누적은 BI 분포 카드에서
+  // 오늘 기록만 - 어제까지의 누적은 BI 분포 카드에서
   useEffect(() => {
     let alive = true;
     apiGet<{ needs: NeedEntry[] }>(TODAY_NEEDS_URL())
@@ -175,7 +175,7 @@ export default function NeedsTab({
     () => menus.filter((m) => menuIds.includes(m.id)),
     [menus, menuIds],
   );
-  // 오늘 기록 — 시간 DESC(최근이 위), 같은 시각은 id DESC. 사장님이 방금 입력한 게 즉시 위에 보임.
+  // 오늘 기록 - 시간 DESC(최근이 위), 같은 시각은 id DESC. 사장님이 방금 입력한 게 즉시 위에 보임.
   const recentSorted = useMemo(
     () =>
       recent
@@ -212,7 +212,7 @@ export default function NeedsTab({
         menuIds,
       });
       await reloadRecent();
-      // BI 페이지의 needs 집계 캐시 무효화 — 사장님이 곧장 /bi로 가도 방금 기록한 게 반영됨
+      // BI 페이지의 needs 집계 캐시 무효화 - 사장님이 곧장 /bi로 가도 방금 기록한 게 반영됨
       invalidateByPrefix(`needsStats:${userId}:`);
       reset();
       setToast('고객 니즈 기록됐어요');
@@ -306,7 +306,7 @@ export default function NeedsTab({
         </div>
       </div>
 
-      {/* 오늘 기록 — 당일 것만. 어제까지의 누적 분포는 BI 고객 니즈 카드에서 */}
+      {/* 오늘 기록 - 당일 것만. 어제까지의 누적 분포는 BI 고객 니즈 카드에서 */}
       <div className="mt-6">
         <div className="flex items-baseline justify-between mb-2 gap-2">
           <h3 className="font-semibold">

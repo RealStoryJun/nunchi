@@ -65,7 +65,7 @@ export async function handleInferEmoji(
   const key = normalize(name);
   if (!key) return ok({ emoji: '📦', source: 'fallback' });
 
-  // 1) D1 캐시 (글로벌 — 이모지는 공개 데이터). 캐시 히트는 rate limit 비용 없음.
+  // 1) D1 캐시 (글로벌 - 이모지는 공개 데이터). 캐시 히트는 rate limit 비용 없음.
   const cached = await env.DB.prepare(
     'SELECT emoji FROM emoji_cache WHERE key = ?',
   )
@@ -73,7 +73,7 @@ export async function handleInferEmoji(
     .first<{ emoji: string }>();
   if (cached) return ok({ emoji: cached.emoji, source: 'cache' });
 
-  // 2) Groq (키 없으면 fallback — 캐시는 안 함, 키 등록 후 다시 시도되게)
+  // 2) Groq (키 없으면 fallback - 캐시는 안 함, 키 등록 후 다시 시도되게)
   const apiKey = env.GROQ_API_KEY;
   if (!apiKey) return ok({ emoji: '📦', source: 'fallback' });
 
@@ -85,7 +85,7 @@ export async function handleInferEmoji(
   const inferred = await askGroq(apiKey, name);
   const emoji = inferred ?? '📦';
 
-  // 3) D1 저장 (📦도 저장 — 같은 입력 반복 시 Groq 재호출 방지.
+  // 3) D1 저장 (📦도 저장 - 같은 입력 반복 시 Groq 재호출 방지.
   //    추후 사전 보강하려면 source='groq' AND emoji='📦' 행을 재추론)
   await env.DB.prepare(
     `INSERT INTO emoji_cache (key, emoji, source, updated_at)

@@ -60,7 +60,7 @@ export function setCache<T>(key: string, v: T): void {
       JSON.stringify({ v, ts: Date.now() } satisfies Entry<T>),
     );
   } catch {
-    /* quota exceeded — 무시 */
+    /* quota exceeded - 무시 */
   }
 }
 

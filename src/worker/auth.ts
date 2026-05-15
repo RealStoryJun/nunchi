@@ -53,7 +53,7 @@ const fakeQuestionFor = async (email: string): Promise<string> => {
   return FAKE_QUESTIONS[idx];
 };
 
-// dummy hash — 등록 안 된 이메일에 verify 호출됐을 때 timing 균형 맞추기용.
+// dummy hash - 등록 안 된 이메일에 verify 호출됐을 때 timing 균형 맞추기용.
 // 모듈 로드 시 한 번 생성 (각 워커 인스턴스에서 1회).
 let _dummyHash: Promise<string> | null = null;
 const getDummyHash = (): Promise<string> => {
@@ -81,7 +81,7 @@ const logLoginEvent = async (
   try {
     const ip = request.headers.get('cf-connecting-ip') ?? null;
     const ua = (request.headers.get('user-agent') ?? '').slice(0, 200);
-    // 90일 안 같은 (ip, ua) 본 적 있는지 — 없으면 새 디바이스
+    // 90일 안 같은 (ip, ua) 본 적 있는지 - 없으면 새 디바이스
     const SEEN_WINDOW = 90 * 24 * 60 * 60 * 1000;
     const seen = await env.DB.prepare(
       `SELECT 1 FROM user_login_events
@@ -102,9 +102,9 @@ const logLoginEvent = async (
   }
 };
 
-// Cloudflare Turnstile 검증 — 봇 가입 차단. 4xx/명시적 success:false면 false.
-// TURNSTILE_SECRET 미설정 시 항상 true (graceful degradation — 키 박기 전엔 가입 그대로 작동).
-// 5xx/timeout/네트워크 실패는 fail-open으로 정상 사용자 가입 차단 회피 — IP rate-limit(10/시간)이 봇 floor.
+// Cloudflare Turnstile 검증 - 봇 가입 차단. 4xx/명시적 success:false면 false.
+// TURNSTILE_SECRET 미설정 시 항상 true (graceful degradation - 키 박기 전엔 가입 그대로 작동).
+// 5xx/timeout/네트워크 실패는 fail-open으로 정상 사용자 가입 차단 회피 - IP rate-limit(10/시간)이 봇 floor.
 const verifyTurnstile = async (env: Env, token: string | undefined, ip: string | null): Promise<boolean> => {
   if (!env.TURNSTILE_SECRET) return true; // 미설정 시 통과
   if (!token) return false;
@@ -113,13 +113,13 @@ const verifyTurnstile = async (env: Env, token: string | undefined, ip: string |
     form.append('secret', env.TURNSTILE_SECRET);
     form.append('response', token);
     if (ip) form.append('remoteip', ip);
-    // 5초 timeout — Cloudflare siteverify 응답 지연 시 가입 행성 hang 회피
+    // 5초 timeout - Cloudflare siteverify 응답 지연 시 가입 행성 hang 회피
     const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
       method: 'POST',
       body: form,
       signal: AbortSignal.timeout(5000),
     });
-    // 5xx는 CF siteverify 장애 — fail-open. 봇이 5xx 일부러 노리는 공격은 비현실적이고 IP rate-limit이 floor.
+    // 5xx는 CF siteverify 장애 - fail-open. 봇이 5xx 일부러 노리는 공격은 비현실적이고 IP rate-limit이 floor.
     if (res.status >= 500) return true;
     const data = (await res.json()) as { success?: boolean };
     return data.success === true;
@@ -135,7 +135,7 @@ export const handleAuth = async (
   path: string,
   ctx?: ExecutionContext,
 ): Promise<Response> => {
-  // GET /api/auth/turnstile/config — 클라가 widget 렌더링용 site_key 받음. site_key 없으면 widget 안 띄움.
+  // GET /api/auth/turnstile/config - 클라가 widget 렌더링용 site_key 받음. site_key 없으면 widget 안 띄움.
   if (path === '/turnstile/config' && request.method === 'GET') {
     return ok({ site_key: env.TURNSTILE_SITE_KEY ?? null });
   }
@@ -151,7 +151,7 @@ export const handleAuth = async (
       turnstile_token?: string;
     }>(request);
     if (!body) return err('잘못된 요청입니다.');
-    // Turnstile 검증 — TURNSTILE_SECRET 설정돼 있을 때만 실제 검증, 그 전엔 자동 통과
+    // Turnstile 검증 - TURNSTILE_SECRET 설정돼 있을 때만 실제 검증, 그 전엔 자동 통과
     const turnstileOk = await verifyTurnstile(
       env,
       body.turnstile_token,
@@ -168,11 +168,11 @@ export const handleAuth = async (
     if (pwErr) return err(pwErr);
     if (!businessName) return err('가게 이름을 입력해주세요.');
     if (!recoveryQuestion) return err('보안질문을 입력해주세요.');
-    // 복구 답변 최소 4자 — brute force 공간 확보 (rate-limit 5/30min과 합쳐 방어)
+    // 복구 답변 최소 4자 - brute force 공간 확보 (rate-limit 5/30min과 합쳐 방어)
     if (!recoveryAnswer || recoveryAnswer.trim().length < 4)
       return err('보안질문 답변은 4자 이상 입력해주세요.');
 
-    // IP 기반 rate limit (가입 봇 방어) — 시도 자체에 카운터 ↑ (unique email 봇이 우회 못 하게).
+    // IP 기반 rate limit (가입 봇 방어) - 시도 자체에 카운터 ↑ (unique email 봇이 우회 못 하게).
     // Turnstile graceful degradation 상태(secret 미설정)에서도 IP 단위 봇 차단을 보장.
     const ipKey = `signup-ip:${clientIp(request)}`;
     const ipRl = await checkRateLimit(env, ipKey, 10, 60 * 60 * 1000);
@@ -275,13 +275,13 @@ export const handleAuth = async (
       });
     }
 
-    // 2FA 비활성 — 기존 흐름. 이메일 카운터 리셋 + 같은 user 기존 세션 invalidate + 새 세션 발급.
+    // 2FA 비활성 - 기존 흐름. 이메일 카운터 리셋 + 같은 user 기존 세션 invalidate + 새 세션 발급.
     await Promise.all([
       resetAttempts(env, emailKey),
       env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run(),
     ]);
     const { token, expiresAt } = await createSession(env, user.id);
-    // fire-and-forget — 응답 안 막음. ctx.waitUntil로 워커 종료 후에도 완료 보장.
+    // fire-and-forget - 응답 안 막음. ctx.waitUntil로 워커 종료 후에도 완료 보장.
     if (ctx) ctx.waitUntil(logLoginEvent(env, user.id, request));
     else void logLoginEvent(env, user.id, request);
     return ok(
@@ -299,7 +299,7 @@ export const handleAuth = async (
     );
   }
 
-  // POST /api/auth/login/mfa — 2단계: mfa_token + TOTP code 또는 백업코드
+  // POST /api/auth/login/mfa - 2단계: mfa_token + TOTP code 또는 백업코드
   if (path === '/login/mfa' && request.method === 'POST') {
     const body = await safeJson<{ mfa_token: string; code: string }>(request);
     if (!body?.mfa_token || !body?.code) return err('잘못된 요청입니다.');
@@ -316,7 +316,7 @@ export const handleAuth = async (
       await recordAttempt(env, mfaKey);
       return err('인증이 만료되었어요. 다시 로그인해주세요.', 401);
     }
-    // 사용자 단위 rate-limit — 토큰 갈아끼우는 brute force 차단 (20/시간/유저)
+    // 사용자 단위 rate-limit - 토큰 갈아끼우는 brute force 차단 (20/시간/유저)
     const mfaUserKey = `mfa-user:${pending.user_id}`;
     const userRl = await checkRateLimit(env, mfaUserKey, 20, 60 * 60 * 1000);
     if (!userRl.ok) return tooMany(userRl.retryAfterMs);
@@ -335,20 +335,20 @@ export const handleAuth = async (
         totp_backup_codes_hash: string | null;
       }>();
     if (!u || !u.totp_secret) {
-      // 사용자 또는 2FA 사라짐 — auth_pending 정리하고 401
+      // 사용자 또는 2FA 사라짐 - auth_pending 정리하고 401
       await env.DB.prepare('DELETE FROM auth_pending WHERE token = ?').bind(body.mfa_token).run();
       return err('인증 정보를 찾을 수 없어요. 다시 로그인해주세요.', 401);
     }
 
     const code = body.code.trim().replace(/[\s-]/g, ''); // 공백·하이픈 제거 (백업코드 a1b2-c3d4 입력 호환)
     let pass = false;
-    // 1) TOTP 6자리 검증 — secret을 worker key로 복호화 (평문 fallback 호환)
+    // 1) TOTP 6자리 검증 - secret을 worker key로 복호화 (평문 fallback 호환)
     if (/^\d{6}$/.test(code)) {
       const secret = await decryptTotpSecret(u.totp_secret, env.TOTP_SECRET_KEY);
       if (secret) {
         pass = await verifyTotp(secret, code);
         // 마이그레이션: 평문 base32 저장본을 envelope 암호화로 자동 업그레이드 (키 설정 후 첫 로그인 시).
-        // enc === secret이면 키 설정 무효(잘못된 길이 등) — no-op UPDATE 회피.
+        // enc === secret이면 키 설정 무효(잘못된 길이 등) - no-op UPDATE 회피.
         if (pass && env.TOTP_SECRET_KEY && !u.totp_secret.startsWith('v1.')) {
           const enc = await encryptTotpSecret(secret, env.TOTP_SECRET_KEY);
           if (enc !== secret) {
@@ -369,8 +369,8 @@ export const handleAuth = async (
           if (await verifyPassword(code.toLowerCase(), h)) { matchedHash = h; break; }
         }
         if (matchedHash) {
-          // SQLite JSON1 — 매칭된 hash와 다른 값만 남기는 atomic UPDATE.
-          // WHERE EXISTS(matchedHash) 가드로 race-safe — 이미 다른 요청이 그 hash 제거했으면 changes=0.
+          // SQLite JSON1 - 매칭된 hash와 다른 값만 남기는 atomic UPDATE.
+          // WHERE EXISTS(matchedHash) 가드로 race-safe - 이미 다른 요청이 그 hash 제거했으면 changes=0.
           // (SQLite UPDATE changes는 "touched rows"라 EXISTS 가드 없으면 idempotent UPDATE도 changes=1 반환 → race fail.)
           const r = await env.DB.prepare(
             `UPDATE users
@@ -394,7 +394,7 @@ export const handleAuth = async (
       return err('인증 코드가 일치하지 않아요.', 401);
     }
 
-    // 성공 — auth_pending 정리, 기존 세션 invalidate, 새 세션 발급. 모든 rate-limit 카운터 리셋.
+    // 성공 - auth_pending 정리, 기존 세션 invalidate, 새 세션 발급. 모든 rate-limit 카운터 리셋.
     await Promise.all([
       env.DB.prepare('DELETE FROM auth_pending WHERE token = ?').bind(body.mfa_token).run(),
       env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(u.id).run(),
@@ -420,9 +420,9 @@ export const handleAuth = async (
     );
   }
 
-  // POST /api/auth/2fa/setup/start — 인증된 사용자가 비밀번호 재확인 → secret + QR URL 반환.
-  // 이미 활성화된 2FA는 setup/start로 못 덮어씀 (silently 비활성화 우회 차단 — disable 먼저 필요).
-  // 세션 탈취 시 비밀번호 brute-force 방어 — pwd-confirm:userId rate-limit.
+  // POST /api/auth/2fa/setup/start - 인증된 사용자가 비밀번호 재확인 → secret + QR URL 반환.
+  // 이미 활성화된 2FA는 setup/start로 못 덮어씀 (silently 비활성화 우회 차단 - disable 먼저 필요).
+  // 세션 탈취 시 비밀번호 brute-force 방어 - pwd-confirm:userId rate-limit.
   // 같은 setup 중 재호출은 기존 미활성 secret 그대로 반환 (overwrite 회피, 사장님 첫 QR 그대로 사용 가능).
   if (path === '/2fa/setup/start' && request.method === 'POST') {
     const session = await getSessionUser(request, env);
@@ -445,13 +445,13 @@ export const handleAuth = async (
       return err('이미 2단계 인증이 켜져 있어요. 끄기를 먼저 진행해주세요.');
     }
     await resetAttempts(env, rlKey);
-    // 미활성 secret 이미 있으면 재사용 — 사장님이 첫 QR 스캔 후 retry해도 같은 secret
+    // 미활성 secret 이미 있으면 재사용 - 사장님이 첫 QR 스캔 후 retry해도 같은 secret
     // 저장은 envelope 암호화 형식, 응답엔 평문 base32 (QR/수동 입력용)
     let secretPlain: string;
     if (row.totp_secret) {
       secretPlain = await decryptTotpSecret(row.totp_secret, env.TOTP_SECRET_KEY);
       if (!secretPlain) {
-        // 복호화 실패 (키 분실 등) — 새 secret로 재시작
+        // 복호화 실패 (키 분실 등) - 새 secret로 재시작
         secretPlain = generateSecret();
         const enc = await encryptTotpSecret(secretPlain, env.TOTP_SECRET_KEY);
         await env.DB.prepare(
@@ -471,7 +471,7 @@ export const handleAuth = async (
     });
   }
 
-  // POST /api/auth/2fa/setup/confirm — 6자리 코드 확인 → 활성화 + 백업코드 8개 반환
+  // POST /api/auth/2fa/setup/confirm - 6자리 코드 확인 → 활성화 + 백업코드 8개 반환
   if (path === '/2fa/setup/confirm' && request.method === 'POST') {
     const session = await getSessionUser(request, env);
     if (!session) return err('로그인이 필요합니다.', 401);
@@ -499,7 +499,7 @@ export const handleAuth = async (
     return ok({ backup_codes: codes });
   }
 
-  // POST /api/auth/2fa/disable — 비밀번호 + 현재 TOTP 코드 둘 다 검증 후 비활성
+  // POST /api/auth/2fa/disable - 비밀번호 + 현재 TOTP 코드 둘 다 검증 후 비활성
   // pwd-confirm:userId rate-limit으로 세션 탈취 시 비번 brute-force 방어
   if (path === '/2fa/disable' && request.method === 'POST') {
     const session = await getSessionUser(request, env);
@@ -538,7 +538,7 @@ export const handleAuth = async (
     return ok({}, { headers: { 'set-cookie': clearCookie() } });
   }
 
-  // POST /api/auth/recover/start — 항상 200 + 질문 반환 (등록 여부 노출 안 함)
+  // POST /api/auth/recover/start - 항상 200 + 질문 반환 (등록 여부 노출 안 함)
   if (path === '/recover/start' && request.method === 'POST') {
     const body = await safeJson<{ email: string }>(request);
     if (!body?.email) return err('이메일을 입력해주세요.');
@@ -559,7 +559,7 @@ export const handleAuth = async (
     return ok({ recoveryQuestion: question });
   }
 
-  // POST /api/auth/recover/verify — 응답 + timing 통일
+  // POST /api/auth/recover/verify - 응답 + timing 통일
   if (path === '/recover/verify' && request.method === 'POST') {
     const body = await safeJson<{
       email: string;

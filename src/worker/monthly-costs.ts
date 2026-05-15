@@ -1,6 +1,6 @@
 import { Env, ok, err, SessionUser } from './types';
 
-// 월별 고정 지출 — 사장님 본인 데이터만, 매월 자유 라벨+금액 N행.
+// 월별 고정 지출 - 사장님 본인 데이터만, 매월 자유 라벨+금액 N행.
 // PUT은 그 달 항목 전체 교체(diff X), copy-from-previous는 직전 캘린더 월의 행을 복사.
 
 interface ItemRow {
@@ -44,7 +44,7 @@ function sanitizeItems(raw: unknown): { items: InputItem[] } | { error: string }
     if (label.length === 0) continue; // 빈 행은 자연스럽게 제외
     if (label.length > MAX_LABEL_LEN)
       return { error: `라벨은 ${MAX_LABEL_LEN}자 이내로 적어주세요.` };
-    // 라벨이 있는데 금액이 빠진 행은 의도된 빈 칸 — 조용히 제외 (null/undefined/'' 모두)
+    // 라벨이 있는데 금액이 빠진 행은 의도된 빈 칸 - 조용히 제외 (null/undefined/'' 모두)
     if (o.amount === null || o.amount === undefined || o.amount === '') continue;
     const amountN = Number(o.amount);
     if (!Number.isFinite(amountN) || !Number.isInteger(amountN))
@@ -91,7 +91,7 @@ export async function handleMonthlyCosts(
     return ok(await readMonth(env, user.id, ym));
   }
 
-  // PUT /api/monthly-costs?ym=YYYY-MM — 그 달 전체 교체 (트랜잭션)
+  // PUT /api/monthly-costs?ym=YYYY-MM - 그 달 전체 교체 (트랜잭션)
   if (rest === '' && request.method === 'PUT') {
     const ym = url.searchParams.get('ym') ?? '';
     if (!YM_RE.test(ym)) return err('잘못된 월 형식이에요.');
@@ -116,7 +116,7 @@ export async function handleMonthlyCosts(
       ),
     ];
     await env.DB.batch(stmts);
-    // 그 ym 저장 인사이트는 고정비 합계가 변했으므로 stale — 삭제(다음 조회 시 새로 생성)
+    // 그 ym 저장 인사이트는 고정비 합계가 변했으므로 stale - 삭제(다음 조회 시 새로 생성)
     await env.DB.prepare(
       'DELETE FROM ai_insights WHERE user_id = ? AND year_month = ?',
     )
@@ -125,7 +125,7 @@ export async function handleMonthlyCosts(
     return ok(await readMonth(env, user.id, ym));
   }
 
-  // POST /api/monthly-costs/copy-from-previous?ym=YYYY-MM — 직전 월 복사. 이미 차 있으면 409.
+  // POST /api/monthly-costs/copy-from-previous?ym=YYYY-MM - 직전 월 복사. 이미 차 있으면 409.
   if (rest === '/copy-from-previous' && request.method === 'POST') {
     const ym = url.searchParams.get('ym') ?? '';
     if (!YM_RE.test(ym)) return err('잘못된 월 형식이에요.');

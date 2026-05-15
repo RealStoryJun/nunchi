@@ -125,7 +125,7 @@ export default function Account() {
               type="button"
               onClick={() => {
                 setEditingType((v) => !v);
-                // 그리드가 화면 밖이면 보이게 — 18칸 중 새 6종이 fold 아래에 묻히지 않도록
+                // 그리드가 화면 밖이면 보이게 - 18칸 중 새 6종이 fold 아래에 묻히지 않도록
                 if (!editingType) {
                   requestAnimationFrame(() => {
                     typeGridRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });

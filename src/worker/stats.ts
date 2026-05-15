@@ -101,7 +101,7 @@ export const handleStats = async (
     .bind(tzSec, ...args)
     .all<ByDayRow>();
 
-  // 시간대별 (0~23시, tz 보정) — "언제 붐비나"
+  // 시간대별 (0~23시, tz 보정) - "언제 붐비나"
   const byHour = await env.DB.prepare(
     `SELECT CAST(strftime('%H', datetime((sold_at/1000) + ?, 'unixepoch')) AS INTEGER) AS hour,
             SUM(price_at_sale * quantity) AS revenue,

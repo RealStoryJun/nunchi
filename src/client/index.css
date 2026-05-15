@@ -15,7 +15,7 @@
    온보딩·튜토리얼 인트로 font-display text-3xl md:text-4xl
    랜딩 히어로       font-display text-4xl md:text-6xl
    * 이모지/아이콘 글리프는 text-base / text-lg / text-3xl 로 "글자 크기"를 빌려 쓰는 거라 위 표와 무관.
-   * 제목은 항상 font-display(고운바탕 세리프) — "고급스러운" 톤의 핵심이라 산세리프로 바꾸지 말 것.
+   * 제목은 항상 font-display(고운바탕 세리프) - "고급스러운" 톤의 핵심이라 산세리프로 바꾸지 말 것.
    ─────────────────────────────────────────────────────────────── */
 
 @layer base {
@@ -38,7 +38,7 @@
   .card {
     @apply bg-card border border-border rounded-2xl shadow-soft;
   }
-  /* 가로 스크롤 영역에서 네이티브 스크롤바를 숨김 — 칩 row 등 데스크탑 청크 스크롤바 정리용 */
+  /* 가로 스크롤 영역에서 네이티브 스크롤바를 숨김 - 칩 row 등 데스크탑 청크 스크롤바 정리용 */
   .scrollbar-hide {
     scrollbar-width: none;
   }

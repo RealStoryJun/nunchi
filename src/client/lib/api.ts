@@ -40,7 +40,7 @@ export async function api<T>(
       } catch {
         throw new ApiError(res.status, '서버 응답을 읽을 수 없습니다.');
       }
-      // 세션 만료(401) — /api/me는 useAuth가 자체 처리. /api/auth/* 401은 자격 증명 오류라 글로벌 처리 X.
+      // 세션 만료(401) - /api/me는 useAuth가 자체 처리. /api/auth/* 401은 자격 증명 오류라 글로벌 처리 X.
       // 그 외 401만 글로벌 redirect (Protected route가 user=null 보고 /login으로 보냄)
       if (
         !body.ok &&

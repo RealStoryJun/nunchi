@@ -98,7 +98,7 @@ export const handleMenus = async (
       .first();
     if (!owned) return err('메뉴를 찾을 수 없습니다.', 404);
 
-    // PUT /api/menus/:id — 수정
+    // PUT /api/menus/:id - 수정
     if (sub === '' && request.method === 'PUT') {
       const body = await safeJson<{
         name: string;
@@ -130,7 +130,7 @@ export const handleMenus = async (
       return ok({ menu: updated });
     }
 
-    // DELETE /api/menus/:id — archived = 1
+    // DELETE /api/menus/:id - archived = 1
     if (sub === '' && request.method === 'DELETE') {
       await env.DB.prepare(
         'UPDATE menus SET archived = 1 WHERE id = ? AND user_id = ?',
@@ -140,7 +140,7 @@ export const handleMenus = async (
       return ok({});
     }
 
-    // POST /api/menus/:id/up | /down — 같은 카테고리 안에서만 swap
+    // POST /api/menus/:id/up | /down - 같은 카테고리 안에서만 swap
     if ((sub === '/up' || sub === '/down') && request.method === 'POST') {
       const dir = sub === '/up' ? -1 : 1;
       const cur = await env.DB.prepare(

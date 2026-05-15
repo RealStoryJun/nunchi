@@ -2,7 +2,7 @@ import { Env, ok, err, SessionUser } from './types';
 import { verifyPassword } from './crypto';
 import { checkRateLimit, recordAttempt, resetAttempts, tooMany } from './ratelimit';
 
-// 어드민 전용 — 계정·통계·감사 로그. 모든 핸들러는 is_admin 검증 통과 후만 실행.
+// 어드민 전용 - 계정·통계·감사 로그. 모든 핸들러는 is_admin 검증 통과 후만 실행.
 // mutation(예: users/delete)은 추가로 sessions.admin_verified_until 검증 (step-up auth).
 
 interface AdminUserRow {
@@ -18,7 +18,7 @@ interface AdminUserRow {
   menu_count: number;
 }
 
-// step-up 통과 여부 확인 — sessions.admin_verified_until > now
+// step-up 통과 여부 확인 - sessions.admin_verified_until > now
 async function isAdminVerified(
   env: Env,
   sessionToken: string,
@@ -31,7 +31,7 @@ async function isAdminVerified(
   return !!row && row.admin_verified_until > Date.now();
 }
 
-// 감사 로그 INSERT — 실패해도 본 응답에 영향 없게 try/catch
+// 감사 로그 INSERT - 실패해도 본 응답에 영향 없게 try/catch
 async function audit(
   env: Env,
   adminUserId: number,
@@ -75,8 +75,8 @@ export async function handleAdmin(
 ): Promise<Response> {
   if (!user.is_admin) return err('관리자 권한이 필요합니다.', 403);
 
-  // POST /api/admin/step-up { password } — 비밀번호 재확인 → 10분간 mutation 허용.
-  // 세션 탈취 시 비밀번호 brute-force 방어 — pwd-confirm:userId rate-limit.
+  // POST /api/admin/step-up { password } - 비밀번호 재확인 → 10분간 mutation 허용.
+  // 세션 탈취 시 비밀번호 brute-force 방어 - pwd-confirm:userId rate-limit.
   if (rest === '/step-up' && request.method === 'POST') {
     let body: { password?: unknown } | null = null;
     try {
@@ -127,7 +127,7 @@ export async function handleAdmin(
       .bind(q, like, like)
       .all<AdminUserRow>();
     const total = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
-    // 검색은 view-only — audit log 노이즈 회피 (mutation만 기록)
+    // 검색은 view-only - audit log 노이즈 회피 (mutation만 기록)
     return ok({
       users: results.map((r) => ({
         ...r,
@@ -139,7 +139,7 @@ export async function handleAdmin(
     });
   }
 
-  // POST /api/admin/users/delete — step-up 통과 필수
+  // POST /api/admin/users/delete - step-up 통과 필수
   if (rest === '/users/delete' && request.method === 'POST') {
     if (!(await isAdminVerified(env, sessionToken))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
@@ -175,7 +175,7 @@ export async function handleAdmin(
     return ok({ deleted: ids.length, skippedSelf });
   }
 
-  // GET /api/admin/stats — 시스템 통계 (데모 계정 제외)
+  // GET /api/admin/stats - 시스템 통계 (데모 계정 제외)
   if (rest === '/stats' && request.method === 'GET') {
     const now = Date.now();
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
@@ -210,7 +210,7 @@ export async function handleAdmin(
     });
   }
 
-  // GET /api/admin/audit?limit=50&cursor=<id> — 감사 로그 (DESC, cursor 페이지네이션)
+  // GET /api/admin/audit?limit=50&cursor=<id> - 감사 로그 (DESC, cursor 페이지네이션)
   if (rest === '/audit' && request.method === 'GET') {
     const limN = Number(url.searchParams.get('limit') ?? 50);
     const limit = Math.min(Math.max(Number.isFinite(limN) ? limN : 50, 1), 200);
@@ -247,7 +247,7 @@ export async function handleAdmin(
     });
   }
 
-  // GET /api/admin/ai-usage?ym=YYYY-MM — 월별 AI 호출 집계 (모델·실패율·총 토큰)
+  // GET /api/admin/ai-usage?ym=YYYY-MM - 월별 AI 호출 집계 (모델·실패율·총 토큰)
   if (rest === '/ai-usage' && request.method === 'GET') {
     const ym = url.searchParams.get('ym') ?? '';
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)) return err('잘못된 월 형식이에요.');
@@ -273,7 +273,7 @@ export async function handleAdmin(
     return ok({ ym, by_model: results });
   }
 
-  // GET /api/admin/login-events?limit=50&newOnly=1 — 사용자 로그인 이벤트 (새 디바이스 위주)
+  // GET /api/admin/login-events?limit=50&newOnly=1 - 사용자 로그인 이벤트 (새 디바이스 위주)
   if (rest === '/login-events' && request.method === 'GET') {
     const limN = Number(url.searchParams.get('limit') ?? 50);
     const limit = Math.min(Math.max(Number.isFinite(limN) ? limN : 50, 1), 200);

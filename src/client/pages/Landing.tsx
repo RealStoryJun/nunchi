@@ -37,7 +37,7 @@ export default function Landing() {
                 로그인
               </Link>
             </div>
-            {/* 사용법 + 새 소식 두 CTA — text 링크가 작아서 못 알아보던 문제(2026-05) + changelog 분리 */}
+            {/* 사용법 + 새 소식 두 CTA - text 링크가 작아서 못 알아보던 문제(2026-05) + changelog 분리 */}
             <Link
               to="/guide"
               className="mt-6 block rounded-2xl border border-border bg-card p-4 hover:border-accent/50 hover:shadow-sm transition-all"

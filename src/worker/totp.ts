@@ -1,4 +1,4 @@
-// TOTP (RFC 6238) — Cloudflare Workers 네이티브 (crypto.subtle, 외부 의존 0).
+// TOTP (RFC 6238) - Cloudflare Workers 네이티브 (crypto.subtle, 외부 의존 0).
 // 30s step, 6자리 코드, HMAC-SHA1. drift window ±1 step.
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -38,7 +38,7 @@ export function base32Decode(s: string): Uint8Array {
   return new Uint8Array(out);
 }
 
-// 20바이트(160bit) 시크릿 — RFC 4226 권장
+// 20바이트(160bit) 시크릿 - RFC 4226 권장
 export function generateSecret(): string {
   const buf = new Uint8Array(20);
   crypto.getRandomValues(buf);
@@ -61,7 +61,7 @@ export function generateBackupCodes(n = 8): string[] {
 // 32-bit 빅엔디안 카운터를 8바이트로 (앞 4 = 0).
 function counterBytes(counter: number): Uint8Array {
   const buf = new Uint8Array(8);
-  // counter는 step이라 2^32 안 — 안전하게 high bits 0
+  // counter는 step이라 2^32 안 - 안전하게 high bits 0
   buf[4] = (counter >>> 24) & 0xff;
   buf[5] = (counter >>> 16) & 0xff;
   buf[6] = (counter >>> 8) & 0xff;
@@ -117,7 +117,7 @@ export async function verifyTotp(
   return false;
 }
 
-// otpauth:// URL — Authenticator 앱이 QR 스캔해서 등록
+// otpauth:// URL - Authenticator 앱이 QR 스캔해서 등록
 export function otpauthUrl(secret: string, email: string, issuer = 'Nunchi'): string {
   const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(email)}`;
   const params = new URLSearchParams({

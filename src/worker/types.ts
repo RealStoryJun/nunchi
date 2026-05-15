@@ -55,7 +55,7 @@ export type BusinessType = (typeof BUSINESS_TYPE_IDS)[number];
 export const isBusinessType = (v: unknown): v is BusinessType =>
   typeof v === 'string' && (BUSINESS_TYPE_IDS as readonly string[]).includes(v);
 
-// AI 프롬프트용 한글 라벨 — keep in sync with src/client/lib/businessTypes.ts
+// AI 프롬프트용 한글 라벨 - keep in sync with src/client/lib/businessTypes.ts
 export const BUSINESS_TYPE_LABELS: Record<BusinessType, string> = {
   cafe: '카페',
   restaurant: '음식점',
@@ -104,11 +104,11 @@ export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = { ok: false; error: string };
 export type ApiResponse<T> = ApiOk<T> | ApiErr;
 
-// 모든 응답에 일괄 적용할 보안 헤더 — 다운그레이드(HSTS)/clickjacking/sniff/referrer/permissions/CSP
+// 모든 응답에 일괄 적용할 보안 헤더 - 다운그레이드(HSTS)/clickjacking/sniff/referrer/permissions/CSP
 // CSP: React/Recharts inline style + Tailwind inline style 호환을 위해 'unsafe-inline' 허용.
 // script-src도 'unsafe-inline'은 Vite hashing 안 쓰는 dev 상태 호환 + production은 자기 origin script만.
-// connect-src 'self' — 워커 자체 fetch만. img-src에 qrserver.com (2FA QR), data: (favicon).
-// frame-ancestors 'none' — X-Frame-Options DENY 보강 (최신 브라우저).
+// connect-src 'self' - 워커 자체 fetch만. img-src에 qrserver.com (2FA QR), data: (favicon).
+// frame-ancestors 'none' - X-Frame-Options DENY 보강 (최신 브라우저).
 export const SECURITY_HEADERS: Record<string, string> = {
   'strict-transport-security': 'max-age=31536000; includeSubDomains',
   'x-frame-options': 'DENY',
@@ -119,7 +119,7 @@ export const SECURITY_HEADERS: Record<string, string> = {
     "default-src 'self'",
     // Cloudflare Turnstile script + 자체 origin + React/Vite inline.
     "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
-    // 브랜드 폰트 CSS @import — Pretendard(jsdelivr) + Gowun Batang/JetBrains Mono(googleapis)
+    // 브랜드 폰트 CSS @import - Pretendard(jsdelivr) + Gowun Batang/JetBrains Mono(googleapis)
     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
     "img-src 'self' data: https://api.qrserver.com",
     // 폰트 woff2 파일 origin (gstatic은 Google Fonts, jsdelivr는 Pretendard)

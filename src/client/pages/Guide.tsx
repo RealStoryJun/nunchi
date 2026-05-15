@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { useAuth } from '../hooks/useAuth';
 
-// 모바일/데스크탑 자동 스왑 — 같은 화면을 사용자 폼팩터에 맞춰 보여줌
+// 모바일/데스크탑 자동 스왑 - 같은 화면을 사용자 폼팩터에 맞춰 보여줌
 function Shot({ name, alt }: { name: string; alt: string }) {
   return (
     <>
@@ -30,7 +30,7 @@ export default function Guide() {
         <Link to="/" aria-label="처음으로">
           <Logo />
         </Link>
-        {/* loading 동안 placeholder로 공간 유지 — 하드 새로고침 시 '로그인'→'내 가게로' flicker 회피.
+        {/* loading 동안 placeholder로 공간 유지 - 하드 새로고침 시 '로그인'→'내 가게로' flicker 회피.
             min-w로 둘 중 긴 폭 고정해 로그인 사용자 reflow도 차단. */}
         {loading ? (
           <span className="invisible text-sm px-3 py-2.5 min-w-[80px] inline-block">로그인</span>
@@ -66,7 +66,7 @@ export default function Guide() {
           <section className="mt-14">
             <h2 className="font-display text-2xl md:text-3xl mb-3">② 메뉴 등록</h2>
             <p className="text-ink/80 leading-relaxed mb-4">
-              파는 물건을 미리 등록해두세요 — 이모지·이름·원가·판매가·분류. 한 번만 만들어두면 끝이에요.
+              파는 물건을 미리 등록해두세요. 이모지·이름·원가·판매가·분류. 한 번만 만들어두면 끝이에요.
               나중에 가격이 바뀌어도 과거 판매 기록은 그때 가격 그대로 남아요.
             </p>
             <Shot name="menus" alt="메뉴 관리 화면" />
@@ -84,7 +84,7 @@ export default function Guide() {
           <section className="mt-14">
             <h2 className="font-display text-2xl md:text-3xl mb-3">④ 고객 니즈 (선택)</h2>
             <p className="text-ink/80 leading-relaxed mb-4">
-              가벼운 손님 특성 메모예요 — 성별·연령대·자녀 동반·방문 목적·거주지·찾는 메뉴.
+              가벼운 손님 특성 메모예요. 성별·연령대·자녀 동반·방문 목적·거주지·찾는 메뉴.
               자주 오는 손님 기준으로 미리 골라뒀으니, 다른 손님일 때만 한두 번 바꿔서 기록하면 돼요.
               꼭 안 써도 되지만, 쌓일수록 AI 인사이트가 깊어져요.
             </p>
@@ -116,7 +116,7 @@ export default function Guide() {
               적어두면 그 달의 "실제 순이익"을 같이 보여드립니다.
             </p>
             <p className="text-ink/80 leading-relaxed">
-              항목명은 자유롭게 — 임대료·공과금·통신비·보험·구독·마케팅·알바비 같은 추천을
+              항목명은 자유롭게. 임대료·공과금·통신비·보험·구독·마케팅·알바비 같은 추천을
               깔아두고, 해당하는 칸만 채우면 돼요. 다음 달엔 "지난 달과 같이 채우기 →"
               버튼 한 번이면 끝.
             </p>
@@ -129,7 +129,7 @@ export default function Guide() {
               서비스(Groq)에 보내요:
             </p>
             <ul className="space-y-2 text-ink/80 leading-relaxed list-disc pl-5">
-              <li>이번 달 본인 가게의 매출 합계 — 총매출, 원가, 순이익, 마진율, 판매 건수</li>
+              <li>이번 달 본인 가게의 매출 합계 (총매출, 원가, 순이익, 마진율, 판매 건수)</li>
               <li>직전 동일 기간 대비 변동 (매출·순이익·판매 건수)</li>
               <li>본인이 등록한 메뉴 중 인기 상위 4개 + 마진 낮은 2개</li>
               <li>일별 매출 평균·최고·최저, 피크 시간대, 분류별 매출 상위 3개</li>
@@ -137,13 +137,13 @@ export default function Guide() {
                 고객 니즈가 5건 이상 쌓였을 때만, 응답 비율 요약(성별/연령대/자녀 동반/방문 목적/거주지)과
                 자주 언급된 메뉴
               </li>
-              <li>이번 달 고정비 합계 (등록했을 때만) — 실제 순이익까지 같이 봐요</li>
-              <li>가게 업종 (카페·카센터·미용실 등) — 업종 맥락에 맞는 표현을 쓰도록</li>
+              <li>이번 달 고정비 합계 (등록했을 때만, 실제 순이익까지 같이 봐요)</li>
+              <li>가게 업종 (카페·카센터·미용실 등): 업종 맥락에 맞는 표현을 쓰도록</li>
             </ul>
             <div className="mt-5 p-4 rounded-xl bg-card border border-border">
               <p className="text-sm text-ink/80 leading-relaxed">
                 <strong className="text-ink">그 외에는 일절 보지 않습니다.</strong> 다른
-                사장님의 데이터, 외부 사이트, 이름·전화·주소 같은 개인 식별 정보 — 안 봐요.
+                사장님의 데이터, 외부 사이트, 이름·전화·주소 같은 개인 식별 정보는 안 봐요.
                 AI 키는 서버에만 있고 브라우저 코드에는 노출되지 않습니다. 분석 요청은
                 계정당 1분에 10회로 제한되어 있어요.
               </p>
@@ -158,9 +158,9 @@ export default function Guide() {
               위 ⑦의 묶음 데이터만 분석을 위해 잠깐 외부로 나가고, 그 외에는 외부로 나가지 않아요.
             </p>
             <ul className="space-y-2 text-ink/80 leading-relaxed list-disc pl-5">
-              <li>비밀번호는 한 방향 암호화(PBKDF2)로 저장 — 서버도 원본을 못 봐요</li>
+              <li>비밀번호는 한 방향 암호화(PBKDF2)로 저장: 서버도 원본을 못 봐요</li>
               <li>가입 시 봇 자동 차단 (Cloudflare Turnstile)</li>
-              <li>2단계 인증(2FA) 옵션 — 다음 ⑨번에서 켜는 법을 안내해드려요</li>
+              <li>2단계 인증(2FA) 옵션: 다음 ⑨번에서 켜는 법을 안내해드려요</li>
             </ul>
           </section>
 
@@ -185,7 +185,7 @@ export default function Guide() {
               </Link>
             )}
             <p className="text-ink/80 leading-relaxed">
-              <strong className="text-ink">백업 코드</strong> 8개도 같이 발급돼요 — 폰을 잃어버렸을 때
+              <strong className="text-ink">백업 코드</strong> 8개도 같이 발급돼요. 폰을 잃어버렸을 때
               한 번씩 쓰는 일회용 입장권이에요. 메모장이나 1Password 같은 안전한 곳에
               꼭 따로 보관해주세요. 폰도 잃고 백업 코드도 없으면 비밀번호 찾기로만 복구할 수 있어요.
             </p>

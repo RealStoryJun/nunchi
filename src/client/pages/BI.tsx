@@ -101,7 +101,7 @@ type Range = 'today' | 'week' | 'month' | 'lastMonth' | 'custom';
 const PIE_COLORS = ['#1B4332', '#2D6A4F', '#52796F', '#C99D52', '#E76F51', '#767270'];
 
 const TTL_STATS = 30 * 1000;
-// (이전 'TTL_INSIGHTS = 1h'는 이번 달 진행 중 케이스용이었음. AI는 지난 달 고정으로 단순화되면서 항상 30일 TTL 적용 — fetch effect 안에 인라인.)
+// (이전 'TTL_INSIGHTS = 1h'는 이번 달 진행 중 케이스용이었음. AI는 지난 달 고정으로 단순화되면서 항상 30일 TTL 적용 - fetch effect 안에 인라인.)
 const SALES_PAGE = 30; // 판매내역 한 페이지 (스크롤 시 다음 페이지 로드)
 const COST_RECOMMENDED_LABELS = [
   '임대료',
@@ -183,21 +183,21 @@ export default function BI() {
   const salesScrollRef = useRef<HTMLDivElement | null>(null); // 판매내역 스크롤 컨테이너 (무한스크롤 root)
   const salesSentinelRef = useRef<HTMLDivElement | null>(null);
   const loadMoreLockRef = useRef(false); // 다음 페이지 인플라이트 동기 가드 (옵저버 중복 발화 방지)
-  const salesPeriodRef = useRef(''); // 현재 기간 키 — loadMore 응답 도착 시 기간 바뀌었는지 확인용
+  const salesPeriodRef = useRef(''); // 현재 기간 키 - loadMore 응답 도착 시 기간 바뀌었는지 확인용
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [needsStats, setNeedsStats] = useState<NeedsStats | null>(null);
-  // (monthNeedsStats prefetch는 AI 인사이트 cadence 단순화로 제거됨 — AI fetch effect가
+  // (monthNeedsStats prefetch는 AI 인사이트 cadence 단순화로 제거됨 - AI fetch effect가
   //  지난 달 needs를 stats와 함께 fetch한다.)
-  // 이번 달 고정비 — null = 아직 안 불러옴, 빈 배열 = 등록 없음
+  // 이번 달 고정비 - null = 아직 안 불러옴, 빈 배열 = 등록 없음
   const [monthCostItems, setMonthCostItems] = useState<CostItem[] | null>(null);
-  // 지난달 고정비 — range='lastMonth' 클릭 시 4-카드 순이익에 차감 + 카드 표시
+  // 지난달 고정비 - range='lastMonth' 클릭 시 4-카드 순이익에 차감 + 카드 표시
   const [lastMonthCostItems, setLastMonthCostItems] = useState<CostItem[] | null>(null);
   const [costEditOpen, setCostEditOpen] = useState(false);
-  // 고정비 카드 — 3개 초과 시 "외 N개 더 보기" 펼침/접기. range 토글 시 자동 접기.
+  // 고정비 카드 - 3개 초과 시 "외 N개 더 보기" 펼침/접기. range 토글 시 자동 접기.
   const [fcExpanded, setFcExpanded] = useState(false);
   useEffect(() => { setFcExpanded(false); }, [range]);
-  // Modal Escape — 둘 중 어느 modal이 열려 있어도 Escape로 닫기
+  // Modal Escape - 둘 중 어느 modal이 열려 있어도 Escape로 닫기
   useEffect(() => {
     if (!editOpen && !costEditOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -210,24 +210,24 @@ export default function BI() {
     return () => document.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editOpen, costEditOpen]);
-  // 편집 버퍼 — amount는 input UX 위해 문자열로 유지, 저장 시 파싱
+  // 편집 버퍼 - amount는 input UX 위해 문자열로 유지, 저장 시 파싱
   const [editingCosts, setEditingCosts] = useState<{ label: string; amount: string }[]>([]);
   const [costSaving, setCostSaving] = useState(false);
   const [costMsg, setCostMsg] = useState<string | null>(null);
-  // AI 인사이트 — 상단 range selector(오늘/이번 주/이번 달/사용자 지정)와 자동 연동.
+  // AI 인사이트 - 상단 range selector(오늘/이번 주/이번 달/사용자 지정)와 자동 연동.
   // 진행 중 단위면 직전 완료 단위로 자동 시프트("1주차가 끝나지 않으면 전주차꺼"). aiWindow 참조.
-  // period key = `${fromMs}:${toMs}` — 같은 기간 재선택 시 인메모리 캐시 hit.
+  // period key = `${fromMs}:${toMs}` - 같은 기간 재선택 시 인메모리 캐시 hit.
   const [aiByPeriod, setAiByPeriod] = useState<Record<string, string[] | null>>({});
-  const aiInflightRef = useRef<Set<string>>(new Set()); // 인플라이트 period key — 중복 POST 방지
-  // 판매/고정비 변경 시 AI fetch effect를 강제 재실행 — deps에 포함되는 nonce
+  const aiInflightRef = useRef<Set<string>>(new Set()); // 인플라이트 period key - 중복 POST 방지
+  // 판매/고정비 변경 시 AI fetch effect를 강제 재실행 - deps에 포함되는 nonce
   // (aiByPeriod 비워도 effect deps는 안 바뀌어 effect 재발 안 함 → 영구 스켈레톤 락)
   const [aiRefreshNonce, setAiRefreshNonce] = useState(0);
-  // 메뉴 등록 여부 — BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
+  // 메뉴 등록 여부 - BI 빈 상태에서 "메뉴 없음"과 "이 기간 판매 없음"을 구분하기 위함. null=아직 모름.
   const [menuCount, setMenuCount] = useState<number | null>(() => {
     const c = getCache<{ id: number }[]>(`menus:${userId}`);
     return c ? c.length : null;
   });
-  // 수정 모달 안에서 영향 받은 sale들의 ym 추적 — 닫을 때 그 ym들만 invalidate (전체 prefix 무효화 회피)
+  // 수정 모달 안에서 영향 받은 sale들의 ym 추적 - 닫을 때 그 ym들만 invalidate (전체 prefix 무효화 회피)
   const editDirtyYmsRef = useRef<Set<string>>(new Set());
 
   const [fromMs, toMs] = useMemo(() => {
@@ -249,13 +249,13 @@ export default function BI() {
     ];
   }, [range, from, to]);
 
-  // 이번 달 윈도우 — 자정 경계 대응. visibilitychange + 60s interval (always-visible 탭도 cover).
+  // 이번 달 윈도우 - 자정 경계 대응. visibilitychange + 60s interval (always-visible 탭도 cover).
   const [dayTick, setDayTick] = useState(0);
   useEffect(() => {
     const bump = () => setDayTick((t) => t + 1);
     const onVis = () => { if (document.visibilityState === 'visible') bump(); };
     document.addEventListener('visibilitychange', onVis);
-    const id = window.setInterval(bump, 60_000); // 1분마다 — useMemo가 같은 ym이면 no-op
+    const id = window.setInterval(bump, 60_000); // 1분마다 - useMemo가 같은 ym이면 no-op
     return () => {
       document.removeEventListener('visibilitychange', onVis);
       clearInterval(id);
@@ -272,7 +272,7 @@ export default function BI() {
   // 지난달 ym 도출 (currentYm - 1)
   const lastMonthYm = useMemo(() => prevYearMonth(currentYm), [currentYm]);
   const lastMonthCostsKey = `fixedCosts:${userId}:${lastMonthYm}`;
-  // 이번 달 고정비 총합 (useMemo로 파생) — 인사이트 키·prompt에 동봉
+  // 이번 달 고정비 총합 (useMemo로 파생) - 인사이트 키·prompt에 동봉
   const monthFixedCost = useMemo(
     () => (monthCostItems ? monthCostItems.reduce((s, x) => s + x.amount, 0) : 0),
     [monthCostItems],
@@ -282,7 +282,7 @@ export default function BI() {
     () => (lastMonthCostItems ? lastMonthCostItems.reduce((s, x) => s + x.amount, 0) : 0),
     [lastMonthCostItems],
   );
-  // range별 활성 고정비 (4-카드 순이익·고정비 카드용) — 이번 달/지난달만 의미, 그 외는 0
+  // range별 활성 고정비 (4-카드 순이익·고정비 카드용) - 이번 달/지난달만 의미, 그 외는 0
   const activeFcSum =
     range === 'month' ? monthFixedCost : range === 'lastMonth' ? lastMonthFixedCost : 0;
   const activeFcItems =
@@ -303,7 +303,7 @@ export default function BI() {
       ym,
     };
   }, []);
-  // 지난 달 일수 (헤딩 + LLM 메타) — floor((to-from)/DAY)+1로 정확히 N일치
+  // 지난 달 일수 (헤딩 + LLM 메타) - floor((to-from)/DAY)+1로 정확히 N일치
   const aiPeriodDays = Math.floor((aiWindow.toMs - aiWindow.fromMs) / 86400000) + 1;
 
   const statsCacheKey = `stats:${userId}:${fromMs}:${toMs}`;
@@ -326,7 +326,7 @@ export default function BI() {
     setCache(monthStatsCacheKey, d);
   }, [monthStatsCacheKey, monthFromMs, monthToMs, tzOffset]);
 
-  // 첫 페이지부터 다시 — 페이지네이션 상태 리셋 (편집 실패 후 재동기화용)
+  // 첫 페이지부터 다시 - 페이지네이션 상태 리셋 (편집 실패 후 재동기화용)
   const refetchSales = useCallback(async () => {
     const d = await apiGet<SalesPage>(`/api/sales?from=${fromMs}&to=${toMs}&limit=${SALES_PAGE}`);
     setSales(d.sales);
@@ -334,11 +334,11 @@ export default function BI() {
     setSalesTotal(d.total ?? d.sales.length);
   }, [fromMs, toMs]);
 
-  // 다음 페이지 — 마지막 항목을 커서로. 스크롤 sentinel / "더 보기" 버튼이 호출.
+  // 다음 페이지 - 마지막 항목을 커서로. 스크롤 sentinel / "더 보기" 버튼이 호출.
   const loadMoreSales = useCallback(async () => {
     if (loadMoreLockRef.current || !salesHasMore || !sales || sales.length === 0) return;
     const last = sales[sales.length - 1];
-    const reqKey = `${fromMs}-${toMs}`; // 이 요청의 기간 — 도착 시 salesPeriodRef와 다르면 폐기
+    const reqKey = `${fromMs}-${toMs}`; // 이 요청의 기간 - 도착 시 salesPeriodRef와 다르면 폐기
     loadMoreLockRef.current = true;
     setSalesLoadingMore(true);
     try {
@@ -346,7 +346,7 @@ export default function BI() {
         `/api/sales?from=${fromMs}&to=${toMs}&limit=${SALES_PAGE}&cursorAt=${last.sold_at}&cursorId=${last.id}`,
       );
       if (salesPeriodRef.current !== reqKey) return; // 기간 바뀜 → 이 응답 버림
-      // id 기준 중복 제거(이론상 동시 발화 대비) — 정상 경로에선 겹칠 일 없음
+      // id 기준 중복 제거(이론상 동시 발화 대비) - 정상 경로에선 겹칠 일 없음
       setSales((prev) => {
         if (!prev) return d.sales;
         const seen = new Set(prev.map((s) => s.id));
@@ -354,7 +354,7 @@ export default function BI() {
       });
       setSalesHasMore(d.hasMore);
     } catch {
-      /* 다음 페이지 실패는 조용히 — 사용자가 다시 스크롤하면 재시도 */
+      /* 다음 페이지 실패는 조용히 - 사용자가 다시 스크롤하면 재시도 */
     } finally {
       loadMoreLockRef.current = false;
       setSalesLoadingMore(false);
@@ -368,14 +368,14 @@ export default function BI() {
       setStats(cached);
       setLoading(false);
     } else {
-      // 캐시 미스 — 이전 기간 stats를 화면에 잠깐 더 둠(깜빡임 방지)
+      // 캐시 미스 - 이전 기간 stats를 화면에 잠깐 더 둠(깜빡임 방지)
       setLoading(true);
     }
     setSales(null);
     setSalesHasMore(false);
     setSalesTotal(null);
     setSalesLoadingMore(false);
-    loadMoreLockRef.current = false; // 기간 바뀜 — 인플라이트 loadMore 락 해제(스테일 응답은 salesPeriodRef로 폐기)
+    loadMoreLockRef.current = false; // 기간 바뀜 - 인플라이트 loadMore 락 해제(스테일 응답은 salesPeriodRef로 폐기)
     salesPeriodRef.current = `${fromMs}-${toMs}`;
     const tasks: Promise<unknown>[] = [];
     if (!isFresh(statsCacheKey, TTL_STATS)) {
@@ -404,7 +404,7 @@ export default function BI() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromMs, toMs, userId]);
 
-  // 판매내역 무한스크롤 — 스크롤 박스(root) 안 sentinel이 보이면 다음 페이지. (편집 모달 닫혀 있을 때만)
+  // 판매내역 무한스크롤 - 스크롤 박스(root) 안 sentinel이 보이면 다음 페이지. (편집 모달 닫혀 있을 때만)
   useEffect(() => {
     if (editOpen || !salesHasMore) return;
     const sentinel = salesSentinelRef.current;
@@ -420,7 +420,7 @@ export default function BI() {
     return () => obs.disconnect();
   }, [editOpen, salesHasMore, loadMoreSales]);
 
-  // 메뉴 개수 (빈 상태 분기용) — Sales/Menus와 동일한 menus:<userId> SWR 캐시 재사용
+  // 메뉴 개수 (빈 상태 분기용) - Sales/Menus와 동일한 menus:<userId> SWR 캐시 재사용
   useEffect(() => {
     const key = `menus:${userId}`;
     const cached = getCache<{ id: number }[]>(key);
@@ -439,10 +439,10 @@ export default function BI() {
     };
   }, [userId]);
 
-  // 이번 달 통합 prefetch — "월 전체" AI 인사이트 + 니즈 카드 + 고정비 카드용. 단위별 AI는 lazy.
+  // 이번 달 통합 prefetch - "월 전체" AI 인사이트 + 니즈 카드 + 고정비 카드용. 단위별 AI는 lazy.
   useEffect(() => {
     let alive = true;
-    // monthStats 캐시 prefetch — 사장님이 "이번 달" 칩 클릭하면 cache hit.
+    // monthStats 캐시 prefetch - 사장님이 "이번 달" 칩 클릭하면 cache hit.
     // 현재 range가 이미 'month'면 메인 stats fetch가 같은 키 채우므로 중복 skip.
     if (monthStatsCacheKey !== statsCacheKey && !isFresh(monthStatsCacheKey, TTL_STATS)) {
       apiGet<Stats>(`/api/stats?from=${monthFromMs}&to=${monthToMs}&tz=${tzOffset}`)
@@ -452,7 +452,7 @@ export default function BI() {
         })
         .catch(() => {});
     }
-    // 이번 달 고정비 — 캐시 우선, 백그라운드 갱신. 실패해도 빈 배열로 두어 BI 진행 계속
+    // 이번 달 고정비 - 캐시 우선, 백그라운드 갱신. 실패해도 빈 배열로 두어 BI 진행 계속
     const cachedCosts = getCache<{ items: CostItem[]; total: number }>(monthCostsKey);
     if (cachedCosts) setMonthCostItems(cachedCosts.items);
     if (!isFresh(monthCostsKey, TTL_STATS)) {
@@ -464,7 +464,7 @@ export default function BI() {
         })
         .catch(() => alive && setMonthCostItems((p) => p ?? []));
     }
-    // 지난달 고정비도 prefetch — range='lastMonth' 클릭 시 즉시 4-카드 net 표시
+    // 지난달 고정비도 prefetch - range='lastMonth' 클릭 시 즉시 4-카드 net 표시
     const cachedLm = getCache<{ items: CostItem[]; total: number }>(lastMonthCostsKey);
     if (cachedLm) setLastMonthCostItems(cachedLm.items);
     if (!isFresh(lastMonthCostsKey, TTL_STATS)) {
@@ -481,13 +481,13 @@ export default function BI() {
     };
   }, [monthStatsCacheKey, statsCacheKey, monthCostsKey, lastMonthCostsKey, monthFromMs, monthToMs, tzOffset, currentYm, lastMonthYm]);
 
-  // 고객 니즈 집계 (선택 기간) — /needs 페이지와 별개, BI에 요약 카드로
+  // 고객 니즈 집계 (선택 기간) - /needs 페이지와 별개, BI에 요약 카드로
   useEffect(() => {
     let alive = true;
     const key = `needsStats:${userId}:${fromMs}:${toMs}`;
     const cached = getCache<NeedsStats>(key);
     if (cached) setNeedsStats(cached);
-    // 캐시 미스여도 이전 기간 값을 잠깐 더 둠(깜빡임 방지) — 다른 BI 섹션과 동일하게
+    // 캐시 미스여도 이전 기간 값을 잠깐 더 둠(깜빡임 방지) - 다른 BI 섹션과 동일하게
     if (isFresh(key, TTL_STATS)) return;
     apiGet<NeedsStats>(`/api/needs/stats?from=${fromMs}&to=${toMs}`)
       .then((d) => {
@@ -521,7 +521,7 @@ export default function BI() {
         monthCostItems.map((it) => ({ label: it.label, amount: String(it.amount) })),
       );
     } else {
-      // 첫 입력 — 추천 라벨 7개 빈 금액으로 + 사용자 추가용 빈 행 한 줄
+      // 첫 입력 - 추천 라벨 7개 빈 금액으로 + 사용자 추가용 빈 행 한 줄
       setEditingCosts(COST_RECOMMENDED_LABELS.map((l) => ({ label: l, amount: '' })));
     }
     setCostMsg(null);
@@ -559,7 +559,7 @@ export default function BI() {
   };
   const saveCosts = async () => {
     if (costSaving) return;
-    // 라벨이 비었거나 금액이 비어/0이면 제외 — 자연스럽게 "해당 칸만 채우면 됨"
+    // 라벨이 비었거나 금액이 비어/0이면 제외 - 자연스럽게 "해당 칸만 채우면 됨"
     const cleaned = editingCosts
       .map((row, i) => ({
         label: row.label.trim(),
@@ -640,17 +640,17 @@ export default function BI() {
 
   const closeEdit = async () => {
     setEditOpen(false);
-    // 편집 결과는 이미 낙관적으로 sales에 반영됨 — 목록 재호출 안 함(페이지네이션 상태 유지). 집계만 갱신.
+    // 편집 결과는 이미 낙관적으로 sales에 반영됨 - 목록 재호출 안 함(페이지네이션 상태 유지). 집계만 갱신.
     const dirtyYms = editDirtyYmsRef.current;
     if (dirtyYms.size > 0) {
       editDirtyYmsRef.current = new Set();
       try {
         await refetchMonthStats(); // 수정이 이번 달에 반영됐을 수 있음
       } catch {
-        /* 무시 — 인사이트 재호출은 계속 진행 */
+        /* 무시 - 인사이트 재호출은 계속 진행 */
       }
-      // 영향 받은 ym들의 AI 캐시·메모리만 무효화 (전체 prefix 무효화 회피 — 다른 월 영구 저장본 보존)
-      // 캐시 키 형태: `insights:${userId}:${bt}:${fromMs}:${toMs}...` — ym→해당 월 from/to로 좁힘.
+      // 영향 받은 ym들의 AI 캐시·메모리만 무효화 (전체 prefix 무효화 회피 - 다른 월 영구 저장본 보존)
+      // 캐시 키 형태: `insights:${userId}:${bt}:${fromMs}:${toMs}...` - ym→해당 월 from/to로 좁힘.
       const bt = user?.business_type ?? 'none';
       for (const ym of dirtyYms) {
         const [y, m] = ym.split('-').map(Number);
@@ -668,7 +668,7 @@ export default function BI() {
     }
   };
 
-  // 날짜별 그룹 (카드 사용내역 스타일) — 최신 날짜 먼저, 날짜 내 최신 시각 먼저
+  // 날짜별 그룹 (카드 사용내역 스타일) - 최신 날짜 먼저, 날짜 내 최신 시각 먼저
   const salesByDay = useMemo(() => {
     if (!sales) return [];
     const map = new Map<string, Sale[]>();
@@ -686,7 +686,7 @@ export default function BI() {
   }, [sales]);
 
   // 시간대 0~23 슬롯 채우기 + 피크타임
-  // (byHour는 신규 필드 — 옛 캐시 stats엔 없을 수 있어 ?? [] 가드)
+  // (byHour는 신규 필드 - 옛 캐시 stats엔 없을 수 있어 ?? [] 가드)
   const hourly = useMemo(() => {
     const arr = Array.from({ length: 24 }, (_, h) => ({
       hour: h,
@@ -712,8 +712,8 @@ export default function BI() {
     return sorted.slice(0, 10);
   }, [stats, rankBy]);
 
-// AI 인사이트 fetch — 지난 달 전체 분석 1회. 완료된 달이라 D1 영구 저장본 hit 시 LLM 호출 0회.
-  // 사장님 결정: "니즈랑 판매해서 전략제시" — 지난 달 stats+needs를 함께 보내 LLM이 종합 분석.
+// AI 인사이트 fetch - 지난 달 전체 분석 1회. 완료된 달이라 D1 영구 저장본 hit 시 LLM 호출 0회.
+  // 사장님 결정: "니즈랑 판매해서 전략제시" - 지난 달 stats+needs를 함께 보내 LLM이 종합 분석.
   useEffect(() => {
     if (!user) return;
     const w = aiWindow;
@@ -721,7 +721,7 @@ export default function BI() {
     if (aiInflightRef.current.has(periodKey)) return;
     const bt = user.business_type ?? 'none';
     const key = `insights:${userId}:${bt}:${periodKey}`;
-    const ttl = 30 * 24 * 60 * 60 * 1000; // 지난 달은 변하지 않음 — 30일 TTL
+    const ttl = 30 * 24 * 60 * 60 * 1000; // 지난 달은 변하지 않음 - 30일 TTL
 
     const cached = getCache<string[]>(key);
     if (cached) {
@@ -844,7 +844,7 @@ export default function BI() {
         )}
       </div>
 
-      {/* AI 인사이트 — 항상 지난 달 전체 분석. range selector와 무관, 한 번 생성 후 D1 영구 저장. */}
+      {/* AI 인사이트 - 항상 지난 달 전체 분석. range selector와 무관, 한 번 생성 후 D1 영구 저장. */}
       <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03]">
         <div className="flex items-baseline gap-1.5 mb-3">
           <span className="text-base leading-none shrink-0">💡</span>
@@ -954,7 +954,7 @@ export default function BI() {
       ) : (
         <>
           {(() => {
-            // 순이익/마진율 dynamic — range=month/lastMonth + 그 달 고정비 등록 시 net, 그 외엔 gross.
+            // 순이익/마진율 dynamic - range=month/lastMonth + 그 달 고정비 등록 시 net, 그 외엔 gross.
             const hasFc = (range === 'month' || range === 'lastMonth') && activeFcSum > 0;
             const netProfit = hasFc ? stats.profit - activeFcSum : stats.profit;
             const netMargin = stats.revenue > 0 ? netProfit / stats.revenue : 0;
@@ -970,7 +970,7 @@ export default function BI() {
                 />
                 <StatCard
                   label="마진율"
-                  value={stats.revenue > 0 ? pct(netMargin) : '—'}
+                  value={stats.revenue > 0 ? pct(netMargin) : '-'}
                   hint={hasFc ? '고정비 차감 후' : `${stats.qty}건 판매`}
                 />
               </div>
@@ -1138,7 +1138,7 @@ export default function BI() {
             </div>
           </div>
 
-          {/* 시간대별 매출 — "언제 붐비나" */}
+          {/* 시간대별 매출 - "언제 붐비나" */}
           <div className="card p-4 mb-4">
             <div className="flex items-baseline justify-between mb-3">
               <h3 className="font-semibold">시간대별 매출</h3>
@@ -1178,7 +1178,7 @@ export default function BI() {
             )}
           </div>
 
-          {/* 고객 니즈 — /needs 기록 요약 (선택 기간) */}
+          {/* 고객 니즈 - /needs 기록 요약 (선택 기간) */}
           {needsStats === null ? (
             <div className="card p-4 mb-4">
               <Skeleton className="h-4 w-20 mb-3" />
@@ -1330,7 +1330,7 @@ export default function BI() {
             )}
           </div>
 
-          {/* 판매 내역 — 카드 사용내역 스타일 날짜별 그룹 (읽기 전용, 스크롤 시 더 로드) */}
+          {/* 판매 내역 - 카드 사용내역 스타일 날짜별 그룹 (읽기 전용, 스크롤 시 더 로드) */}
           <div className="card p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">
@@ -1420,7 +1420,7 @@ export default function BI() {
                     더 보기
                   </button>
                 )}
-                {/* 무한스크롤 sentinel — 보이면 다음 페이지 자동 로드 */}
+                {/* 무한스크롤 sentinel - 보이면 다음 페이지 자동 로드 */}
                 {salesHasMore && <div ref={salesSentinelRef} className="h-px" />}
                 {!salesHasMore && sales.length > SALES_PAGE && (
                   <p className="text-center text-xs text-sub py-2">전체 다 봤어요</p>
@@ -1432,7 +1432,7 @@ export default function BI() {
         </>
       )}
 
-      {/* 판매 내역 수정 — 모바일은 풀스크린, 데스크탑은 중앙 다이얼로그 */}
+      {/* 판매 내역 수정 - 모바일은 풀스크린, 데스크탑은 중앙 다이얼로그 */}
       {editOpen && (
         <div className="fixed inset-0 z-50 flex flex-col bg-bg md:items-center md:justify-center md:bg-black/50 md:p-6">
           <div className="flex flex-col flex-1 min-h-0 w-full bg-bg overflow-hidden md:flex-none md:max-w-2xl md:max-h-[85vh] md:rounded-2xl md:border md:border-border md:shadow-2xl">
@@ -1531,7 +1531,7 @@ export default function BI() {
         </div>
       )}
 
-      {/* 이번 달 고정비 편집 모달 — 모바일 풀스크린, 데스크탑 중앙 다이얼로그 */}
+      {/* 이번 달 고정비 편집 모달 - 모바일 풀스크린, 데스크탑 중앙 다이얼로그 */}
       {costEditOpen && (
         <div className="fixed inset-0 z-50 flex flex-col bg-bg md:items-center md:justify-center md:bg-black/50 md:p-6">
           <div className="flex flex-col flex-1 min-h-0 w-full bg-bg overflow-hidden md:flex-none md:max-w-xl md:max-h-[85vh] md:rounded-2xl md:border md:border-border md:shadow-2xl">

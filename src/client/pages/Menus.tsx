@@ -130,7 +130,7 @@ export default function Menus() {
             );
           })
           .catch(() => {
-            /* abort 또는 실패 — 📦 유지 */
+            /* abort 또는 실패 - 📦 유지 */
           });
       }, 600);
     }
@@ -256,7 +256,7 @@ export default function Menus() {
             placeholder="예: 음료 / 의류 / 디저트"
           />
         </div>
-        {/* 원가 + 판매가 — 각 50% 균등, 데스크탑에선 과하게 넓어지지 않게 */}
+        {/* 원가 + 판매가 - 각 50% 균등, 데스크탑에선 과하게 넓어지지 않게 */}
         <div className="grid grid-cols-2 gap-3 md:max-w-sm">
           <div>
             <label className="label">원가 (원)</label>

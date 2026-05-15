@@ -126,7 +126,7 @@ export default function TwoFactorCard() {
           <div className="text-center">
             <p className="text-xs text-sub mb-1">비밀키 (수동 입력용)</p>
             <div className="flex flex-wrap justify-center gap-1.5 px-3 py-2 bg-bg rounded-lg">
-              {/* 4자 그룹 inline-block — wrap 시에도 그룹 단위 유지 (break-all 시 그룹 중간 자름 회피) */}
+              {/* 4자 그룹 inline-block - wrap 시에도 그룹 단위 유지 (break-all 시 그룹 중간 자름 회피) */}
               {(secret.match(/.{1,4}/g) ?? []).map((g, i) => (
                 <code key={i} className="num text-sm font-mono">{g}</code>
               ))}

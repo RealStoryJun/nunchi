@@ -46,8 +46,8 @@ interface InsightsBody {
   needs?: NeedsAgg | null;
   businessType?: BusinessType | null;
   monthlyFixedCost?: number;
-  ym?: string; // 'YYYY-MM' — 과거 월이면 결과를 ai_insights에 영구 저장
-  // 기간 길이 메타 — "5월 1주차는 2일밖에 안 됨" 같은 컨텍스트를 LLM이 자연히 풀게 함
+  ym?: string; // 'YYYY-MM' - 과거 월이면 결과를 ai_insights에 영구 저장
+  // 기간 길이 메타 - "5월 1주차는 2일밖에 안 됨" 같은 컨텍스트를 LLM이 자연히 풀게 함
   periodDays?: number;       // (toMs-fromMs+1)/24h 절상, 기간 전체 일수
   periodActiveDays?: number; // 매출 발생 일수 (byDay 중 revenue>0)
   periodStart?: string;      // 'YYYY-MM-DD' 사용자 timezone
@@ -56,7 +56,7 @@ interface InsightsBody {
 
 // 'YYYY-MM' 형식 검증
 export const YM_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
-// KST(UTC+9) 기준 현재 'YYYY-MM' — 사장님 표시 시간대와 일치
+// KST(UTC+9) 기준 현재 'YYYY-MM' - 사장님 표시 시간대와 일치
 export const currentYmKst = (now = Date.now()): string => {
   const d = new Date(now + 9 * 3600 * 1000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -86,7 +86,7 @@ const NEEDS_LABEL: Record<string, string> = {
 const won = (n: number) => `${Math.round(n).toLocaleString('en-US')}원`;
 const pctStr = (r: number) => `${(r * 100).toFixed(1)}%`;
 
-// 클라가 보낸 body는 신뢰 불가 — Groq 프롬프트(공유 API 키)로 들어가므로 길이·타입·개수를 강제로 제한.
+// 클라가 보낸 body는 신뢰 불가 - Groq 프롬프트(공유 API 키)로 들어가므로 길이·타입·개수를 강제로 제한.
 const num = (v: unknown): number => {
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -132,7 +132,7 @@ const sanitizeStats = (s: unknown): StatsPayload | null => {
   };
 };
 
-// Record<string,number> — 키 ≤30자, 최대 12개, 값은 음수 아닌 정수
+// Record<string,number> - 키 ≤30자, 최대 12개, 값은 음수 아닌 정수
 const sanitizeCounts = (v: unknown): Record<string, number> => {
   if (!v || typeof v !== 'object') return {};
   const out: Record<string, number> = {};
@@ -172,10 +172,10 @@ const sanitizeBody = (raw: unknown): InsightsBody | null => {
     prevStats = { revenue: num(p.revenue), profit: num(p.profit), qty: num(p.qty) };
   }
   const fc = num(o.monthlyFixedCost);
-  // 사이트 어느 항목도 100억 넘는 게 비현실 — 그 이상은 0으로 떨궈 LLM이 헛소리 하지 않게.
+  // 사이트 어느 항목도 100억 넘는 게 비현실 - 그 이상은 0으로 떨궈 LLM이 헛소리 하지 않게.
   const MAX_FC = 10_000_000_000;
   const ymRaw = typeof o.ym === 'string' ? o.ym : '';
-  // 기간 메타 — 'YYYY-MM-DD' 강한 검증, 일수는 0~366
+  // 기간 메타 - 'YYYY-MM-DD' 강한 검증, 일수는 0~366
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   const psRaw = typeof o.periodStart === 'string' ? o.periodStart : '';
   const peRaw = typeof o.periodEnd === 'string' ? o.periodEnd : '';
@@ -200,7 +200,7 @@ const buildSummary = (b: InsightsBody): string => {
   const s = b.stats!;
   const lines: string[] = [];
   if (b.businessType) lines.push(`- 업종: ${BUSINESS_TYPE_LABELS[b.businessType]}`);
-  // 기간 한 줄 — 시작/끝/총 일수/매출 발생 일수 (LLM이 짧은 기간을 인지하고 부연하도록)
+  // 기간 한 줄 - 시작/끝/총 일수/매출 발생 일수 (LLM이 짧은 기간을 인지하고 부연하도록)
   if (b.periodStart && b.periodEnd && b.periodDays) {
     const active = b.periodActiveDays != null ? `, 매출 발생 ${b.periodActiveDays}일` : '';
     lines.push(
@@ -306,20 +306,20 @@ const SYSTEM_PROMPT =
   '- 인사이트 중 적어도 1개는 매출 데이터(피크 시간대·인기 메뉴·마진) + 고객 니즈 데이터(연령·자녀 동반·거주지·구매 목적)를 묶어 다음 달 실행 가능한 전략을 제시하세요. 예: "30대 자녀 동반 손님이 70%인데 피크가 11시예요. 다음 달엔 11~13시 키즈 세트 메뉴를 시도해보세요."\n' +
   '- "업종"이 주어지면 그 업종 맥락에 맞는 표현·제안을 쓰세요(예: 카센터면 "오일 교환 회전율", 미용실이면 "시술 단가", 카페면 "피크 시간대 동선"). 식당 어휘를 옷가게에 쓰지 말 것.\n' +
   '- 반드시 데이터의 구체적 숫자를 인용하고, 가능하면 실행 가능한 제안 1가지를 포함.\n' +
-  '- 반드시 한국어로만 작성. 한자(漢字)·일본어 가나·러시아어 키릴 문자 등 다른 문자를 절대 섞지 말 것 — 한자어가 떠오르면 한국어 표기로(예: "重点"→"핵심", "最高"→"최고", "戦略"→"전략").\n' +
+  '- 반드시 한국어로만 작성. 한자(漢字)·일본어 가나·러시아어 키릴 문자 등 다른 문자를 절대 섞지 말 것 - 한자어가 떠오르면 한국어 표기로(예: "重点"→"핵심", "最高"→"최고", "戦略"→"전략").\n' +
   '- 데이터에 없는 메뉴명·숫자를 지어내지 말 것.\n' +
-  '- "고객 니즈 조사" 항목이 데이터에 있으면, 인사이트 중 적어도 1개는 그걸 활용하세요 — 어떤 손님(연령대·자녀 동반 여부·거주지)이 무엇을 왜 사는지, 그에 맞춘 실행 제안. 니즈 데이터가 없으면 매출만 분석.\n' +
+  '- "고객 니즈 조사" 항목이 데이터에 있으면, 인사이트 중 적어도 1개는 그걸 활용하세요 - 어떤 손님(연령대·자녀 동반 여부·거주지)이 무엇을 왜 사는지, 그에 맞춘 실행 제안. 니즈 데이터가 없으면 매출만 분석.\n' +
   '- 판매가 5건 미만이거나 데이터가 빈약하면 인사이트 1개로 "데이터가 더 쌓이면 더 정확한 분석을 드릴 수 있어요" 정도만.\n' +
   '- 출력은 JSON 배열만: ["인사이트1", "인사이트2", ...]. 다른 텍스트·코드펜스·설명 절대 금지.';
 
-// Groq rate limit은 모델마다 다름 — 추론력 좋은 70b 먼저, 한도 차면(429) 가벼운 8b로 fallback.
+// Groq rate limit은 모델마다 다름 - 추론력 좋은 70b 먼저, 한도 차면(429) 가벼운 8b로 fallback.
 // https://console.groq.com/docs/rate-limits
 const MODELS: ReadonlyArray<{ model: string; maxTokens: number }> = [
   { model: 'llama-3.3-70b-versatile', maxTokens: 550 },
   { model: 'llama-3.1-8b-instant', maxTokens: 480 },
 ];
 
-// LLM이 가끔 한자·일본어 가나·키릴 문자를 섞음 — 프롬프트로 줄지만 100%는 아니라서 출력 단계에서 처리.
+// LLM이 가끔 한자·일본어 가나·키릴 문자를 섞음 - 프롬프트로 줄지만 100%는 아니라서 출력 단계에서 처리.
 // (1) 흔한 한자어는 한국어로 치환해 살리고, (2) 그래도 비한국어 문자가 남은 인사이트는 통째로 버린다(사용자에게 절대 안 보이게).
 const SALVAGE: ReadonlyArray<readonly [RegExp, string]> = [
   [/重[点點]/g, '핵심'],
@@ -329,7 +329,7 @@ const SALVAGE: ReadonlyArray<readonly [RegExp, string]> = [
   [/重要/g, '중요'],
   [/効果|效果/g, '효과'],
 ];
-// CJK 기호·한자·가나·전각 영숫자·키릴 — 하나라도 들어있으면 비한국어 혼입으로 간주.
+// CJK 기호·한자·가나·전각 영숫자·키릴 - 하나라도 들어있으면 비한국어 혼입으로 간주.
 // (한국어 가운뎃점 '·'(U+00B7)·물결표 '~'·화살표 '→'·말줄임표 '…'는 이 범위 밖이라 안 걸림.)
 const NON_KOREAN =
   /[　-〿぀-ヿ㐀-䶿一-鿿豈-﫿＀-￯Ѐ-ӿ]/;
@@ -428,7 +428,7 @@ export async function handleInsights(
 ): Promise<Response> {
   const body = sanitizeBody(raw);
   if (!body) return err('잘못된 요청입니다.');
-  // 미래 월은 호출 자체가 무의미 — 거절 (클라 버그 방어)
+  // 미래 월은 호출 자체가 무의미 - 거절 (클라 버그 방어)
   if (body.ym && body.ym > currentYmKst()) return err('미래 월은 분석할 수 없어요.');
   // 데이터 빈약: AI 호출 안 하고 안내만 (저장도 안 함)
   if (body.stats!.qty < 5) {
@@ -447,7 +447,7 @@ export async function handleInsights(
   const summary = buildSummary(body);
   for (const { model, maxTokens } of MODELS) {
     const result = await callGroqWith(apiKey, summary, model, maxTokens);
-    // 모든 시도(성공·실패)를 ai_usage_log에 기록 — fire-and-forget
+    // 모든 시도(성공·실패)를 ai_usage_log에 기록 - fire-and-forget
     const logYm = body.ym ?? currentYmKst();
     env.DB.prepare(
       `INSERT INTO ai_usage_log
@@ -469,7 +469,7 @@ export async function handleInsights(
       .catch(() => {/* 로그 실패는 본 응답 흐름 안 막음 */});
     if (result.insights) {
       const insights = result.insights;
-      // 과거 월(완료 월)만 영구 저장 — 이번 달은 데이터 계속 변하므로 저장 X
+      // 과거 월(완료 월)만 영구 저장 - 이번 달은 데이터 계속 변하므로 저장 X
       if (body.ym && body.ym < currentYmKst()) {
         await env.DB.prepare(
           `INSERT INTO ai_insights (user_id, year_month, business_type, monthly_fixed_cost, insights_json, created_at)
@@ -496,7 +496,7 @@ export async function handleInsights(
   return ok({ insights: [], source: 'groq-fail' });
 }
 
-// GET /api/insights?ym=YYYY-MM — 저장된 과거 월 결과 조회. 현재/미래 월은 항상 found:false.
+// GET /api/insights?ym=YYYY-MM - 저장된 과거 월 결과 조회. 현재/미래 월은 항상 found:false.
 export async function handleInsightsGet(
   env: Env,
   userId: number,
@@ -518,7 +518,7 @@ export async function handleInsightsGet(
       insights = parsed.filter((x): x is string => typeof x === 'string');
     }
   } catch {
-    // 파싱 실패면 stale data — 모르게 처리하고 새로 생성하도록 안내
+    // 파싱 실패면 stale data - 모르게 처리하고 새로 생성하도록 안내
     return ok({ found: false });
   }
   return ok({ found: true, insights, created_at: row.created_at });

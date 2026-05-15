@@ -10,7 +10,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  // 2FA 2단계 상태 — null이면 1단계, 토큰이 있으면 2단계 코드 입력
+  // 2FA 2단계 상태 - null이면 1단계, 토큰이 있으면 2단계 코드 입력
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [code, setCode] = useState('');
 

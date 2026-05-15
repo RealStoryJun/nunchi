@@ -130,7 +130,7 @@ export default function Account() {
               type="button"
               onClick={() => {
                 setEditingType((v) => !v);
-                // 그리드(26 tile, 5 group) 펼치면 자동 스크롤 - fold 아래 묻히지 않도록
+                // 그리드(34 tile, 6 group) 펼치면 자동 스크롤 - fold 아래 묻히지 않도록
                 if (!editingType) {
                   requestAnimationFrame(() => {
                     typeGridRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -151,7 +151,7 @@ export default function Account() {
             </div>
           ) : (
             <div ref={typeGridRef} className="anim-fade space-y-4">
-              {/* 26 tile 5 그룹으로 묶음 (Onboarding과 동일 구조) - 평면 grid는 모바일 fold 아래 묻혀 PT 찾기 어려움 */}
+              {/* 34 tile 6 그룹으로 묶음 (Onboarding과 동일 구조) - 평면 grid는 모바일 fold 아래 묻혀 PT/농구 찾기 어려움 */}
               {BUSINESS_GROUPS.map((g) => (
                 <div key={g.group}>
                   <div className="text-sub text-xs font-semibold uppercase tracking-wide mb-2 px-1">
@@ -168,6 +168,7 @@ export default function Account() {
                           onClick={() => setType(t.id)}
                           className={`card flex flex-col items-center justify-center gap-1
                                       px-2 py-3 min-h-[88px] transition active:scale-[0.97]
+                                      disabled:opacity-50 disabled:cursor-wait
                                       ${
                                         active
                                           ? 'ring-2 ring-accent border-accent bg-accent/[0.03]'

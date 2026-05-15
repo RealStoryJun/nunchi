@@ -54,7 +54,7 @@ export default function Onboarding() {
           </p>
         </div>
 
-        {/* 업종 26개 - 그룹별 헤더로 묶어 보여줘 select 길이를 시각적으로 압축 (사장님 의견) */}
+        {/* 업종 34개 - 그룹별 헤더로 묶어 보여줘 select 길이를 시각적으로 압축 (사장님 의견) */}
         <div className="mt-6 space-y-5">
           {BUSINESS_GROUPS.map((g) => (
             <div key={g.group}>

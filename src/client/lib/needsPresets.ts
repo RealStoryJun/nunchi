@@ -128,6 +128,32 @@ export const NEEDS_PRESETS: Record<BusinessCategory, NeedsPreset> = {
       ],
     },
   },
+  sports_class: {
+    gender: GENDER,
+    ageBand: AGE_BAND,
+    withChild: {
+      label: '회원 유형',
+      options: [
+        { v: 'no', l: '신규·체험' },
+        { v: 'yes', l: '정기 회원' },
+      ],
+    },
+    purpose: {
+      label: '레슨 목적',
+      options: [
+        { v: 'meal_replacement', l: '실력 향상' },
+        { v: 'gift', l: '취미·여가' },
+        { v: 'kids_snack', l: '대회 준비' },
+      ],
+    },
+    residence: {
+      label: '방문 경로',
+      options: [
+        { v: 'busan', l: '검색·SNS' },
+        { v: 'outside', l: '지인 소개' },
+      ],
+    },
+  },
   other: {
     gender: GENDER,
     ageBand: AGE_BAND,

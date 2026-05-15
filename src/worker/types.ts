@@ -31,7 +31,7 @@ export interface UserRow {
 }
 
 // keep in sync with src/client/lib/businessTypes.ts
-// 그룹 순서: 외식 / 소매 / 인적 서비스 / 정비·수선 / 기타
+// 그룹 순서: 외식 / 소매 / 인적 서비스 / 스포츠·레슨 / 정비·수선 / 기타
 export const BUSINESS_TYPE_IDS = [
   // 외식
   'cafe',
@@ -56,6 +56,15 @@ export const BUSINESS_TYPE_IDS = [
   'massage',
   'academy',
   'tutoring',
+  // 스포츠·레슨 (2026-05 8종 신규, sports_class 카테고리)
+  'basketball',
+  'golf',
+  'soccer',
+  'baseball',
+  'swimming',
+  'tennis',
+  'climbing',
+  'dance',
   // 정비·수선
   'auto_repair',
   'motorcycle',
@@ -69,11 +78,12 @@ export type BusinessType = (typeof BUSINESS_TYPE_IDS)[number];
 export const isBusinessType = (v: unknown): v is BusinessType =>
   typeof v === 'string' && (BUSINESS_TYPE_IDS as readonly string[]).includes(v);
 
-// 4 카테고리 - keep in sync with src/client/lib/businessTypes.ts BusinessCategory
+// 5 카테고리 - keep in sync with src/client/lib/businessTypes.ts BusinessCategory
 export type BusinessCategory =
   | 'retail_food'
   | 'service_personal'
   | 'service_repair'
+  | 'sports_class'    // 2026-05 신규: 스포츠·레슨 (농구·골프·축구·야구·수영·테니스·클라이밍·댄스)
   | 'other';
 
 // business_type → category mapping - keep in sync with src/client/lib/businessTypes.ts BUSINESS_TYPES[].category
@@ -98,6 +108,14 @@ export const BUSINESS_CATEGORY: Record<BusinessType, BusinessCategory> = {
   massage: 'service_personal',
   academy: 'service_personal',
   tutoring: 'service_personal',
+  basketball: 'sports_class',
+  golf: 'sports_class',
+  soccer: 'sports_class',
+  baseball: 'sports_class',
+  swimming: 'sports_class',
+  tennis: 'sports_class',
+  climbing: 'sports_class',
+  dance: 'sports_class',
   auto_repair: 'service_repair',
   motorcycle: 'service_repair',
   wrap_tuning: 'service_repair',
@@ -135,6 +153,13 @@ export const NEEDS_LABEL_BY_CATEGORY: Record<BusinessCategory, Record<string, st
     gift: '고장 수리', kids_snack: '소모품 교체', meal_replacement: '정기 점검',
     busan: '검색·SNS', outside: '지인 소개',
   },
+  sports_class: {
+    female: '여성', male: '남성',
+    '10s_20s': '10·20대', '30s_40s': '30·40대', '50plus': '50대 이상',
+    yes: '정기 회원', no: '신규·체험',
+    gift: '취미·여가', kids_snack: '대회 준비', meal_replacement: '실력 향상',
+    busan: '검색·SNS', outside: '지인 소개',
+  },
   other: {
     female: '여성', male: '남성',
     '10s_20s': '10·20대', '30s_40s': '30·40대', '50plus': '50대 이상',
@@ -144,12 +169,13 @@ export const NEEDS_LABEL_BY_CATEGORY: Record<BusinessCategory, Record<string, st
   },
 };
 
-// 슬롯 prefix (성별/연령대/자녀-방문빈도-차종/목적-서비스사유-방문사유/거주지-방문경로)
+// 슬롯 prefix (성별/연령대/자녀-방문빈도-차종-회원유형/목적-서비스사유-방문사유-레슨목적/거주지-방문경로)
 export const NEEDS_SLOT_LABELS: Record<BusinessCategory, { withChild: string; purpose: string; residence: string }> = {
-  retail_food:      { withChild: '자녀',      purpose: '목적',      residence: '거주지' },
-  service_personal: { withChild: '방문 빈도', purpose: '서비스 사유', residence: '방문 경로' },
-  service_repair:   { withChild: '차종·장비', purpose: '방문 사유',   residence: '방문 경로' },
-  other:            { withChild: '자녀',      purpose: '목적',      residence: '거주지' },
+  retail_food:      { withChild: '자녀',       purpose: '목적',       residence: '거주지' },
+  service_personal: { withChild: '방문 빈도',  purpose: '서비스 사유',  residence: '방문 경로' },
+  service_repair:   { withChild: '차종·장비',  purpose: '방문 사유',    residence: '방문 경로' },
+  sports_class:     { withChild: '회원 유형',  purpose: '레슨 목적',    residence: '방문 경로' },
+  other:            { withChild: '자녀',       purpose: '목적',       residence: '거주지' },
 };
 
 // 카테고리별 AI 어휘 힌트 (SYSTEM_PROMPT 동적 삽입)
@@ -157,6 +183,7 @@ export const NEEDS_CATEGORY_HINT: Record<BusinessCategory, string> = {
   retail_food: '카페·식당·소매 손님 어휘. 자녀 동반·식사대용·선물·거주지가 의미 있음.',
   service_personal: '인적 서비스(미용·PT·학원 등) 손님 어휘. 단골 유지·정기 관리·방문 경로(SNS/소개)가 핵심 KPI.',
   service_repair: '정비·수선 서비스 손님 어휘. 차종/장비·정기 점검·고장 수리·소모품 교체가 의미 있음.',
+  sports_class: '스포츠·레슨(농구·골프·축구·수영 등) 손님 어휘. 정기 회원 유지·실력 향상·대회 준비·체험 전환이 핵심 KPI. "선물용·식사대용" 같은 retail 어휘는 쓰지 말 것.',
   other: '일반 손님 어휘. retail_food 기본값과 동일.',
 };
 
@@ -182,6 +209,14 @@ export const BUSINESS_TYPE_LABELS: Record<BusinessType, string> = {
   massage: '마사지·스파',
   academy: '학원',
   tutoring: '과외',
+  basketball: '농구 클래스',
+  golf: '골프 레슨',
+  soccer: '축구 클래스',
+  baseball: '야구 클래스',
+  swimming: '수영 강습',
+  tennis: '테니스 레슨',
+  climbing: '클라이밍',
+  dance: '댄스 학원',
   auto_repair: '카센터',
   motorcycle: '오토바이센터',
   wrap_tuning: '랩핑·튜닝',

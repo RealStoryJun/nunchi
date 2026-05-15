@@ -2,9 +2,10 @@ export type BusinessCategory =
   | 'retail_food'       // 외식·소매 (카페·식당·옷가게·꽃집 등)
   | 'service_personal'  // 인적 서비스 (미용·PT·학원 등 1:1 또는 소수)
   | 'service_repair'    // 정비·수선 (카센터·세탁·공방 등 물건을 다루는 서비스)
+  | 'sports_class'      // 스포츠·레슨 (농구·골프·축구 등, 2026-05 신규)
   | 'other';
 
-export type BusinessGroup = '외식' | '소매' | '인적 서비스' | '정비·수선' | '기타';
+export type BusinessGroup = '외식' | '소매' | '인적 서비스' | '스포츠·레슨' | '정비·수선' | '기타';
 
 export interface BusinessTypeOption {
   id: string;
@@ -40,6 +41,15 @@ export const BUSINESS_TYPES: BusinessTypeOption[] = [
   { id: 'massage', label: '마사지·스파', emoji: '💆', desc: '바디·스파', group: '인적 서비스', category: 'service_personal' },
   { id: 'academy', label: '학원', emoji: '📖', desc: '교습·강의', group: '인적 서비스', category: 'service_personal' },
   { id: 'tutoring', label: '과외', emoji: '✏️', desc: '1:1 교습', group: '인적 서비스', category: 'service_personal' },
+  // 스포츠·레슨 (2026-05 신규 8종)
+  { id: 'basketball', label: '농구 클래스', emoji: '🏀', desc: '1:1·그룹 레슨', group: '스포츠·레슨', category: 'sports_class' },
+  { id: 'golf', label: '골프 레슨', emoji: '⛳', desc: '인도어·필드', group: '스포츠·레슨', category: 'sports_class' },
+  { id: 'soccer', label: '축구 클래스', emoji: '⚽', desc: '풋살·축구 스쿨', group: '스포츠·레슨', category: 'sports_class' },
+  { id: 'baseball', label: '야구 클래스', emoji: '⚾', desc: '타격·캐치볼', group: '스포츠·레슨', category: 'sports_class' },
+  { id: 'swimming', label: '수영 강습', emoji: '🏊', desc: '강습·자유 수영', group: '스포츠·레슨', category: 'sports_class' },
+  { id: 'tennis', label: '테니스 레슨', emoji: '🎾', desc: '1:1·그룹', group: '스포츠·레슨', category: 'sports_class' },
+  { id: 'climbing', label: '클라이밍', emoji: '🧗', desc: '실내 클라이밍', group: '스포츠·레슨', category: 'sports_class' },
+  { id: 'dance', label: '댄스 학원', emoji: '💃', desc: 'K-pop·재즈·발레', group: '스포츠·레슨', category: 'sports_class' },
   // 정비·수선
   { id: 'auto_repair', label: '카센터', emoji: '🔧', desc: '정비·오일·타이어', group: '정비·수선', category: 'service_repair' },
   { id: 'motorcycle', label: '오토바이센터', emoji: '🏍️', desc: '오일·체인·정비', group: '정비·수선', category: 'service_repair' },
@@ -64,6 +74,6 @@ export const businessCategoryOf = (id: string | null | undefined): BusinessCateg
 
 // 그룹별 묶음 (Onboarding/Account에서 grouped select 렌더용)
 export const BUSINESS_GROUPS: { group: BusinessGroup; items: BusinessTypeOption[] }[] = (() => {
-  const order: BusinessGroup[] = ['외식', '소매', '인적 서비스', '정비·수선', '기타'];
+  const order: BusinessGroup[] = ['외식', '소매', '인적 서비스', '스포츠·레슨', '정비·수선', '기타'];
   return order.map((g) => ({ group: g, items: BUSINESS_TYPES.filter((t) => t.group === g) }));
 })();

@@ -23,19 +23,25 @@ function Shot({ name, alt }: { name: string; alt: string }) {
 }
 
 export default function Guide() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   return (
     <div className="min-h-screen flex flex-col">
       <header className="px-6 py-5 flex items-center justify-between max-w-5xl mx-auto w-full">
         <Link to="/" aria-label="처음으로">
           <Logo />
         </Link>
-        <Link
-          to={user ? '/sales' : '/login'}
-          className="text-sub hover:text-ink text-sm px-3 py-2.5 rounded-md"
-        >
-          {user ? '내 가게로' : '로그인'}
-        </Link>
+        {/* loading 동안 placeholder로 공간 유지 — 하드 새로고침 시 '로그인'→'내 가게로' flicker 회피.
+            min-w로 둘 중 긴 폭 고정해 로그인 사용자 reflow도 차단. */}
+        {loading ? (
+          <span className="invisible text-sm px-3 py-2.5 min-w-[80px] inline-block">로그인</span>
+        ) : (
+          <Link
+            to={user ? '/sales' : '/login'}
+            className="text-sub hover:text-ink text-sm px-3 py-2.5 rounded-md min-w-[80px] inline-block text-center"
+          >
+            {user ? '내 가게로' : '로그인'}
+          </Link>
+        )}
       </header>
 
       <main className="flex-1">
@@ -170,6 +176,14 @@ export default function Guide() {
               뜨는 QR 코드를 Google Authenticator·1Password·Authy 같은 인증 앱으로 한 번 스캔.
               앱에 뜨는 6자리 코드를 한 번 입력하면 끝.
             </p>
+            {user && (
+              <Link
+                to="/account"
+                className="inline-flex items-center min-h-[44px] mb-3 text-accent font-semibold underline underline-offset-2 decoration-accent/40 hover:decoration-accent"
+              >
+                지금 켜러 가기 →
+              </Link>
+            )}
             <p className="text-ink/80 leading-relaxed">
               <strong className="text-ink">백업 코드</strong> 8개도 같이 발급돼요 — 폰을 잃어버렸을 때
               한 번씩 쓰는 일회용 입장권이에요. 메모장이나 1Password 같은 안전한 곳에

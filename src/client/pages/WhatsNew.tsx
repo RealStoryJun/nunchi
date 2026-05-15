@@ -5,19 +5,25 @@ import { useAuth } from '../hooks/useAuth';
 // 업데이트 내역 전용 페이지. 매뉴얼(/guide)과 별도 라우트로 분리 —
 // 매뉴얼은 "어떻게 쓰는지", 여기는 "최근 뭐가 좋아졌는지" 두 의미를 시각적으로도 분리.
 export default function WhatsNew() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   return (
     <div className="min-h-screen flex flex-col">
       <header className="px-6 py-5 flex items-center justify-between max-w-5xl mx-auto w-full">
         <Link to="/" aria-label="처음으로">
           <Logo />
         </Link>
-        <Link
-          to={user ? '/sales' : '/login'}
-          className="text-sub hover:text-ink text-sm px-3 py-2.5 rounded-md"
-        >
-          {user ? '내 가게로' : '로그인'}
-        </Link>
+        {/* loading 동안 placeholder로 공간 유지 — 하드 새로고침 시 '로그인'→'내 가게로' flicker 회피.
+            min-w로 둘 중 긴 폭 고정해 로그인 사용자 reflow도 차단. */}
+        {loading ? (
+          <span className="invisible text-sm px-3 py-2.5 min-w-[80px] inline-block">로그인</span>
+        ) : (
+          <Link
+            to={user ? '/sales' : '/login'}
+            className="text-sub hover:text-ink text-sm px-3 py-2.5 rounded-md min-w-[80px] inline-block text-center"
+          >
+            {user ? '내 가게로' : '로그인'}
+          </Link>
+        )}
       </header>
 
       <main className="flex-1">

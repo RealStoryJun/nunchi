@@ -5,6 +5,8 @@ import { invalidateByPrefix } from '../lib/cache';
 import { Skeleton } from './Skeleton';
 import { timeHM, startOfDay, endOfDay } from '../lib/format';
 import { useAuth } from '../hooks/useAuth';
+import { businessCategoryOf } from '../lib/businessTypes';
+import { NEEDS_PRESETS, labelFor } from '../lib/needsPresets';
 
 // 오늘 00:00 ~ 23:59 - 상한을 안 두면 시드/미래 데이터까지 끼어들어 "정렬 안 된 것처럼" 보임
 const TODAY_NEEDS_URL = () => {
@@ -33,50 +35,14 @@ type Age = '10s_20s' | '30s_40s' | '50plus';
 type Purpose = 'gift' | 'kids_snack' | 'meal_replacement';
 type Resid = 'busan' | 'outside';
 
-const GENDER_OPTS = [
-  { v: 'female' as Gender, l: '여성' },
-  { v: 'male' as Gender, l: '남성' },
-];
-const AGE_OPTS = [
-  { v: '10s_20s' as Age, l: '10–20대' },
-  { v: '30s_40s' as Age, l: '30–40대' },
-  { v: '50plus' as Age, l: '50대+' },
-];
-// 미동반·식사대용을 첫 옵션으로 - 기본값이 모두 맨 왼쪽에 와서 선택 표시가 일자로 정렬됨
-const CHILD_OPTS = [
-  { v: 'no' as const, l: '미동반' },
-  { v: 'yes' as const, l: '자녀 동반' },
-];
-const PURPOSE_OPTS = [
-  { v: 'meal_replacement' as Purpose, l: '식사대용' },
-  { v: 'gift' as Purpose, l: '선물용' },
-  { v: 'kids_snack' as Purpose, l: '자녀 간식용' },
-];
-const RESID_OPTS = [
-  { v: 'busan' as Resid, l: '부산' },
-  { v: 'outside' as Resid, l: '부산 외' },
-];
-
-// 자주 오는 손님 기준 기본값 (전부 각 그룹의 첫 옵션 = 왼쪽 정렬)
+// 자주 오는 손님 기준 기본값 (전부 각 그룹의 첫 옵션 = 왼쪽 정렬).
+// DB enum 값은 카테고리 무관 동일. 표시 라벨만 카테고리별로 다름 (needsPresets.ts).
 const DEFAULTS = {
   gender: 'female' as Gender,
   age: '10s_20s' as Age,
   child: 'no' as 'yes' | 'no',
   purpose: 'meal_replacement' as Purpose,
   residence: 'busan' as Resid,
-};
-
-const LABEL: Record<string, string> = {
-  female: '여성',
-  male: '남성',
-  '10s_20s': '10–20대',
-  '30s_40s': '30–40대',
-  '50plus': '50대+',
-  gift: '선물용',
-  kids_snack: '자녀 간식용',
-  meal_replacement: '식사대용',
-  busan: '부산',
-  outside: '부산 외',
 };
 
 function Seg<V extends string>({
@@ -117,13 +83,24 @@ function Seg<V extends string>({
   );
 }
 
-function chips(n: NeedEntry, menus: MenuLite[]): string[] {
+function chips(
+  n: NeedEntry,
+  menus: MenuLite[],
+  category: ReturnType<typeof businessCategoryOf>,
+): string[] {
   const out: string[] = [];
-  if (n.gender) out.push(LABEL[n.gender]);
-  if (n.ageBand) out.push(LABEL[n.ageBand]);
-  if (n.withChild != null) out.push(n.withChild ? '자녀 동반' : '미동반');
-  if (n.purpose) out.push(LABEL[n.purpose]);
-  if (n.residence) out.push(LABEL[n.residence]);
+  const g = labelFor(category, 'gender', n.gender);
+  if (g) out.push(g);
+  const a = labelFor(category, 'ageBand', n.ageBand);
+  if (a) out.push(a);
+  if (n.withChild != null) {
+    const wc = labelFor(category, 'withChild', n.withChild ? 'yes' : 'no');
+    if (wc) out.push(wc);
+  }
+  const p = labelFor(category, 'purpose', n.purpose);
+  if (p) out.push(p);
+  const r = labelFor(category, 'residence', n.residence);
+  if (r) out.push(r);
   for (const id of n.menuIds) {
     const m = menus.find((x) => x.id === id);
     if (m) out.push(`${m.emoji || '📦'} ${m.name}`);
@@ -140,6 +117,9 @@ export default function NeedsTab({
 }) {
   const { user } = useAuth();
   const userId = user?.id ?? 0;
+  // 업종 카테고리별 슬롯 라벨 swap. business_type 미설정이면 'other' fallback (retail_food 기본값 동일).
+  const category = businessCategoryOf(user?.business_type);
+  const preset = NEEDS_PRESETS[category];
   const [gender, setGender] = useState<Gender | null>(DEFAULTS.gender);
   const [age, setAge] = useState<Age | null>(DEFAULTS.age);
   const [child, setChild] = useState<'yes' | 'no' | null>(DEFAULTS.child);
@@ -243,11 +223,11 @@ export default function NeedsTab({
       </p>
 
       <div className="card p-5 space-y-4">
-        <Seg label="성별" options={GENDER_OPTS} value={gender} onChange={setGender} />
-        <Seg label="연령대" options={AGE_OPTS} value={age} onChange={setAge} />
-        <Seg label="자녀 동반 여부" options={CHILD_OPTS} value={child} onChange={setChild} />
-        <Seg label="목적" options={PURPOSE_OPTS} value={purpose} onChange={setPurpose} />
-        <Seg label="거주지" options={RESID_OPTS} value={residence} onChange={setResidence} />
+        <Seg label={preset.gender.label} options={preset.gender.options as { v: Gender; l: string }[]} value={gender} onChange={setGender} />
+        <Seg label={preset.ageBand.label} options={preset.ageBand.options as { v: Age; l: string }[]} value={age} onChange={setAge} />
+        <Seg label={preset.withChild.label} options={preset.withChild.options as { v: 'yes' | 'no'; l: string }[]} value={child} onChange={setChild} />
+        <Seg label={preset.purpose.label} options={preset.purpose.options as { v: Purpose; l: string }[]} value={purpose} onChange={setPurpose} />
+        <Seg label={preset.residence.label} options={preset.residence.options as { v: Resid; l: string }[]} value={residence} onChange={setResidence} />
 
         <div>
           <div className="label">판매제품 (선택사항, 여러 개 가능)</div>
@@ -341,7 +321,7 @@ export default function NeedsTab({
               <li key={n.id} className="px-4 py-3 flex items-start gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap gap-1.5">
-                    {chips(n, menus).map((c, i) => (
+                    {chips(n, menus, category).map((c, i) => (
                       <span
                         key={i}
                         className="text-xs bg-bg border border-border rounded-full px-2 py-0.5 text-ink/80"

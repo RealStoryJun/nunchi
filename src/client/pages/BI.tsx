@@ -17,6 +17,8 @@ import { Skeleton } from '../components/Skeleton';
 import { apiGet, apiPost, apiPut, apiDelete } from '../lib/api';
 import { getCache, setCache, isFresh, invalidate, invalidateByPrefix } from '../lib/cache';
 import { useAuth } from '../hooks/useAuth';
+import { businessCategoryOf } from '../lib/businessTypes';
+import { NEEDS_PRESETS } from '../lib/needsPresets';
 import {
   dayLabel,
   endOfDay,
@@ -170,6 +172,9 @@ function NeedsDim({
 export default function BI() {
   const { user } = useAuth();
   const userId = user?.id ?? 0;
+  // 업종 카테고리별 niche needs 라벨, 분포 카드에서 사용 (DB enum은 모든 카테고리 공통, 표시만 swap)
+  const needsCategory = businessCategoryOf(user?.business_type);
+  const needsPreset = NEEDS_PRESETS[needsCategory];
   const [range, setRange] = useState<Range>('today');
   const [from, setFrom] = useState<string>(ymd(new Date()));
   const [to, setTo] = useState<string>(ymd(new Date()));
@@ -1209,41 +1214,39 @@ export default function BI() {
               </div>
               <div className="grid sm:grid-cols-2 gap-x-5 gap-y-4">
                 <NeedsDim
-                  title="성별"
-                  items={[
-                    { label: '여성', count: needsStats.gender.female ?? 0 },
-                    { label: '남성', count: needsStats.gender.male ?? 0 },
-                  ]}
+                  title={needsPreset.gender.label}
+                  items={needsPreset.gender.options.map((o) => ({
+                    label: o.l,
+                    count: needsStats.gender[o.v] ?? 0,
+                  }))}
                 />
                 <NeedsDim
-                  title="연령대"
-                  items={[
-                    { label: '10–20대', count: needsStats.ageBand['10s_20s'] ?? 0 },
-                    { label: '30–40대', count: needsStats.ageBand['30s_40s'] ?? 0 },
-                    { label: '50대+', count: needsStats.ageBand['50plus'] ?? 0 },
-                  ]}
+                  title={needsPreset.ageBand.label}
+                  items={needsPreset.ageBand.options.map((o) => ({
+                    label: o.l,
+                    count: needsStats.ageBand[o.v] ?? 0,
+                  }))}
                 />
                 <NeedsDim
-                  title="자녀 동반"
-                  items={[
-                    { label: '동반', count: needsStats.withChild.yes ?? 0 },
-                    { label: '미동반', count: needsStats.withChild.no ?? 0 },
-                  ]}
+                  title={needsPreset.withChild.label}
+                  items={needsPreset.withChild.options.map((o) => ({
+                    label: o.l,
+                    count: needsStats.withChild[o.v] ?? 0,
+                  }))}
                 />
                 <NeedsDim
-                  title="목적"
-                  items={[
-                    { label: '식사대용', count: needsStats.purpose.meal_replacement ?? 0 },
-                    { label: '선물용', count: needsStats.purpose.gift ?? 0 },
-                    { label: '자녀 간식용', count: needsStats.purpose.kids_snack ?? 0 },
-                  ]}
+                  title={needsPreset.purpose.label}
+                  items={needsPreset.purpose.options.map((o) => ({
+                    label: o.l,
+                    count: needsStats.purpose[o.v] ?? 0,
+                  }))}
                 />
                 <NeedsDim
-                  title="거주지"
-                  items={[
-                    { label: '부산', count: needsStats.residence.busan ?? 0 },
-                    { label: '부산 외', count: needsStats.residence.outside ?? 0 },
-                  ]}
+                  title={needsPreset.residence.label}
+                  items={needsPreset.residence.options.map((o) => ({
+                    label: o.l,
+                    count: needsStats.residence[o.v] ?? 0,
+                  }))}
                 />
               </div>
               {needsStats.topMenus.length > 0 && (

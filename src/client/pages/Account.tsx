@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { logout, refreshAuth, useAuth } from '../hooks/useAuth';
 import {
   BUSINESS_TYPES,
+  BUSINESS_GROUPS,
   businessTypeLabel,
 } from '../lib/businessTypes';
 import { apiPost } from '../lib/api';
+import { invalidateByPrefix } from '../lib/cache';
 import NavIcon from '../components/NavIcon';
 import TwoFactorCard from '../components/TwoFactorCard';
 
@@ -29,6 +31,9 @@ export default function Account() {
     try {
       await apiPost('/api/me/business-type', { businessType: id });
       await refreshAuth();
+      // 업종 카테고리가 바뀌면 AI 인사이트도 다른 어휘로 다시 생성돼야 함.
+      // 서버는 ai_insights 전부 삭제했지만 클라 localStorage 캐시는 별도 invalidate.
+      if (user?.id) invalidateByPrefix(`insights:${user.id}:`);
       setEditingType(false);
     } finally {
       setPending(false);
@@ -125,10 +130,10 @@ export default function Account() {
               type="button"
               onClick={() => {
                 setEditingType((v) => !v);
-                // 그리드가 화면 밖이면 보이게 - 18칸 중 새 6종이 fold 아래에 묻히지 않도록
+                // 그리드(26 tile, 5 group) 펼치면 자동 스크롤 - fold 아래 묻히지 않도록
                 if (!editingType) {
                   requestAnimationFrame(() => {
-                    typeGridRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                    typeGridRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
                   });
                 }
               }}
@@ -145,33 +150,43 @@ export default function Account() {
               </span>
             </div>
           ) : (
-            <div ref={typeGridRef} className="grid grid-cols-3 md:grid-cols-6 gap-2 anim-fade">
-              {BUSINESS_TYPES.map((t) => {
-                const active = user.business_type === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    disabled={pending}
-                    onClick={() => setType(t.id)}
-                    className={`card flex flex-col items-center justify-center gap-1
-                                px-2 py-3 min-h-[88px] transition active:scale-[0.97]
-                                ${
-                                  active
-                                    ? 'ring-2 ring-accent border-accent bg-accent/[0.03]'
-                                    : ''
-                                }`}
-                  >
-                    <span className="text-2xl leading-none">{t.emoji}</span>
-                    <span
-                      className={`block w-full text-xs truncate text-center mt-0.5
-                                  ${active ? 'font-semibold text-accent' : 'text-ink'}`}
-                    >
-                      {t.label}
-                    </span>
-                  </button>
-                );
-              })}
+            <div ref={typeGridRef} className="anim-fade space-y-4">
+              {/* 26 tile 5 그룹으로 묶음 (Onboarding과 동일 구조) - 평면 grid는 모바일 fold 아래 묻혀 PT 찾기 어려움 */}
+              {BUSINESS_GROUPS.map((g) => (
+                <div key={g.group}>
+                  <div className="text-sub text-xs font-semibold uppercase tracking-wide mb-2 px-1">
+                    {g.group}
+                  </div>
+                  <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                    {g.items.map((t) => {
+                      const active = user.business_type === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          disabled={pending}
+                          onClick={() => setType(t.id)}
+                          className={`card flex flex-col items-center justify-center gap-1
+                                      px-2 py-3 min-h-[88px] transition active:scale-[0.97]
+                                      ${
+                                        active
+                                          ? 'ring-2 ring-accent border-accent bg-accent/[0.03]'
+                                          : ''
+                                      }`}
+                        >
+                          <span className="text-2xl leading-none">{t.emoji}</span>
+                          <span
+                            className={`block w-full text-xs truncate text-center mt-0.5
+                                        ${active ? 'font-semibold text-accent' : 'text-ink'}`}
+                          >
+                            {t.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

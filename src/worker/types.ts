@@ -31,29 +31,134 @@ export interface UserRow {
 }
 
 // keep in sync with src/client/lib/businessTypes.ts
+// 그룹 순서: 외식 / 소매 / 인적 서비스 / 정비·수선 / 기타
 export const BUSINESS_TYPE_IDS = [
+  // 외식
   'cafe',
   'restaurant',
   'bakery',
   'bar',
+  // 소매
   'clothing',
   'bag',
   'cosmetics',
   'flower',
   'bookstore',
   'pet',
+  'sidedish',
+  // 인적 서비스 (2026-05 PT·헬스·필라테스·요가·네일·마사지·학원·과외 추가)
   'beauty',
+  'pt',
+  'gym',
+  'pilates',
+  'yoga',
+  'nail',
+  'massage',
+  'academy',
+  'tutoring',
+  // 정비·수선
   'auto_repair',
   'motorcycle',
   'wrap_tuning',
   'craft',
   'laundry',
-  'sidedish',
+  // 기타
   'other',
 ] as const;
 export type BusinessType = (typeof BUSINESS_TYPE_IDS)[number];
 export const isBusinessType = (v: unknown): v is BusinessType =>
   typeof v === 'string' && (BUSINESS_TYPE_IDS as readonly string[]).includes(v);
+
+// 4 카테고리 - keep in sync with src/client/lib/businessTypes.ts BusinessCategory
+export type BusinessCategory =
+  | 'retail_food'
+  | 'service_personal'
+  | 'service_repair'
+  | 'other';
+
+// business_type → category mapping - keep in sync with src/client/lib/businessTypes.ts BUSINESS_TYPES[].category
+export const BUSINESS_CATEGORY: Record<BusinessType, BusinessCategory> = {
+  cafe: 'retail_food',
+  restaurant: 'retail_food',
+  bakery: 'retail_food',
+  bar: 'retail_food',
+  clothing: 'retail_food',
+  bag: 'retail_food',
+  cosmetics: 'retail_food',
+  flower: 'retail_food',
+  bookstore: 'retail_food',
+  pet: 'retail_food',
+  sidedish: 'retail_food',
+  beauty: 'service_personal',
+  pt: 'service_personal',
+  gym: 'service_personal',
+  pilates: 'service_personal',
+  yoga: 'service_personal',
+  nail: 'service_personal',
+  massage: 'service_personal',
+  academy: 'service_personal',
+  tutoring: 'service_personal',
+  auto_repair: 'service_repair',
+  motorcycle: 'service_repair',
+  wrap_tuning: 'service_repair',
+  craft: 'service_repair',
+  laundry: 'service_repair',
+  other: 'other',
+};
+
+export const businessCategoryOf = (id: string | null | undefined): BusinessCategory => {
+  if (!id || !isBusinessType(id)) return 'other';
+  return BUSINESS_CATEGORY[id];
+};
+
+// 카테고리별 needs 라벨 (AI 프롬프트용) - keep in sync with src/client/lib/needsPresets.ts NEEDS_PRESETS
+// gender·age_band는 모든 카테고리 공통. with_child·purpose·residence가 차별화.
+export const NEEDS_LABEL_BY_CATEGORY: Record<BusinessCategory, Record<string, string>> = {
+  retail_food: {
+    female: '여성', male: '남성',
+    '10s_20s': '10·20대', '30s_40s': '30·40대', '50plus': '50대 이상',
+    yes: '자녀 동반', no: '미동반',
+    gift: '선물용', kids_snack: '자녀 간식용', meal_replacement: '식사대용',
+    busan: '부산', outside: '부산 외',
+  },
+  service_personal: {
+    female: '여성', male: '남성',
+    '10s_20s': '10·20대', '30s_40s': '30·40대', '50plus': '50대 이상',
+    yes: '단골', no: '신규',
+    gift: '이벤트·특별', kids_snack: '문제 해결', meal_replacement: '정기 관리',
+    busan: '검색·SNS', outside: '지인 소개',
+  },
+  service_repair: {
+    female: '여성', male: '남성',
+    '10s_20s': '10·20대', '30s_40s': '30·40대', '50plus': '50대 이상',
+    yes: '수입·고급', no: '국산',
+    gift: '고장 수리', kids_snack: '소모품 교체', meal_replacement: '정기 점검',
+    busan: '검색·SNS', outside: '지인 소개',
+  },
+  other: {
+    female: '여성', male: '남성',
+    '10s_20s': '10·20대', '30s_40s': '30·40대', '50plus': '50대 이상',
+    yes: '자녀 동반', no: '미동반',
+    gift: '선물용', kids_snack: '자녀 간식용', meal_replacement: '식사대용',
+    busan: '부산', outside: '부산 외',
+  },
+};
+
+// 슬롯 prefix (성별/연령대/자녀-방문빈도-차종/목적-서비스사유-방문사유/거주지-방문경로)
+export const NEEDS_SLOT_LABELS: Record<BusinessCategory, { withChild: string; purpose: string; residence: string }> = {
+  retail_food:      { withChild: '자녀',      purpose: '목적',      residence: '거주지' },
+  service_personal: { withChild: '방문 빈도', purpose: '서비스 사유', residence: '방문 경로' },
+  service_repair:   { withChild: '차종·장비', purpose: '방문 사유',   residence: '방문 경로' },
+  other:            { withChild: '자녀',      purpose: '목적',      residence: '거주지' },
+};
+
+// 카테고리별 AI 어휘 힌트 (SYSTEM_PROMPT 동적 삽입)
+export const NEEDS_CATEGORY_HINT: Record<BusinessCategory, string> = {
+  retail_food: '카페·식당·소매 손님 어휘. 자녀 동반·식사대용·선물·거주지가 의미 있음.',
+  service_personal: '인적 서비스(미용·PT·학원 등) 손님 어휘. 단골 유지·정기 관리·방문 경로(SNS/소개)가 핵심 KPI.',
+  service_repair: '정비·수선 서비스 손님 어휘. 차종/장비·정기 점검·고장 수리·소모품 교체가 의미 있음.',
+  other: '일반 손님 어휘. retail_food 기본값과 동일.',
+};
 
 // AI 프롬프트용 한글 라벨 - keep in sync with src/client/lib/businessTypes.ts
 export const BUSINESS_TYPE_LABELS: Record<BusinessType, string> = {
@@ -67,13 +172,21 @@ export const BUSINESS_TYPE_LABELS: Record<BusinessType, string> = {
   flower: '꽃집',
   bookstore: '서점·문구',
   pet: '펫샵',
+  sidedish: '반찬가게',
   beauty: '미용·헤어',
+  pt: 'PT(개인 트레이닝 1:1)',
+  gym: '헬스장',
+  pilates: '필라테스',
+  yoga: '요가',
+  nail: '네일',
+  massage: '마사지·스파',
+  academy: '학원',
+  tutoring: '과외',
   auto_repair: '카센터',
   motorcycle: '오토바이센터',
   wrap_tuning: '랩핑·튜닝',
   craft: '공방·수공예',
   laundry: '세탁소',
-  sidedish: '반찬가게',
   other: '기타',
 };
 

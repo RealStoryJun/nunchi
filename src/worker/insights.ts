@@ -1,4 +1,4 @@
-import { Env, ok, err, isBusinessType, BUSINESS_TYPE_LABELS, BusinessType } from './types';
+import { Env, ok, err, isBusinessType, BUSINESS_TYPE_LABELS, BusinessType, businessCategoryOf, NEEDS_LABEL_BY_CATEGORY, NEEDS_SLOT_LABELS, NEEDS_CATEGORY_HINT } from './types';
 import { checkRateLimit, recordAttempt, tooMany } from './ratelimit';
 
 // 매출 데이터 → AI 인사이트. GROQ_API_KEY 없으면 빈 배열(클라가 카드 숨김).
@@ -67,21 +67,8 @@ export const msToYmKst = (ms: number): string => {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 
-// 니즈 항목 코드 → 한글 라벨 (프롬프트용)
-const NEEDS_LABEL: Record<string, string> = {
-  female: '여성',
-  male: '남성',
-  '10s_20s': '10·20대',
-  '30s_40s': '30·40대',
-  '50plus': '50대 이상',
-  yes: '자녀 동반',
-  no: '미동반',
-  gift: '선물용',
-  kids_snack: '자녀 간식용',
-  meal_replacement: '식사대용',
-  busan: '부산',
-  outside: '부산 외',
-};
+// 니즈 항목 코드 → 한글 라벨은 카테고리별로 다름 (types.ts NEEDS_LABEL_BY_CATEGORY 참조).
+// business_type 기반 카테고리 결정 후 lookup. 카테고리 매핑 누락 시 'other' fallback (retail_food와 동일).
 
 const won = (n: number) => `${Math.round(n).toLocaleString('en-US')}원`;
 const pctStr = (r: number) => `${(r * 100).toFixed(1)}%`;
@@ -266,9 +253,12 @@ const buildSummary = (b: InsightsBody): string => {
       `- 분류별: ${s.byCategory.slice(0, 3).map((c) => `${c.category} ${won(c.revenue)}`).join(', ')}`,
     );
   }
-  // 고객 니즈 (충분히 쌓였을 때만)
+  // 고객 니즈 (충분히 쌓였을 때만). 라벨은 업종 카테고리별로 다름.
   const n = b.needs;
   if (n && n.total >= 5) {
+    const cat = businessCategoryOf(b.businessType);
+    const NEEDS_LABEL = NEEDS_LABEL_BY_CATEGORY[cat];
+    const slotLabels = NEEDS_SLOT_LABELS[cat];
     const fmtDim = (rec: Record<string, number>) => {
       const sum = Object.values(rec).reduce((x, y) => x + y, 0);
       if (sum === 0) return '';
@@ -283,16 +273,18 @@ const buildSummary = (b: InsightsBody): string => {
     const a = fmtDim(n.ageBand);
     if (a) parts.push(`연령대 [${a}]`);
     const c = fmtDim(n.withChild);
-    if (c) parts.push(`자녀 [${c}]`);
+    if (c) parts.push(`${slotLabels.withChild} [${c}]`);
     const p = fmtDim(n.purpose);
-    if (p) parts.push(`목적 [${p}]`);
+    if (p) parts.push(`${slotLabels.purpose} [${p}]`);
     const r = fmtDim(n.residence);
-    if (r) parts.push(`거주지 [${r}]`);
+    if (r) parts.push(`${slotLabels.residence} [${r}]`);
     lines.push(`- 고객 니즈 조사 ${n.total}건: ${parts.join(', ')}`);
     if (n.topMenus.length)
       lines.push(
         `- 니즈 조사에서 손님이 자주 찾은 (모두 이미 등록된) 메뉴: ${n.topMenus.slice(0, 5).map((m) => `${m.name}(${m.count}회)`).join(', ')}`,
       );
+    // LLM에 카테고리 어휘 힌트 한 줄 (서비스업·정비업은 카페 어휘로 분석 X)
+    lines.push(`- 어휘 힌트: ${NEEDS_CATEGORY_HINT[cat]}`);
   }
   return lines.join('\n');
 };

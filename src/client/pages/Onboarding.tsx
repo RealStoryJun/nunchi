@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { apiPost } from '../lib/api';
-import { BUSINESS_TYPES } from '../lib/businessTypes';
+import { BUSINESS_GROUPS } from '../lib/businessTypes';
 import { refreshAuth, useAuth } from '../hooks/useAuth';
 
 export default function Onboarding() {
@@ -54,49 +54,59 @@ export default function Onboarding() {
           </p>
         </div>
 
-        <ul className="grid grid-cols-3 md:grid-cols-4 gap-2 mt-6">
-          {BUSINESS_TYPES.map((t, i) => {
-            const active = selected === t.id;
-            return (
-              <li
-                key={t.id}
-                className="anim-rise"
-                style={{ animationDelay: `${120 + Math.min(i, 9) * 25 + Math.max(0, i - 9) * 8}ms` }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSelected(t.id)}
-                  aria-pressed={active}
-                  className={`relative w-full min-w-0 card flex flex-col items-center justify-center
-                              gap-1 px-2 py-4 min-h-[112px] transition-all duration-200
-                              focus:outline-none active:scale-[0.97]
-                              ${
-                                active
-                                  ? 'ring-2 ring-accent border-accent bg-accent/[0.03] scale-[1.02] anim-select'
-                                  : 'hover:border-accent/40'
-                              }`}
-                >
-                  {active && (
-                    <span
-                      className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-accent
-                                 text-white text-xs flex items-center justify-center anim-check"
-                      aria-hidden
+        {/* 업종 26개 - 그룹별 헤더로 묶어 보여줘 select 길이를 시각적으로 압축 (사장님 의견) */}
+        <div className="mt-6 space-y-5">
+          {BUSINESS_GROUPS.map((g) => (
+            <div key={g.group}>
+              <div className="text-sub text-xs font-semibold uppercase tracking-wide mb-2 px-1">
+                {g.group}
+              </div>
+              <ul className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                {g.items.map((t, i) => {
+                  const active = selected === t.id;
+                  return (
+                    <li
+                      key={t.id}
+                      className="anim-rise"
+                      style={{ animationDelay: `${120 + Math.min(i, 5) * 25}ms` }}
                     >
-                      ✓
-                    </span>
-                  )}
-                  <span className="text-3xl leading-none">{t.emoji}</span>
-                  <span
-                    className={`block w-full text-sm truncate text-center mt-1 transition-colors
-                                ${active ? 'font-semibold text-accent' : 'font-medium text-ink'}`}
-                  >
-                    {t.label}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(t.id)}
+                        aria-pressed={active}
+                        className={`relative w-full min-w-0 card flex flex-col items-center justify-center
+                                    gap-1 px-2 py-4 min-h-[112px] transition-all duration-200
+                                    focus:outline-none active:scale-[0.97]
+                                    ${
+                                      active
+                                        ? 'ring-2 ring-accent border-accent bg-accent/[0.03] scale-[1.02] anim-select'
+                                        : 'hover:border-accent/40'
+                                    }`}
+                      >
+                        {active && (
+                          <span
+                            className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-accent
+                                       text-white text-xs flex items-center justify-center anim-check"
+                            aria-hidden
+                          >
+                            ✓
+                          </span>
+                        )}
+                        <span className="text-3xl leading-none">{t.emoji}</span>
+                        <span
+                          className={`block w-full text-sm truncate text-center mt-1 transition-colors
+                                      ${active ? 'font-semibold text-accent' : 'font-medium text-ink'}`}
+                        >
+                          {t.label}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
 
         {error && (
           <p className="text-warm text-sm mt-4 anim-fade text-center">{error}</p>

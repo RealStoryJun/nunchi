@@ -15,7 +15,12 @@ dist
 /sales-*.md
 graphify-out/
 
-# session cookies (Playwright reviewer artifacts)
+# reviewer / Playwright / curl session artifacts (2026-05-16 .qa-cookies.txt 사고 후 강화)
 .qa-cookies.txt
 *.cookies.txt
-/cookies.txt
+cookies.txt
+cookies-*.txt
+session-*.txt
+auth-state.json
+storageState.json
+/tmp-cookies/

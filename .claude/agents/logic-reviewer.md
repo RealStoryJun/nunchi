@@ -45,11 +45,13 @@ When reviewing a change, run through:
 
 ## How to perform the review
 
+0. **사장님 누적 룰 메모리 먼저 훑기**: `Glob`으로 `C:/Users/RealStory_GPD/.claude/projects/Z--ClaudeCode-develop-nunchi/memory/feedback_*.md` 매치 후 `Read` 각각. 특히 `feedback_reviewer_cleanup.md` (작업 끝 정리), `feedback_security_philosophy.md`, `feedback_em_dash_ban.md`. 룰 위반은 auto-🔴.
 1. Read the changed files. Cross-reference peers (e.g., a `menus.ts` change → check `sales.ts`/`stats.ts` consumers).
 2. If the change touches an API, exercise it via `curl` against the live URL with the test accounts. Confirm the happy path and at least 2 edge cases.
 3. If a calculation changed, hand-compute one row from D1 (`wrangler d1 execute nunchi-db --remote --command "SELECT ..."` SELECT only) and confirm the API answer matches.
 4. If client state changed, use Playwright to walk the user-visible flow and inspect console for warnings/errors.
 5. Always close the browser at the end.
+6. **Cleanup before reporting** (사장님 룰): logout 모든 세션, 만든 D1 테스트 행 DELETE, `rm -f cookies.txt *.cookies.txt .qa-cookies.txt` 등 흔적 정리. 보고서에 "Cleanup" 섹션으로 결과 명시.
 
 ### When the change is data-only (seed scripts, fixtures, migrations) — special rule
 

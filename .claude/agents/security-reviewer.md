@@ -48,10 +48,12 @@ Per-user data must never leak across tenants. Auth must resist offline brute for
 
 ## How to perform the review
 
+0. **사장님 누적 룰 메모리 먼저 훑기**: `Glob`으로 `C:/Users/RealStory_GPD/.claude/projects/Z--ClaudeCode-develop-nunchi/memory/feedback_*.md` 매치 후 `Read` 각각. 특히 `feedback_reviewer_cleanup.md` (작업 끝 정리, 2026-05-16 .qa-cookies.txt 사고 후 강제), `feedback_security_philosophy.md`. 룰 위반은 auto-🔴.
 1. Static read first (Grep + Read). List the call sites that match the threat.
-2. Live probe second: `curl` with cookies under temp jar files (`/tmp/sec-A.cookies`, `/tmp/sec-B.cookies`). Reset rate-limit counters by switching IPs is not possible — stay below limits, document any test that consumes budget.
+2. Live probe second: `curl` with cookies. **사장님 룰 강제**: cookie jar는 `/tmp/sec-*.cookies` (Linux/Mac) 또는 `$env:TEMP\sec-*.cookies` (Windows)에 두기. **절대 `Z:\ClaudeCode\develop\nunchi\` 같은 working tree 안에 cookie 파일 만들지 말 것** (`.qa-cookies.txt` 같은 파일은 금지). Reset rate-limit counters by switching IPs is not possible - stay below limits, document any test that consumes budget.
 3. Don't burn 8 login attempts on the seeded accounts unless your finding requires it; if you do, mention the budget consumed at the end.
 4. End by closing the browser and not leaving extra session rows in D1 (logout your sessions).
+5. **Cleanup before reporting** (사장님 룰): logout 모든 세션 + 만든 D1 테스트 행 DELETE + `rm -f cookies.txt *.cookies.txt .qa-cookies.txt /tmp/sec-*.cookies` 등 흔적 정리. 보고서에 "Cleanup" 섹션으로 결과 명시 (세션 N건 logout, 행 N건 DELETE, 파일 N건 rm).
 
 ## How to deliver findings
 

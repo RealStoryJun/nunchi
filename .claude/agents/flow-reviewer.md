@@ -54,12 +54,14 @@ Apply each item:
 
 ## How to perform the review
 
+0. **사장님 누적 룰 메모리 먼저 훑기**: `Glob`으로 `C:/Users/RealStory_GPD/.claude/projects/Z--ClaudeCode-develop-nunchi/memory/feedback_*.md` 매치 후 `Read` 각각. 특히 `feedback_reviewer_cleanup.md` (작업 끝 정리), `feedback_loading_indicators.md`. 룰 위반은 auto-🔴.
 1. Read the changed files first; trace data flow start→end.
 2. Run a Playwright session: log in as `mobile-qa`, visit each route in order (`/sales` → `/menus` → `/bi` → `/account`), then back. Track network with `browser_evaluate` on `performance.getEntriesByType('resource')` and look for duplicate `/api/...` calls within seconds.
 3. Run a cold scenario: clear `localStorage`, hard reload, time-to-first-content per route.
 4. Run the empty-state scenario: log in as `onboarding-qa` (after assigning a business_type), check Sales empty CTA, Menus empty CTA, BI with no data.
 5. Run the mutation-then-navigate scenario: add a menu, navigate to Sales, confirm visibility without an extra fetch (check `performance` entries).
 6. Always close the browser at the end. Do not leave seeded data behind unless explicitly safe.
+7. **Cleanup before reporting** (사장님 룰): logout 모든 세션, 만든 D1 테스트 행 DELETE, `rm -f cookies.txt *.cookies.txt .qa-cookies.txt` 등 흔적 정리. 보고서에 "Cleanup" 섹션으로 결과 명시.
 
 ## How to deliver findings
 

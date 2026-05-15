@@ -116,9 +116,25 @@ Apply each item against the changes you're asked to review:
     - **Hover states** — desktop users hover. Interactive rows/tiles/cards/buttons should have a visible `hover:` cue. Flag interactive elements with no hover affordance.
     - **Empty cream on ultrawide** — a `max-w-3xl` (768px) container at 1920 leaves ~450px cream on each side. Not a blocker (reads as "comfortable centered content") but mention if a key page (esp. BI) feels sparse — an optional `xl:max-w-4xl` bump is fair to suggest.
 
+12. **카피 흐름 (cross-page copy flow)** — design은 시각만 보는 게 아니다. 사장님이 "전체적인 문장 흐름"을 명시 룰로 박았으므로 다음을 점검:
+
+    - **같은 개념 라벨 통일**: 한 product concept은 모든 페이지에서 같은 라벨을 써야 한다. 예: "이번 달 AI 분석" (BI) vs "월 분석" (Guide) vs "AI 인사이트" (WhatsNew) - 셋 다 같은 기능이면 라벨도 통일. 다른 라벨 발견 시 🟡 또는 🔴 (사용자 혼란 큰 경우).
+    - **신규 페이지 ↔ 기존 페이지 톤 매칭**: 새 페이지(WhatsNew 같은)가 Landing/Guide와 같은 voice로 읽혀야 한다. 친근 + 간결 + 존댓말 + 한국어 리듬. 새 페이지가 갑자기 기술 영어로 가거나 사무적/공지문 톤으로 빠지면 🟡.
+    - **페이지 안 단락·섹션 흐름**: 챕터 순서(① → ② → ⑨)가 논리적이어야 한다. 신규 섹션이 끼어든 뒤 흐름이 끊기면 🟡. 예: ⑦ AI 해설 → ⑧ 안전성 narrative 사이에 ⑨ "2FA 켜기"를 끼우면 안전성 narrative가 깨짐.
+    - **중복 개념 도입 금지**: 인접 섹션에서 같은 내용을 두 번 설명하지 않는다. 단, "요약 teaser → 자세한 how-to" 형식은 OK (예: Guide ⑧ list "2FA 옵션" + Guide ⑨ "2FA 켜기" 챕터). 두 섹션이 모두 how-to면 중복 🟡.
+    - **카피 사이드 effect**: em-dash 일괄 교체 같은 typography 변경 후 의미 손상(회계 맥락 마이너스 오독, "안 봐요" 같은 단호 톤 손상)이 나오는지 측정. 의미 손상 = 🔴.
+
+13. **사장님 기획 일치성 (디자인 핍진성)** — 사장님 단어 "디자인 핍진성"은 "초기에 기획한 디자인 무게중심이 변경 후에도 유지되는가". 다음을 점검:
+
+    - **색상 토큰 discipline**: cream `#F5F2EA` + deep green `#1B4332` 브랜드 identity. 한 곳이라도 raw hex `bg-[#xxx]`/`text-[#xxx]`가 새로 들어왔으면 🔴 (이미 #4에 있지만 cross-page 차원에서 강화).
+    - **폰트 역할 discipline**: display = Gowun Batang(고운바탕), body = Pretendard, numerals = JetBrains Mono (`.num` class + tabular-nums). 새 heading이 `font-display` 빼먹고 Pretendard만으로 가면 🟡 (디자인 톤 break).
+    - **모바일-first 무게중심**: 페이지의 1순위 affordance가 375px에서 먼저 최적화돼야 한다. "모바일 layout을 데스크탑으로 그대로 늘림" 패턴은 사장님 표현 "디자인 핍진성 해친다"로 지적된 적 있음 (과거 사례: Sales `max-w-5xl` stretched-mobile felt off vs BI/Menus `max-w-3xl`). 새 페이지 `max-w-*`가 peer 페이지와 어긋나면 🟡.
+    - **컴포넌트 패턴 parity**: 새 카드는 `card` 토큰 + `rounded-2xl border border-border` 리듬 따라야 한다. 새 CTA는 `btn-*` 클래스 재사용. 일회성 `bg-[#xxx] rounded-3xl border-2` 발명품은 🟡 (사장님 누적 톤 break).
+    - **사장님 누적 룰 위반**: Step 1에서 읽은 메모리 ban-list (em-dash, `<br>` for wrap, chip wrap, raw hex, 기술 영어 등) 위반은 **모두 auto-🔴**. 새로운 룰이 추가되면 자동으로 이 항목에 흡수됨.
+
 ## How to perform the review
 
-1. Read the changed files via `Read`/`Grep` to understand intent.
+1. Read the changed files via `Read`/`Grep` to understand intent. **Also read the user's accumulated rule memory FIRST**: `Glob` for `C:/Users/RealStory_GPD/.claude/projects/Z--ClaudeCode-develop-nunchi/memory/feedback_*.md`, then `Read` each match. These are explicit user-stated project rules (em-dash ban, chip-wrap ban, mobile-iphone13-mini baseline, `<br>` for wrap ban, design-reviewer wrap policy, etc.) that take precedence over the generic checklist below. Any violation of an accumulated rule is **auto-🔴** — do not soften to 🟡. If a new feedback_*.md exists that you don't see in the checklist, treat it as binding.
 2. **Phone pass (375×812)**: open the live URL / relevant route via Playwright (`browser_resize` to 375×812). Sign in if needed using `mobile-qa@nunchi.app` / `qa1234abc` (8 menus + sales seeded; `onboarding-qa@nunchi.app` / `qa1234abc` for empty states). Take measurements with `browser_evaluate` — line counts, rect widths, overflow elements, animation states.
 3. **Desktop pass (1440×900)**: `browser_resize` to 1440×900, revisit the changed page + neighbors, run the item-11 checklist. Spot-check 1920 if you suspect ultrawide issues. (Note: a headless browser's ~15px scrollbar can shrink the effective viewport to ~360px and wrap things that wouldn't wrap on real iOS — discount pure scrollbar artifacts.)
 3a. **Breakpoint-edge pass (1024, 1280)** — required for any change touching `flex`/`grid`/`sticky`/`fixed` layouts. `browser_resize` to 1024 and 1280 separately, measure `scrollWidth` and run the #3b fit-test on the changed grid. Most desktop layout bugs hide at the breakpoint edge (where `lg:`/`xl:` first applies), not in the middle of a range. Past regression: Sales `lg:w-80` at 1024 overflowed page; the dev tested 1440 only and missed it.

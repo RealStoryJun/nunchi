@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { apiGet, apiPost } from '../lib/api';
@@ -44,6 +44,30 @@ interface AuditEntry {
   ok: boolean;
   error_msg: string | null;
 }
+interface LoginEntry {
+  id: number;
+  user_id: number;
+  user_email: string | null;
+  ip: string | null;
+  ua: string | null;
+  is_new_device: boolean;
+  at: number;
+}
+interface PushLogEntry {
+  id: number;
+  admin_user_id: number;
+  admin_email: string | null;
+  target_kind: 'all' | 'user';
+  target_user_id: number | null;
+  title: string;
+  body: string;
+  url: string | null;
+  subscribers_sent: number;
+  subscribers_failed: number;
+  at: number;
+}
+type LogKind = 'audit' | 'login' | 'push';
+type LogEntry = AuditEntry | LoginEntry | PushLogEntry;
 
 const fmtDate = (ms: number) =>
   new Date(ms).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -87,7 +111,7 @@ export default function Admin() {
       {tab === 'users' && <UsersTab meId={user.id} isMaster={!!user.is_master} />}
       {tab === 'access' && <AccessTab meId={user.id} isMaster={!!user.is_master} />}
       {tab === 'stats' && <StatsTab />}
-      {tab === 'audit' && <AuditTab />}
+      {tab === 'audit' && <LogTab />}
       {tab === 'push' && <PushTab />}
     </div>
   );
@@ -128,63 +152,254 @@ function StatsTab() {
   );
 }
 
-// ─── 활동 로그 탭 ─────────────────────────────────────────────────────
-function AuditTab() {
-  const [rows, setRows] = useState<AuditEntry[]>([]);
+// ─── 통합 로그 탭 (audit + login + push) ──────────────────────────────
+type LogRange = '1d' | '7d' | '30d' | 'all';
+function LogTab() {
+  const [kind, setKind] = useState<LogKind>('audit');
+  const [q, setQ] = useState('');
+  const [range, setRange] = useState<LogRange>('30d');
+  const [rows, setRows] = useState<LogEntry[]>([]);
   const [cursor, setCursor] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
-  const load = async (c: number | null) => {
+  // step-up: kind=login 진입 시 403 받으면 inline 비번 입력 노출. 인증 통과 후 자동 재시도.
+  const [needAuth, setNeedAuth] = useState(false);
+  const [pw, setPw] = useState('');
+  const [pwBusy, setPwBusy] = useState(false);
+  // race-guard: 매 load 시 seq++ 하고 응답 도착 시 현재 seq 와 일치할 때만 state 반영.
+  // kind/q/range 가 비동기 사이 변경되면 stale 응답 무시.
+  const seqRef = useRef(0);
+  // q 디바운스 timer. kind/range 변경 시도 cancel 해서 stale q closure fetch 방지.
+  const qTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // from 시각을 페이지 세션 내에서 고정. range 또는 q/kind 변경 시 재계산.
+  // (Date.now() 매번이면 페이지 경계 millseconds drift 가능)
+  const fromAnchorRef = useRef(Date.now());
+
+  // 필터 → URL 빌더. cursor null = 초기 페이지, 숫자 = 이어보기.
+  // from 은 fromAnchorRef 기준으로 고정 (페이지 세션 동안 drift 방지).
+  const buildUrl = (c: number | null, qVal: string, k: LogKind, r: LogRange): string => {
+    const params = new URLSearchParams();
+    params.set('kind', k);
+    if (qVal.trim()) params.set('q', qVal.trim());
+    if (r !== 'all') {
+      const days = r === '1d' ? 1 : r === '7d' ? 7 : 30;
+      params.set('from', String(fromAnchorRef.current - days * 24 * 60 * 60 * 1000));
+    }
+    if (c) params.set('cursor', String(c));
+    return `/api/admin/audit?${params.toString()}`;
+  };
+
+  const load = async (c: number | null, qVal: string, k: LogKind, r: LogRange) => {
+    const my = ++seqRef.current;
     setLoadingMore(true);
     setErr(null);
+    setNeedAuth(false);
+    // 초기 페이지면 stale rows 즉시 비움 (kind 전환 직후 wrong cast 회피).
+    if (c === null) { setRows([]); setCursor(null); setDone(false); }
     try {
-      const d = await apiGet<{ entries: AuditEntry[]; next_cursor: number | null }>(
-        c ? `/api/admin/audit?cursor=${c}` : '/api/admin/audit',
-      );
+      const d = await apiGet<{ entries: LogEntry[]; next_cursor: number | null }>(buildUrl(c, qVal, k, r));
+      if (my !== seqRef.current) return; // stale 응답 폐기
       setRows((prev) => (c ? [...prev, ...d.entries] : d.entries));
       setCursor(d.next_cursor);
-      if (!d.next_cursor) setDone(true);
+      setDone(!d.next_cursor);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : '실패');
+      if (my !== seqRef.current) return;
+      const msg = e instanceof Error ? e.message : '실패';
+      // kind=login step-up 만료 시 inline 비번 입력 (서버가 403 + 메시지)
+      if (k === 'login' && msg.includes('관리자 인증')) {
+        setNeedAuth(true);
+        setPw('');
+      } else {
+        setErr(msg);
+      }
     } finally {
-      setLoadingMore(false);
+      if (my === seqRef.current) setLoadingMore(false);
     }
   };
-  useEffect(() => { load(null); /* eslint-disable-next-line */ }, []);
-  if (err) return <p className="text-warm text-sm">{err}</p>;
-  if (rows.length === 0 && loadingMore) {
-    return <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>;
-  }
-  if (rows.length === 0) return <p className="text-sub text-center py-10">기록이 없습니다.</p>;
+
+  const authThenRetry = async () => {
+    if (pwBusy || !pw) return;
+    setPwBusy(true);
+    try {
+      await apiPost('/api/admin/step-up', { password: pw });
+      setNeedAuth(false);
+      setPw('');
+      void load(null, q, kind, range);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '인증 실패');
+    } finally {
+      setPwBusy(false);
+    }
+  };
+
+  // 변경 트리거는 onChange handler 안에서 직접 처리:
+  //   - kind/range: 즉시 reload (사용자 의도: 토글 = 즉시 반응)
+  //   - q: 300ms 디바운스 (입력 중 burst 방지)
+  // useEffect 는 마운트 1회만. cleanup 으로 unmount 시 진행 중 timer 취소.
+  useEffect(() => {
+    void load(null, q, kind, range);
+    return () => { if (qTimerRef.current) clearTimeout(qTimerRef.current); };
+    /* eslint-disable-next-line */
+  }, []);
+
+  const reload = (k: LogKind, r: LogRange, qVal: string) => {
+    if (qTimerRef.current) { clearTimeout(qTimerRef.current); qTimerRef.current = null; }
+    fromAnchorRef.current = Date.now();
+    void load(null, qVal, k, r);
+  };
+  const onKindChange = (k: LogKind) => { setKind(k); reload(k, range, q); };
+  const onRangeChange = (r: LogRange) => { setRange(r); reload(kind, r, q); };
+  const onQChange = (v: string) => {
+    setQ(v);
+    if (qTimerRef.current) clearTimeout(qTimerRef.current);
+    qTimerRef.current = setTimeout(() => {
+      qTimerRef.current = null;
+      fromAnchorRef.current = Date.now();
+      void load(null, v, kind, range);
+    }, 300);
+  };
+
   return (
     <div>
-      <div className="card divide-y divide-border overflow-hidden">
-        {rows.map((r) => (
-          <div key={r.id} className="px-4 py-3 text-sm">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="font-medium truncate">
-                <span className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold mr-2 ${r.ok ? 'bg-accent/10 text-accent' : 'bg-warm/10 text-warm'}`}>
-                  {r.action}
-                </span>
-                <span className="text-sub text-xs num">{r.admin_email ?? `id:${r.admin_user_id}`}</span>
-              </span>
-              <span className="text-sub text-xs num shrink-0">{fmtDateTime(r.at)}</span>
-            </div>
-            {r.target_json && (
-              <div className="text-sub text-xs num mt-1 break-all">{r.target_json}</div>
-            )}
-            {r.error_msg && (
-              <div className="text-warm text-xs mt-1 break-keep">⚠ {r.error_msg}</div>
-            )}
-          </div>
-        ))}
+      {/* 필터 한 줄 (모바일 chip wrap 회피 위해 select 3개 + input). 데스크탑 폭 캡. */}
+      <div className="flex items-center gap-2 mb-3 md:max-w-2xl">
+        <select value={kind} onChange={(e) => onKindChange(e.target.value as LogKind)}
+          className="field h-9 px-2 text-sm shrink-0 w-auto">
+          <option value="audit">어드민 행위</option>
+          <option value="login">사용자 로그인</option>
+          <option value="push">푸시 발송</option>
+        </select>
+        <input value={q} onChange={(e) => onQChange(e.target.value)}
+          placeholder={kind === 'audit' ? '이메일·action' : kind === 'login' ? '이메일' : '이메일·제목'}
+          className="field h-9 flex-1 min-w-0 text-sm" />
+        <select value={range} onChange={(e) => onRangeChange(e.target.value as LogRange)}
+          className="field h-9 px-2 text-sm shrink-0 w-auto">
+          <option value="1d">오늘</option>
+          <option value="7d">7일</option>
+          <option value="30d">30일</option>
+          <option value="all">전체</option>
+        </select>
       </div>
-      {!done && (
-        <button onClick={() => load(cursor)} disabled={loadingMore} className="btn-outline w-full mt-3">
-          {loadingMore ? '불러오는 중…' : '더 보기'}
-        </button>
+
+      {needAuth ? (
+        <div className="card p-4 bg-warm/5 border-warm/30 md:max-w-2xl">
+          <p className="text-sm mb-2 break-keep">
+            사용자 로그인 기록은 민감 정보예요. 비밀번호를 다시 입력해주세요.
+          </p>
+          <div className="flex gap-2">
+            <input type="password" autoFocus value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && pw && !pwBusy) void authThenRetry(); }}
+              placeholder="비밀번호"
+              className="field h-11 flex-1 text-sm" />
+            <button onClick={authThenRetry} disabled={pwBusy || !pw}
+              className="btn-primary px-4 h-11 text-sm shrink-0 disabled:opacity-50">
+              {pwBusy ? '확인 중…' : '인증'}
+            </button>
+          </div>
+          {err && <p className="text-warm text-xs mt-2 break-keep">{err}</p>}
+        </div>
+      ) : rows.length === 0 && loadingMore ? (
+        <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
+      ) : rows.length === 0 ? (
+        err
+          ? <p className="text-warm text-sm">{err}</p>
+          : <p className="text-sub text-center py-10">
+              {q.trim() ? '조건에 해당하는 기록이 없어요.'
+                : range !== 'all'
+                  ? (kind === 'audit' ? '최근 어드민 행위 기록이 없어요.'
+                    : kind === 'login' ? '최근 로그인 기록이 없어요.'
+                    : '최근 푸시 발송 기록이 없어요.')
+                  : '아직 기록이 없어요.'}
+            </p>
+      ) : (
+        <>
+          {err && (
+            <p className="text-warm text-sm mb-2 break-keep">
+              ⚠ {err} · <button type="button" className="underline" onClick={() => load(cursor, q, kind, range)}>다시 시도</button>
+            </p>
+          )}
+          <div className="card divide-y divide-border overflow-hidden">
+            {rows.map((r) => <LogRow key={`${kind}-${r.id}`} kind={kind} row={r} />)}
+          </div>
+          {!done && (
+            <button onClick={() => load(cursor, q, kind, range)} disabled={loadingMore} className="btn-outline w-full mt-3">
+              {loadingMore ? '불러오는 중…' : '더 보기'}
+            </button>
+          )}
+        </>
       )}
+    </div>
+  );
+}
+
+// 종류별 행 표시. kind discriminator 로 narrow.
+// 머신 action 토큰 → 한국어 라벨. raw 는 hover/tap 시 title 로 노출 + target_json 에 detail.
+const ACTION_LABELS: Record<string, string> = {
+  'step_up': '재인증',
+  'users.role': '권한 변경',
+  'users.role.bulk': '권한 일괄',
+  'users.access': '사용기간',
+  'users.access.bulk_extend': '기간 연장',
+  'users.access.bulk_revoke': '기간 회수',
+  'users.delete': '계정 삭제',
+  'push.send': '푸시 발송',
+  'export.sales': '판매 CSV',
+  'export.needs': '니즈 CSV',
+};
+const labelFor = (action: string): string => ACTION_LABELS[action] ?? action;
+
+function LogRow({ kind, row }: { kind: LogKind; row: LogEntry }) {
+  if (kind === 'audit') {
+    const r = row as AuditEntry;
+    return (
+      <div className="px-4 py-3 text-sm">
+        {/* chip 줄 (chip + 시각) + email 줄 — 모바일에서 truncate 깨짐 회피 */}
+        <div className="flex items-center justify-between gap-2">
+          <span title={r.action}
+            className={`inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold ${r.ok ? 'bg-accent/10 text-accent' : 'bg-warm/10 text-warm'}`}>
+            {labelFor(r.action)}
+          </span>
+          <span className="text-sub text-xs num shrink-0">{fmtDateTime(r.at)}</span>
+        </div>
+        <div className="text-sub text-xs num mt-1 truncate">{r.admin_email ?? `id:${r.admin_user_id}`}</div>
+        {r.target_json && <div className="text-sub text-xs num mt-1 break-all">{r.target_json}</div>}
+        {r.error_msg && <div className="text-warm text-xs mt-1 break-keep">⚠ {r.error_msg}</div>}
+      </div>
+    );
+  }
+  if (kind === 'login') {
+    const r = row as LoginEntry;
+    return (
+      <div className="px-4 py-3 text-sm">
+        <div className="flex items-center justify-between gap-2">
+          {r.is_new_device ? (
+            <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold bg-warm/10 text-warm">새 디바이스</span>
+          ) : <span className="text-sub text-xs">로그인</span>}
+          <span className="text-sub text-xs num shrink-0">{fmtDateTime(r.at)}</span>
+        </div>
+        <div className="text-sub text-xs num mt-1 truncate">{r.user_email ?? `id:${r.user_id}`}</div>
+        {(r.ip || r.ua) && (
+          <div className="text-sub text-xs num mt-1 break-all">
+            {r.ip ?? ''}{r.ip && r.ua ? ' · ' : ''}{r.ua ?? ''}
+          </div>
+        )}
+      </div>
+    );
+  }
+  // kind === 'push'
+  const r = row as PushLogEntry;
+  return (
+    <div className="px-4 py-3 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium truncate">{r.title}</span>
+        <span className="text-sub text-xs num shrink-0">{fmtDateTime(r.at)}</span>
+      </div>
+      <div className="text-sub text-xs mt-0.5">
+        {r.admin_email ?? `id:${r.admin_user_id}`} · {r.target_kind === 'all' ? '전체' : `사용자 ${r.target_user_id}`} · 성공 {r.subscribers_sent} · 실패 {r.subscribers_failed}
+      </div>
+      <div className="text-sub text-xs mt-1 break-keep">{r.body}</div>
     </div>
   );
 }
@@ -418,17 +633,7 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
 }
 
 // ─── 푸시 발송 탭 (PR 3 Phase 4) ───────────────────────────────────────
-interface PushLog {
-  id: number;
-  target_kind: 'all' | 'user';
-  target_user_id: number | null;
-  title: string;
-  body: string;
-  url: string | null;
-  subscribers_sent: number;
-  subscribers_failed: number;
-  created_at: number;
-}
+// 발송 이력은 "로그" 탭 (kind=push) 으로 일반화됨 — 여기서는 발송 폼만.
 
 function PushTab() {
   const [target, setTarget] = useState<'all' | 'user'>('all');
@@ -439,27 +644,13 @@ function PushTab() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ sent: number; failed: number; expired?: number; note?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [logs, setLogs] = useState<PushLog[] | null>(null);
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const [stepUpPw, setStepUpPw] = useState('');
   const [stepUpBusy, setStepUpBusy] = useState(false);
   const [stepUpErr, setStepUpErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    apiGet<{ logs: PushLog[] }>('/api/admin/push/log')
-      .then((d) => setLogs(d.logs))
-      .catch(() => setLogs([])); // 에러도 빈 list 로 떨궈서 skeleton 무한 회피
-  }, []);
-
   const reset = () => {
     setTitle(''); setBody(''); setUrl('/'); setUserId(''); setTarget('all'); setResult(null); setError(null);
-  };
-
-  const refreshLogs = async () => {
-    try {
-      const d = await apiGet<{ logs: PushLog[] }>('/api/admin/push/log');
-      setLogs(d.logs);
-    } catch {/* 무시 */}
   };
 
   const requestSend = () => {
@@ -494,8 +685,8 @@ function PushTab() {
       setResult(d);
       setStepUpOpen(false);
       // 발송 성공 후 폼 자동 초기화 (실수 재발송 방지). 결과 카드는 별도 state라 유지됨.
+      // 이력 확인은 "로그" 탭 (kind=push) 에서.
       setTitle(''); setBody(''); setUrl('/'); setUserId('');
-      await refreshLogs();
     } catch (e) {
       const msg = e instanceof Error ? e.message : '발송 실패';
       setError(msg);
@@ -597,33 +788,7 @@ function PushTab() {
         </div>
       </div>
 
-      <div className="mt-6">
-        <h3 className="font-semibold mb-2">최근 발송 이력</h3>
-        {logs === null ? (
-          <div className="space-y-2">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-16" />
-            ))}
-          </div>
-        ) : logs.length === 0 ? (
-          <p className="text-sub text-sm">아직 발송한 알림이 없어요.</p>
-        ) : (
-          <ul className="card divide-y divide-border overflow-hidden">
-            {logs.map((l) => (
-              <li key={l.id} className="px-4 py-3 text-sm">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-medium">{l.title}</span>
-                  <span className="text-sub text-xs num shrink-0">{fmtDateTime(l.created_at)}</span>
-                </div>
-                <div className="text-sub text-xs mt-0.5">
-                  {l.target_kind === 'all' ? '전체' : `사용자 ${l.target_user_id}`} · 성공 {l.subscribers_sent} · 실패 {l.subscribers_failed}
-                </div>
-                <div className="text-ink/80 mt-1 break-keep">{l.body}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <p className="text-sub text-xs mt-4">발송 이력은 "로그" 탭에서 확인할 수 있어요.</p>
 
       {/* step-up 비밀번호 모달 (UsersTab 동일 패턴) */}
       {stepUpOpen && (

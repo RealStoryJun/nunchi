@@ -8,6 +8,7 @@ import { handleInsights, handleInsightsGet } from './insights';
 import { handleAdmin } from './admin';
 import { handleNeeds } from './needs';
 import { handleMonthlyCosts } from './monthly-costs';
+import { handlePush } from './push-routes';
 import { getSessionUser } from './session';
 
 export default {
@@ -92,6 +93,15 @@ export default {
       if (path === '/api/insights' && request.method === 'GET') {
         const ym = url.searchParams.get('ym') ?? '';
         return await handleInsightsGet(env, session.user.id, ym);
+      }
+
+      if (path === '/api/push' || path.startsWith('/api/push/')) {
+        return await handlePush(
+          request,
+          env,
+          session.user,
+          path.replace('/api/push', ''),
+        );
       }
 
       if (path === '/api/needs' || path.startsWith('/api/needs/')) {

@@ -8,6 +8,12 @@ export interface Env {
   // Cloudflare Turnstile secret (가입 봇 차단). site key는 public이지만 secret과 같이 묶어 보관.
   TURNSTILE_SECRET?: string;
   TURNSTILE_SITE_KEY?: string;
+  // Web Push VAPID (2026-05-16 PR 3). 셋 다 없으면 푸시 기능 비활성 (graceful).
+  // PUBLIC: base64url 65바이트 uncompressed P-256 point. PRIVATE: base64url 32바이트 d.
+  // SUBJECT: 'mailto:god8night@gmail.com' 같은 운영자 연락처 (RFC 8292 필수).
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 }
 
 export interface SessionUser {

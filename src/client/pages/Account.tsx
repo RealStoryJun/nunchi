@@ -11,6 +11,7 @@ import { invalidateByPrefix } from '../lib/cache';
 import NavIcon from '../components/NavIcon';
 import TwoFactorCard from '../components/TwoFactorCard';
 import InstallAppCard from '../components/InstallAppCard';
+import NotificationToggleCard from '../components/NotificationToggleCard';
 
 export default function Account() {
   const { user } = useAuth();
@@ -200,6 +201,10 @@ export default function Account() {
 
       <div className="mt-4">
         <InstallAppCard />
+      </div>
+
+      <div className="mt-4">
+        <NotificationToggleCard />
       </div>
 
       <div className="mt-4">

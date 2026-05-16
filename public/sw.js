@@ -98,4 +98,79 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// 푸시 알림은 PR 3 에서 추가. 지금은 install + offline shell 만.
+// ---------- 푸시 알림 (2026-05-16 PR 3 Phase 3) ----------
+
+self.addEventListener('push', (event) => {
+  // 서버가 RFC 8291 aes128gcm 으로 암호화한 JSON 페이로드
+  // 페이로드 없으면 generic 알림 (서버 장애 fallback)
+  let data = { title: '눈치', body: '새 알림이 있어요', url: '/' };
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch {
+      // text 인 경우 fallback
+      try { data.body = event.data.text(); } catch { /* keep default */ }
+    }
+  }
+
+  // URL defense-in-depth: same-origin path 만 허용. backslash open-redirect 도 차단 (서버와 동일).
+  function safePath(raw) {
+    if (typeof raw !== 'string') return '/';
+    try {
+      const parsed = new URL(raw, self.location.origin);
+      if (parsed.origin !== self.location.origin) return '/';
+      if (!parsed.pathname.startsWith('/')) return '/';
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch {
+      return '/';
+    }
+  }
+  const safeUrl = safePath(data.url);
+
+  const options = {
+    body: data.body || '',
+    icon: '/icon.png',
+    badge: '/icon.png',
+    data: { url: safeUrl },
+    vibrate: [100, 50, 100],
+    // 알림마다 고유 tag — 연속 발송 시 첫 알림이 사라지지 않게 (timestamp 기반)
+    tag: 'nunchi-' + Date.now(),
+    renotify: true,
+  };
+
+  event.waitUntil(self.registration.showNotification(data.title || '눈치', options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  // click 시점 재검증 (defense-in-depth). notification.data 가 어떻게 들어왔든 same-origin 보장.
+  function clickSafePath(raw) {
+    if (typeof raw !== 'string') return '/';
+    try {
+      const parsed = new URL(raw, self.location.origin);
+      if (parsed.origin !== self.location.origin) return '/';
+      return parsed.pathname + parsed.search + parsed.hash;
+    } catch {
+      return '/';
+    }
+  }
+  const url = clickSafePath(event.notification.data && event.notification.data.url);
+  const fullUrl = self.location.origin + url;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 이미 열린 nunchi 탭 있으면 focus + 해당 url 로 이동
+      for (const c of clientList) {
+        if (c.url.startsWith(self.location.origin)) {
+          // navigate 미지원 (Safari 등) → postMessage 폴백
+          if ('navigate' in c && typeof c.navigate === 'function') {
+            return c.focus().then(() => c.navigate(fullUrl).catch(() => undefined));
+          }
+          try { c.postMessage({ type: 'nunchi-navigate', url }); } catch { /* 무시 */ }
+          return c.focus();
+        }
+      }
+      // 없으면 새 창 열기
+      return self.clients.openWindow(fullUrl);
+    }),
+  );
+});

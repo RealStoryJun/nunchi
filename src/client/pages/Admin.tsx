@@ -45,7 +45,7 @@ const fmtDate = (ms: number) =>
 const fmtDateTime = (ms: number) =>
   new Date(ms).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-type Tab = 'users' | 'stats' | 'audit';
+type Tab = 'users' | 'stats' | 'audit' | 'push';
 
 export default function Admin() {
   const { user, loading } = useAuth();
@@ -61,8 +61,8 @@ export default function Admin() {
         <h1 className="font-display text-2xl md:text-3xl">관리자</h1>
         <span className="text-sub text-sm">관리자 전용</span>
       </div>
-      <div className="card p-1 mb-4 inline-flex gap-1">
-        {(['users', 'stats', 'audit'] as Tab[]).map((t) => (
+      <div className="card p-1 mb-4 inline-flex gap-1 flex-wrap">
+        {(['users', 'stats', 'audit', 'push'] as Tab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -71,13 +71,14 @@ export default function Admin() {
               tab === t ? 'bg-accent text-white' : 'text-ink hover:bg-black/5'
             }`}
           >
-            {t === 'users' ? '사용자' : t === 'stats' ? '통계' : '활동 로그'}
+            {t === 'users' ? '사용자' : t === 'stats' ? '통계' : t === 'audit' ? '활동 로그' : '푸시 발송'}
           </button>
         ))}
       </div>
       {tab === 'users' && <UsersTab meId={user.id} />}
       {tab === 'stats' && <StatsTab />}
       {tab === 'audit' && <AuditTab />}
+      {tab === 'push' && <PushTab />}
     </div>
   );
 }
@@ -354,6 +355,242 @@ function UsersTab({ meId }: { meId: number }) {
               <button onClick={() => setStepUpOpen(false)} className="btn-outline flex-1">취소</button>
               <button onClick={doStepUpThenDelete} disabled={stepUpBusy || !stepUpPw} className="btn-warm flex-1">
                 {stepUpBusy ? '확인 중…' : '인증 후 삭제'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── 푸시 발송 탭 (PR 3 Phase 4) ───────────────────────────────────────
+interface PushLog {
+  id: number;
+  target_kind: 'all' | 'user';
+  target_user_id: number | null;
+  title: string;
+  body: string;
+  url: string | null;
+  subscribers_sent: number;
+  subscribers_failed: number;
+  created_at: number;
+}
+
+function PushTab() {
+  const [target, setTarget] = useState<'all' | 'user'>('all');
+  const [userId, setUserId] = useState('');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [url, setUrl] = useState('/');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ sent: number; failed: number; expired?: number; note?: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<PushLog[] | null>(null);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [stepUpPw, setStepUpPw] = useState('');
+  const [stepUpBusy, setStepUpBusy] = useState(false);
+  const [stepUpErr, setStepUpErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiGet<{ logs: PushLog[] }>('/api/admin/push/log')
+      .then((d) => setLogs(d.logs))
+      .catch(() => setLogs([])); // 에러도 빈 list 로 떨궈서 skeleton 무한 회피
+  }, []);
+
+  const reset = () => {
+    setTitle(''); setBody(''); setUrl('/'); setUserId(''); setTarget('all'); setResult(null); setError(null);
+  };
+
+  const refreshLogs = async () => {
+    try {
+      const d = await apiGet<{ logs: PushLog[] }>('/api/admin/push/log');
+      setLogs(d.logs);
+    } catch {/* 무시 */}
+  };
+
+  const requestSend = () => {
+    if (!title.trim() || !body.trim()) { setError('제목과 본문을 입력해주세요.'); return; }
+    if (target === 'user' && (!userId.trim() || !/^\d+$/.test(userId.trim()))) {
+      setError('유효한 사용자 ID 가 필요해요.'); return;
+    }
+    if (url.trim() && !url.trim().startsWith('/')) { setError('URL 은 / 로 시작해야 해요.'); return; }
+    setError(null); setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
+  };
+
+  const doStepUpThenSend = async () => {
+    setStepUpBusy(true); setStepUpErr(null);
+    try {
+      await apiPost('/api/admin/step-up', { password: stepUpPw });
+    } catch (e) {
+      setStepUpErr(e instanceof Error ? e.message : '인증 실패');
+      setStepUpBusy(false);
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload = {
+        target: target === 'all' ? 'all' : { userId: Number(userId) },
+        title: title.trim(),
+        body: body.trim(),
+        url: url.trim() || '/',
+      };
+      const d = await apiPost<{ sent: number; failed: number; expired?: number; note?: string }>(
+        '/api/admin/push/send', payload,
+      );
+      setResult(d);
+      setStepUpOpen(false);
+      // 발송 성공 후 폼 자동 초기화 (실수 재발송 방지). 결과 카드는 별도 state라 유지됨.
+      setTitle(''); setBody(''); setUrl('/'); setUserId('');
+      await refreshLogs();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '발송 실패';
+      setError(msg);
+      setStepUpErr(msg); // 모달이 열린 채라면 모달 안에도 표시 (dead-end 회피)
+    } finally {
+      setBusy(false); setStepUpBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="card p-5 space-y-4">
+        <div>
+          <label className="label">발송 대상</label>
+          <div className="flex gap-2 md:max-w-md">
+            <button
+              type="button"
+              onClick={() => setTarget('all')}
+              className={`flex-1 h-10 rounded-lg text-sm border transition ${
+                target === 'all'
+                  ? 'bg-accent text-white border-accent font-medium'
+                  : 'bg-card text-ink border-border hover:border-accent/40'
+              }`}
+            >
+              전체 사장님
+            </button>
+            <button
+              type="button"
+              onClick={() => setTarget('user')}
+              className={`flex-1 h-10 rounded-lg text-sm border transition ${
+                target === 'user'
+                  ? 'bg-accent text-white border-accent font-medium'
+                  : 'bg-card text-ink border-border hover:border-accent/40'
+              }`}
+            >
+              특정 사용자
+            </button>
+          </div>
+          {target === 'user' && (
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="\d*"
+              className="field mt-2 md:max-w-xs"
+              placeholder="사용자 ID (사용자 탭에서 확인)"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+            />
+          )}
+        </div>
+
+        <div>
+          <label className="label">제목 (최대 80자)</label>
+          <input
+            className="field md:max-w-md"
+            value={title}
+            maxLength={80}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="예: 새 기능 안내"
+          />
+        </div>
+
+        <div>
+          <label className="label">본문 (최대 200자)</label>
+          <textarea
+            className="field !h-auto min-h-[88px] py-3 md:max-w-md"
+            rows={3}
+            value={body}
+            maxLength={200}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="예: 농구·골프·축구 업종이 추가됐어요. 설정에서 업종을 변경해보세요."
+          />
+        </div>
+
+        <div>
+          <label className="label">클릭 시 이동 (앱 내부 경로, / 로 시작)</label>
+          <input
+            className="field md:max-w-sm"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="/"
+          />
+        </div>
+
+        {error && <p className="text-warm text-sm">{error}</p>}
+        {result && (
+          <div className="rounded-xl border border-border bg-card p-3 text-sm">
+            <div className="font-medium mb-1">발송 결과</div>
+            <div>성공 {result.sent}건, 실패 {result.failed}건{result.expired ? `, 만료 정리 ${result.expired}건` : ''}</div>
+            {result.note && <div className="text-sub mt-1">{result.note}</div>}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-1 md:max-w-md">
+          <button type="button" onClick={reset} className="btn-outline">초기화</button>
+          <button type="button" onClick={requestSend} disabled={busy} className="btn-primary flex-1 disabled:opacity-50">
+            {busy ? '발송 중…' : '발송하기'}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <h3 className="font-semibold mb-2">최근 발송 이력</h3>
+        {logs === null ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-16" />
+            ))}
+          </div>
+        ) : logs.length === 0 ? (
+          <p className="text-sub text-sm">아직 발송한 알림이 없어요.</p>
+        ) : (
+          <ul className="card divide-y divide-border overflow-hidden">
+            {logs.map((l) => (
+              <li key={l.id} className="px-4 py-3 text-sm">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium">{l.title}</span>
+                  <span className="text-sub text-xs num shrink-0">{fmtDateTime(l.created_at)}</span>
+                </div>
+                <div className="text-sub text-xs mt-0.5">
+                  {l.target_kind === 'all' ? '전체' : `사용자 ${l.target_user_id}`} · 성공 {l.subscribers_sent} · 실패 {l.subscribers_failed}
+                </div>
+                <div className="text-ink/80 mt-1 break-keep">{l.body}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* step-up 비밀번호 모달 (UsersTab 동일 패턴) */}
+      {stepUpOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-card rounded-2xl border border-border w-full max-w-md p-5 shadow-2xl">
+            <h2 className="font-display text-xl mb-2">관리자 인증</h2>
+            <p className="text-sub text-sm mb-3">알림 발송 전에 비밀번호를 한 번 더 확인해요. 이후 10분간 다시 안 물어요.</p>
+            <input
+              type="password"
+              className="field"
+              value={stepUpPw}
+              onChange={(e) => setStepUpPw(e.target.value)}
+              placeholder="비밀번호"
+              autoFocus
+            />
+            {stepUpErr && <p className="text-warm text-sm mt-2">{stepUpErr}</p>}
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setStepUpOpen(false)} className="btn-outline flex-1">취소</button>
+              <button onClick={doStepUpThenSend} disabled={stepUpBusy || !stepUpPw} className="btn-primary flex-1">
+                {stepUpBusy ? '확인 중…' : '인증 후 발송'}
               </button>
             </div>
           </div>

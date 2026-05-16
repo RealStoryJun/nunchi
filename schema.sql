@@ -171,6 +171,39 @@ CREATE TABLE IF NOT EXISTS ai_insights (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Web Push 구독 (PWA 알림 받기 동의한 사용자) — 2026-05-16 신규.
+-- endpoint UNIQUE: 같은 device 중복 row 방지. user 1명이 device 여러 개 가능 (모바일 + 데스크탑 등).
+-- p256dh·auth: 클라 PushSubscription에서 받은 암호화 키 (페이로드 암호화에 사용, RFC 8291).
+-- 만료 endpoint (410 Gone/404) 발견 시 자동 DELETE — D1 비대화 방지.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  endpoint TEXT UNIQUE NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  ua TEXT,                       -- 어느 디바이스인지 사장님이 알기 좋게 (Chrome on Android 등)
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL, -- 마지막 발송 성공 시각, 오래된 구독 cleanup 용
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
+
+-- 어드민이 발송한 알림 이력 — 사장님이 "내가 뭐 보냈더라" 추적용. 90일 보관.
+CREATE TABLE IF NOT EXISTS admin_push_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_user_id INTEGER NOT NULL,
+  target_kind TEXT NOT NULL,        -- 'all' | 'user'
+  target_user_id INTEGER,           -- target_kind='user'일 때만
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  url TEXT,
+  subscribers_sent INTEGER NOT NULL DEFAULT 0,
+  subscribers_failed INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_admin_push_log_at ON admin_push_log(created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_sales_user_date ON sales(user_id, sold_at);
 CREATE INDEX IF NOT EXISTS idx_menus_user ON menus(user_id, archived);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

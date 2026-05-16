@@ -5,6 +5,7 @@ import { apiGet, apiPost } from '../lib/api';
 import { businessTypeLabel } from '../lib/businessTypes';
 import { Skeleton } from '../components/Skeleton';
 import NavIcon from '../components/NavIcon';
+import AdminCsvExportModal from '../components/AdminCsvExportModal';
 
 interface AdminUser {
   id: number;
@@ -201,6 +202,7 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
   const [stepUpPw, setStepUpPw] = useState('');
   const [stepUpErr, setStepUpErr] = useState<string | null>(null);
   const [stepUpBusy, setStepUpBusy] = useState(false);
+  const [csvOpen, setCsvOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -282,9 +284,13 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
 
   return (
     <>
-      <p className="text-sub text-sm mb-4">
-        전체 {total ?? '…'}개 계정{q && users ? ` · "${q}" 검색결과 ${users.length}개` : ''}
-      </p>
+      <div className="flex items-center justify-between mb-4 gap-2">
+        <p className="text-sub text-sm min-w-0 truncate">
+          전체 {total ?? '…'}개 계정{q && users ? ` · "${q}" 검색결과 ${users.length}개` : ''}
+        </p>
+        <button type="button" onClick={() => setCsvOpen(true)}
+          className="text-xs text-accent hover:underline shrink-0">📥 CSV 내보내기</button>
+      </div>
       <div className="card p-2 mb-3 flex items-center gap-2">
         <span className="text-sub pl-1.5"><NavIcon name="search" size={18} /></span>
         <input value={q} onChange={(e) => setQ(e.target.value)}
@@ -295,6 +301,7 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
             className="text-sub text-sm px-2 h-8 rounded hover:bg-black/5">지우기</button>
         )}
       </div>
+      {csvOpen && <AdminCsvExportModal onClose={() => setCsvOpen(false)} />}
       {selected.size > 0 && (
         <div className="card p-3 mb-3 flex items-center justify-between bg-warm/[0.04] border-warm/30 anim-fade">
           <span className="text-sm"><b className="num">{selected.size}</b>개 선택됨</span>

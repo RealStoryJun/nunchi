@@ -10,6 +10,7 @@ import { apiPost } from '../lib/api';
 import { invalidateByPrefix } from '../lib/cache';
 import NavIcon from '../components/NavIcon';
 import TwoFactorCard from '../components/TwoFactorCard';
+import InstallAppCard from '../components/InstallAppCard';
 
 export default function Account() {
   const { user } = useAuth();
@@ -195,6 +196,10 @@ export default function Account() {
         <button onClick={onLogout} className="btn-outline w-full">
           로그아웃
         </button>
+      </div>
+
+      <div className="mt-4">
+        <InstallAppCard />
       </div>
 
       <div className="mt-4">

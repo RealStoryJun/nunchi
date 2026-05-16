@@ -711,12 +711,25 @@ function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
   const requestAction = (a: Action) => {
     if (selected.size === 0) return;
     const verb =
-      a.kind === 'extend' ? `+${a.days}일 연장`
+      a.kind === 'extend' ? `${a.days}일 연장`
       : a.kind === 'revoke' ? '즉시 만료'
       : a.is_admin ? '어드민 지정' : '어드민 해제';
     if (!confirm(`선택한 ${selected.size}명에게 "${verb}" 적용할까요?`)) return;
     setPendingAction(a); setError(null); setInfo(null);
     setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
+  };
+
+  // 지정 연장 - 사장님이 일수 직접 입력 (사장님 결정 2026-05-16, prompt 로 간단히)
+  const requestExtendCustom = () => {
+    if (selected.size === 0) return;
+    const raw = window.prompt('연장할 일수를 입력하세요 (1-3650일)');
+    if (raw == null) return;
+    const days = parseInt(raw.trim(), 10);
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      alert('1-3650 사이 숫자만 입력 가능해요.');
+      return;
+    }
+    requestAction({ kind: 'extend', days });
   };
 
   const doStepUpThenApply = async () => {
@@ -779,10 +792,10 @@ function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => requestAction({ kind: 'extend', days: 30 })}
               disabled={busy}
-              className="btn-primary px-3 h-9 text-sm disabled:opacity-50">+30일 연장</button>
-            <button type="button" onClick={() => requestAction({ kind: 'extend', days: 90 })}
+              className="btn-primary px-3 h-9 text-sm disabled:opacity-50">30일 연장</button>
+            <button type="button" onClick={requestExtendCustom}
               disabled={busy}
-              className="btn-outline px-3 h-9 text-sm disabled:opacity-50">+90일 연장</button>
+              className="btn-outline px-3 h-9 text-sm disabled:opacity-50">지정 연장</button>
             <button type="button" onClick={() => requestAction({ kind: 'revoke' })}
               disabled={busy}
               className="btn-warm px-3 h-9 text-sm disabled:opacity-50">즉시 만료</button>

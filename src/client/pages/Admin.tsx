@@ -49,7 +49,7 @@ const fmtDate = (ms: number) =>
 const fmtDateTime = (ms: number) =>
   new Date(ms).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-type Tab = 'users' | 'stats' | 'audit' | 'push';
+type Tab = 'users' | 'access' | 'stats' | 'audit' | 'push';
 
 export default function Admin() {
   const { user, loading } = useAuth();
@@ -65,8 +65,9 @@ export default function Admin() {
         <h1 className="font-display text-2xl md:text-3xl">관리자</h1>
         <span className="text-sub text-sm">관리자 전용</span>
       </div>
-      <div className="card p-1 mb-4 inline-flex gap-1 flex-wrap">
-        {(['users', 'stats', 'audit', 'push'] as Tab[]).map((t) => (
+      {/* 5 chip 모바일 한 줄 유지 (사장님 룰 chip/tab wrap auto-🔴). flex-wrap 제거. */}
+      <div className="card p-1 mb-4 inline-flex gap-1">
+        {(['users', 'access', 'stats', 'audit', 'push'] as Tab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -75,11 +76,15 @@ export default function Admin() {
               tab === t ? 'bg-accent text-white' : 'text-ink hover:bg-black/5'
             }`}
           >
-            {t === 'users' ? '사용자' : t === 'stats' ? '통계' : t === 'audit' ? '활동 로그' : '푸시 발송'}
+            {t === 'users' ? '사용자'
+              : t === 'access' ? '권한'
+              : t === 'stats' ? '통계'
+              : t === 'audit' ? '로그' : '푸시'}
           </button>
         ))}
       </div>
       {tab === 'users' && <UsersTab meId={user.id} isMaster={!!user.is_master} />}
+      {tab === 'access' && <AccessTab meId={user.id} isMaster={!!user.is_master} />}
       {tab === 'stats' && <StatsTab />}
       {tab === 'audit' && <AuditTab />}
       {tab === 'push' && <PushTab />}
@@ -240,62 +245,9 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
 
   // 마스터만: 다른 user 의 admin 권한 토글 (master·자기 자신은 토글 X).
   // delete 와 동일하게 step-up 모달 거침 (10분 TTL 통과 시 즉시, 아니면 비밀번호 재입력).
-  const [roleBusy, setRoleBusy] = useState<number | null>(null);
-  // 모달이 어느 작업을 수행할지 보관 (delete vs role)
-  const [pendingAction, setPendingAction] = useState<
-    { kind: 'delete' } | { kind: 'role'; user: AdminUser; next: boolean } | null
-  >(null);
-
-  // admin + master 둘 다: 다른 user 의 access_until 연장 (master 는 무제한 부여 가능, admin 은 days 만)
-  const [accessBusy, setAccessBusy] = useState<number | null>(null);
-  const extendAccess = async (u: AdminUser, days: number) => {
-    if (u.is_master) return;
-    if (!confirm(`${u.business_name} 의 사용 기간을 +${days}일 연장할까요?`)) return;
-    setAccessBusy(u.id);
-    try {
-      await apiPost('/api/admin/users/access', { userId: u.id, days });
-      await refetch();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : '연장 실패');
-    } finally {
-      setAccessBusy(null);
-    }
-  };
-
-  const requestRoleToggle = (u: AdminUser) => {
-    if (!isMaster || u.id === meId || u.is_master) return;
-    const next = !u.is_admin;
-    if (!confirm(`${u.business_name} (${u.email}) 을 어드민으로 ${next ? '지정' : '해제'}할까요?`)) return;
-    setPendingAction({ kind: 'role', user: u, next });
-    setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
-  };
-
-  const doStepUpThenRole = async () => {
-    if (!pendingAction || pendingAction.kind !== 'role') return;
-    setStepUpBusy(true); setStepUpErr(null);
-    try {
-      await apiPost('/api/admin/step-up', { password: stepUpPw });
-    } catch (e) {
-      setStepUpErr(e instanceof Error ? e.message : '인증 실패');
-      setStepUpBusy(false);
-      return;
-    }
-    setRoleBusy(pendingAction.user.id);
-    try {
-      await apiPost('/api/admin/users/role', {
-        userId: pendingAction.user.id,
-        is_admin: pendingAction.next,
-      });
-      setStepUpOpen(false);
-      setPendingAction(null);
-      await refetch();
-    } catch (e) {
-      setStepUpErr(e instanceof Error ? e.message : '권한 변경 실패');
-    } finally {
-      setRoleBusy(null);
-      setStepUpBusy(false);
-    }
-  };
+  // 사용자 탭은 정보 조회·검색·삭제만. 권한 변경은 별도 '권한 관리' 탭 (사장님 결정 2026-05-16).
+  // pendingAction state 는 모달 닫기 시 reset 용 (현재 delete 하나뿐이지만 setter 만 사용).
+  const [, setPendingAction] = useState<{ kind: 'delete' } | null>(null);
 
   const doStepUpThenDelete = async () => {
     setStepUpBusy(true); setStepUpErr(null);
@@ -378,86 +330,48 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
           </div>
           {users.map((u) => {
             const self = u.id === meId;
-            const showActions = !self && !u.is_master;
             return (
               <div key={u.id}
-                className={`px-4 py-3 ${self ? 'opacity-70' : 'hover:bg-black/[0.02]'}`}>
-                {/* 정보 row - 모바일·데스크탑 공통, 한 줄 */}
-                <div className="flex items-start gap-3">
-                  <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleOne(u.id)}
-                    disabled={self || !isMaster}
-                    className="w-4 h-4 mt-1 accent-accent shrink-0 disabled:opacity-40"
-                    aria-label={`${u.business_name} 선택`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="font-medium truncate">{u.business_name}</span>
-                      {u.is_master && <span className="text-[11px] font-bold text-warm bg-warm/10 px-1.5 py-0.5 rounded shrink-0">MASTER</span>}
-                      {u.is_admin && !u.is_master && <span className="text-[11px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">ADMIN</span>}
-                      {u.is_demo && <span className="text-[11px] font-bold text-sub bg-border/40 px-1.5 py-0.5 rounded shrink-0">DEMO</span>}
-                      {u.mfa_enabled && <span className="text-[11px] shrink-0" title="2단계 인증">🔒</span>}
-                      {self && !u.is_master && <span className="text-[11px] text-sub shrink-0">(나)</span>}
-                    </div>
-                    <div className="text-sub text-xs num truncate">{u.email}</div>
-                    <div className="text-sub text-[11px] mt-0.5">
-                      {businessTypeLabel(u.business_type)} · 메뉴 {u.menu_count}개
-                      <span className="sm:hidden"> · 가입 {fmtDate(u.created_at)}</span>
-                      {u.last_login_at && (
-                        <span className="md:hidden"> · 최근 {fmtDateTime(u.last_login_at)}</span>
-                      )}
-                      {!u.is_master && !u.is_demo && (
-                        <>
-                          {' '}·{' '}
-                          {u.access_until == null ? (
-                            <span className="text-accent">무제한</span>
-                          ) : u.access_until < Date.now() ? (
-                            <span className="text-warm font-medium">만료</span>
-                          ) : (
-                            <span>D-{Math.ceil((u.access_until - Date.now()) / (24 * 60 * 60 * 1000))}</span>
-                          )}
-                        </>
-                      )}
-                    </div>
+                className={`px-4 py-3 flex items-start gap-3 ${self ? 'opacity-70' : 'hover:bg-black/[0.02]'}`}>
+                <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleOne(u.id)}
+                  disabled={self || !isMaster}
+                  className="w-4 h-4 mt-1 accent-accent shrink-0 disabled:opacity-40"
+                  aria-label={`${u.business_name} 선택`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-medium truncate">{u.business_name}</span>
+                    {u.is_master && <span className="text-[11px] font-bold text-warm bg-warm/10 px-1.5 py-0.5 rounded shrink-0">MASTER</span>}
+                    {u.is_admin && !u.is_master && <span className="text-[11px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">ADMIN</span>}
+                    {u.is_demo && <span className="text-[11px] font-bold text-sub bg-border/40 px-1.5 py-0.5 rounded shrink-0">DEMO</span>}
+                    {u.mfa_enabled && <span className="text-[11px] shrink-0" title="2단계 인증">🔒</span>}
+                    {self && !u.is_master && <span className="text-[11px] text-sub shrink-0">(나)</span>}
                   </div>
-                  <span className="hidden md:block w-24 text-right text-[11px] text-sub num shrink-0">
-                    {u.last_activity_at ? fmtDateTime(u.last_activity_at) : '없음'}
-                  </span>
-                  <span className="hidden sm:block w-24 text-right text-xs text-sub num shrink-0">{fmtDate(u.created_at)}</span>
-                  <span className="hidden sm:block w-14 text-right num text-sm shrink-0">{u.sales_count}</span>
+                  <div className="text-sub text-xs num truncate">{u.email}</div>
+                  <div className="text-sub text-[11px] mt-0.5">
+                    {businessTypeLabel(u.business_type)} · 메뉴 {u.menu_count}개
+                    <span className="sm:hidden"> · 가입 {fmtDate(u.created_at)}</span>
+                    {u.last_login_at && (
+                      <span className="md:hidden"> · 최근 {fmtDateTime(u.last_login_at)}</span>
+                    )}
+                    {!u.is_master && !u.is_demo && (
+                      <>
+                        {' '}·{' '}
+                        {u.access_until == null ? (
+                          <span className="text-accent">무제한</span>
+                        ) : u.access_until < Date.now() ? (
+                          <span className="text-warm font-medium">만료</span>
+                        ) : (
+                          <span>D-{Math.ceil((u.access_until - Date.now()) / (24 * 60 * 60 * 1000))}</span>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
-                {/* 액션 row - master·self·자동 비표시 케이스 제외. mobile/desktop 모두 정보 row 아래에 stack
-                    (이전 absolute 트릭 = chip wrap 위험 + 좁은 폭에서 정보 row 7줄 wrap 발생, 사장님 룰 위반).
-                    desktop 에서도 자연스러운 row 2단 (사용자 행위 빈도 낮은 영역이라 OK). */}
-                {showActions && (
-                  <div className="flex items-center gap-2 justify-end mt-2 pl-7">
-                    <span className="sm:hidden text-sub text-xs num mr-auto">판매 {u.sales_count}</span>
-                    {!u.is_demo && (
-                      <button
-                        type="button"
-                        onClick={() => extendAccess(u, 30)}
-                        disabled={accessBusy === u.id}
-                        className="text-xs px-2.5 h-9 md:h-8 rounded border border-accent/40 text-accent hover:bg-accent/10 shrink-0 disabled:opacity-50"
-                        title="사용 기간 +30일 연장"
-                      >
-                        {accessBusy === u.id ? '…' : '+30일'}
-                      </button>
-                    )}
-                    {isMaster && (
-                      <button
-                        type="button"
-                        onClick={() => requestRoleToggle(u)}
-                        disabled={roleBusy === u.id}
-                        className={`text-xs px-2.5 h-9 md:h-8 rounded border shrink-0 disabled:opacity-50 ${
-                          u.is_admin
-                            ? 'text-sub border-border hover:border-warm hover:text-warm'
-                            : 'text-accent border-accent/40 hover:bg-accent/10'
-                        }`}
-                        title={u.is_admin ? '어드민 해제' : '어드민 지정'}
-                      >
-                        {roleBusy === u.id ? '…' : u.is_admin ? '해제' : '어드민'}
-                      </button>
-                    )}
-                  </div>
-                )}
+                <span className="hidden md:block w-24 text-right text-[11px] text-sub num shrink-0">
+                  {u.last_activity_at ? fmtDateTime(u.last_activity_at) : '없음'}
+                </span>
+                <span className="hidden sm:block w-24 text-right text-xs text-sub num shrink-0">{fmtDate(u.created_at)}</span>
+                <span className="w-14 text-right num text-sm shrink-0">{u.sales_count}</span>
               </div>
             );
           })}
@@ -478,24 +392,16 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
               type="password" autoFocus className="field" value={stepUpPw}
               onChange={(e) => setStepUpPw(e.target.value)} placeholder="비밀번호"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && stepUpPw && !stepUpBusy) {
-                  if (pendingAction?.kind === 'role') doStepUpThenRole();
-                  else doStepUpThenDelete();
-                } else if (e.key === 'Escape') { setStepUpOpen(false); setPendingAction(null); }
+                if (e.key === 'Enter' && stepUpPw && !stepUpBusy) doStepUpThenDelete();
+                else if (e.key === 'Escape') { setStepUpOpen(false); setPendingAction(null); }
               }}
             />
             {stepUpErr && <p className="text-warm text-sm mt-2 break-keep">{stepUpErr}</p>}
             <div className="flex gap-2 mt-4">
               <button onClick={() => { setStepUpOpen(false); setPendingAction(null); }} className="btn-outline flex-1">취소</button>
-              {pendingAction?.kind === 'role' ? (
-                <button onClick={doStepUpThenRole} disabled={stepUpBusy || !stepUpPw} className="btn-primary flex-1">
-                  {stepUpBusy ? '확인 중…' : '인증 후 권한 변경'}
-                </button>
-              ) : (
-                <button onClick={doStepUpThenDelete} disabled={stepUpBusy || !stepUpPw} className="btn-warm flex-1">
-                  {stepUpBusy ? '확인 중…' : '인증 후 삭제'}
-                </button>
-              )}
+              <button onClick={doStepUpThenDelete} disabled={stepUpBusy || !stepUpPw} className="btn-warm flex-1">
+                {stepUpBusy ? '확인 중…' : '인증 후 삭제'}
+              </button>
             </div>
           </div>
         </div>
@@ -731,6 +637,249 @@ function PushTab() {
               <button onClick={() => setStepUpOpen(false)} className="btn-outline flex-1">취소</button>
               <button onClick={doStepUpThenSend} disabled={stepUpBusy || !stepUpPw} className="btn-primary flex-1">
                 {stepUpBusy ? '확인 중…' : '인증 후 발송'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── 권한 관리 탭 (PR 5+ 2026-05-16) ─────────────────────────────────────
+// 사용 기간(access_until) + 어드민 권한(is_admin) 일괄 관리.
+// 일괄 액션: +30/+90일 연장 / 즉시 만료 (admin·master 둘 다) / 어드민 지정·해제 (master 만)
+function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
+  const [q, setQ] = useState('');
+  const [users, setUsers] = useState<AdminUser[] | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [busyList, setBusyList] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [stepUpOpen, setStepUpOpen] = useState(false);
+  const [stepUpPw, setStepUpPw] = useState('');
+  const [stepUpErr, setStepUpErr] = useState<string | null>(null);
+  const [stepUpBusy, setStepUpBusy] = useState(false);
+  type Action = { kind: 'extend'; days: number } | { kind: 'revoke' } | { kind: 'role'; is_admin: boolean };
+  const [pendingAction, setPendingAction] = useState<Action | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const t = window.setTimeout(() => {
+      setBusyList(true); setError(null);
+      apiGet<{ users: AdminUser[]; total: number }>(`/api/admin/users?q=${encodeURIComponent(q)}`)
+        .then((d) => { if (alive) setUsers(d.users); })
+        .catch((e) => { if (alive) { setUsers((p) => p ?? []); setError(e.message); } })
+        .finally(() => { if (alive) setBusyList(false); });
+    }, q ? 300 : 0);
+    return () => { alive = false; window.clearTimeout(t); };
+  }, [q]);
+
+  const refetch = async () => {
+    setBusyList(true);
+    try {
+      const d = await apiGet<{ users: AdminUser[]; total: number }>(`/api/admin/users?q=${encodeURIComponent(q)}`);
+      setUsers(d.users);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '실패');
+    } finally { setBusyList(false); }
+  };
+
+  // 권한 관리 대상: master·demo·자기 자신은 선택 X (server 도 silently 제외하지만 UI 가이드)
+  const eligibleIds = users?.filter((u) => u.id !== meId && !u.is_master && !u.is_demo).map((u) => u.id) ?? [];
+
+  // 검색이 좁아져서 선택했던 user 가 화면에서 사라지면 selected 도 자동 정리 (flow review #1).
+  // 사장님이 "보이는 것만 처리" 라고 오해하지 않도록.
+  useEffect(() => {
+    if (!users) return;
+    const eligibleSet = new Set(eligibleIds);
+    setSelected((prev) => {
+      const next = new Set([...prev].filter((id) => eligibleSet.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users]);
+  const allSelected = eligibleIds.length > 0 && eligibleIds.every((id) => selected.has(id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(eligibleIds));
+  const toggleOne = (id: number) => setSelected((p) => {
+    const next = new Set(p);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const requestAction = (a: Action) => {
+    if (selected.size === 0) return;
+    const verb =
+      a.kind === 'extend' ? `+${a.days}일 연장`
+      : a.kind === 'revoke' ? '즉시 만료'
+      : a.is_admin ? '어드민 지정' : '어드민 해제';
+    if (!confirm(`선택한 ${selected.size}명에게 "${verb}" 적용할까요?`)) return;
+    setPendingAction(a); setError(null); setInfo(null);
+    setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
+  };
+
+  const doStepUpThenApply = async () => {
+    if (!pendingAction) return;
+    setStepUpBusy(true); setStepUpErr(null);
+    try {
+      await apiPost('/api/admin/step-up', { password: stepUpPw });
+    } catch (e) {
+      setStepUpErr(e instanceof Error ? e.message : '인증 실패');
+      setStepUpBusy(false);
+      return;
+    }
+    setBusy(true);
+    try {
+      const ids = [...selected];
+      let r: { updated: number; skipped: number };
+      if (pendingAction.kind === 'extend') {
+        r = await apiPost('/api/admin/users/access/bulk', { userIds: ids, days: pendingAction.days });
+      } else if (pendingAction.kind === 'revoke') {
+        r = await apiPost('/api/admin/users/access/bulk', { userIds: ids, revoke: true });
+      } else {
+        r = await apiPost('/api/admin/users/role/bulk', { userIds: ids, is_admin: pendingAction.is_admin });
+      }
+      setSelected(new Set());
+      setStepUpOpen(false);
+      setPendingAction(null);
+      await refetch();
+      setInfo(`${r.updated}명 처리됨${r.skipped > 0 ? ` (마스터·데모·본인 ${r.skipped}명 제외)` : ''}`);
+    } catch (e) {
+      setStepUpErr(e instanceof Error ? e.message : '처리 실패');
+    } finally {
+      setBusy(false); setStepUpBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <p className="text-sub text-sm mb-4 break-keep">
+        사용 기간 연장·만료, 어드민 권한 지정·해제를 일괄로 처리. 마스터·데모·본인 계정은 자동 제외.
+      </p>
+
+      <div className="card p-2 mb-3 flex items-center gap-2">
+        <span className="text-sub pl-1.5"><NavIcon name="search" size={18} /></span>
+        <input value={q} onChange={(e) => setQ(e.target.value)}
+          placeholder="이메일 또는 가게 이름으로 검색"
+          className="flex-1 bg-transparent outline-none text-sm py-2 num" />
+        {q && (
+          <button type="button" onClick={() => setQ('')}
+            className="text-sub text-sm px-2 h-8 rounded hover:bg-black/5">지우기</button>
+        )}
+      </div>
+
+      {selected.size > 0 && (
+        <div className="card p-3 mb-3 bg-accent/[0.04] border-accent/30 anim-fade">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm"><b className="num">{selected.size}</b>명 선택됨</span>
+            <button type="button" onClick={() => setSelected(new Set())}
+              className="text-sm text-sub px-3 h-8 rounded-lg hover:bg-black/5">선택 해제</button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => requestAction({ kind: 'extend', days: 30 })}
+              disabled={busy}
+              className="btn-primary px-3 h-9 text-sm disabled:opacity-50">+30일 연장</button>
+            <button type="button" onClick={() => requestAction({ kind: 'extend', days: 90 })}
+              disabled={busy}
+              className="btn-outline px-3 h-9 text-sm disabled:opacity-50">+90일 연장</button>
+            <button type="button" onClick={() => requestAction({ kind: 'revoke' })}
+              disabled={busy}
+              className="btn-warm px-3 h-9 text-sm disabled:opacity-50">즉시 만료</button>
+            {isMaster && (
+              <>
+                <span className="w-px h-9 bg-border mx-1 hidden sm:block" aria-hidden />
+                <button type="button" onClick={() => requestAction({ kind: 'role', is_admin: true })}
+                  disabled={busy}
+                  className="px-3 h-9 text-sm rounded-lg border border-accent/40 text-accent hover:bg-accent/10 disabled:opacity-50">어드민 지정</button>
+                <button type="button" onClick={() => requestAction({ kind: 'role', is_admin: false })}
+                  disabled={busy}
+                  className="px-3 h-9 text-sm rounded-lg border border-border text-sub hover:border-warm hover:text-warm disabled:opacity-50">어드민 해제</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {error && <p className="text-warm text-sm mb-3">{error}</p>}
+      {info && <p className="text-accent text-sm mb-3">{info}</p>}
+
+      {users === null || (busyList && users.length === 0) ? (
+        <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16" />)}</div>
+      ) : users.length === 0 ? (
+        <div className="card p-10 text-center text-sub">{q ? '검색 결과가 없습니다.' : '계정이 없습니다.'}</div>
+      ) : (
+        <div className={`card divide-y divide-border overflow-hidden transition-opacity ${busyList ? 'opacity-50 pointer-events-none' : ''}`}>
+          <div className="px-4 py-2.5 flex items-center gap-3 bg-bg/60 text-xs text-sub">
+            <input type="checkbox" checked={allSelected} onChange={toggleAll}
+              className="w-4 h-4 accent-accent shrink-0" aria-label="전체 선택" />
+            <span className="flex-1">계정 ({users.length})</span>
+            <span className="hidden sm:block w-20 text-right">현재 상태</span>
+            <span className="w-20 text-right">사용 기간</span>
+          </div>
+          {users.map((u) => {
+            const self = u.id === meId;
+            const disabled = self || u.is_master || u.is_demo;
+            const expired = u.access_until != null && u.access_until < Date.now();
+            return (
+              <label key={u.id}
+                className={`px-4 py-3 flex items-center gap-3 ${disabled ? 'opacity-60' : 'cursor-pointer hover:bg-black/[0.02]'}`}>
+                <input type="checkbox"
+                  checked={selected.has(u.id)} onChange={() => toggleOne(u.id)}
+                  disabled={disabled}
+                  className="w-4 h-4 accent-accent shrink-0 disabled:opacity-40"
+                  aria-label={`${u.business_name} 선택`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="font-medium truncate">{u.business_name}</span>
+                    {u.is_master && <span className="text-[11px] font-bold text-warm bg-warm/10 px-1.5 py-0.5 rounded shrink-0">MASTER</span>}
+                    {u.is_admin && !u.is_master && <span className="text-[11px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">ADMIN</span>}
+                    {u.is_demo && <span className="text-[11px] font-bold text-sub bg-border/40 px-1.5 py-0.5 rounded shrink-0">DEMO</span>}
+                    {self && <span className="text-[11px] text-sub shrink-0">(나)</span>}
+                  </div>
+                  <div className="text-sub text-xs num truncate">{u.email}</div>
+                </div>
+                <span className="hidden sm:block w-20 text-right text-xs shrink-0">
+                  {u.is_master ? <span className="text-warm font-medium">MASTER</span>
+                    : u.is_admin ? <span className="text-accent font-medium">ADMIN</span>
+                    : <span className="text-sub">일반</span>}
+                </span>
+                <span className="w-20 text-right text-xs num shrink-0">
+                  {u.is_master || u.is_demo ? <span className="text-accent">무제한</span>
+                    : u.access_until == null ? <span className="text-accent">무제한</span>
+                    : expired ? <span className="text-warm font-medium">만료</span>
+                    : <span>D-{Math.ceil((u.access_until - Date.now()) / (24 * 60 * 60 * 1000))}</span>}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {stepUpOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 anim-fade"
+          onClick={(e) => { if (e.target === e.currentTarget) { setStepUpOpen(false); setPendingAction(null); } }}
+        >
+          <div className="card max-w-sm md:max-w-md w-full p-5 anim-pop">
+            <h2 className="font-semibold mb-2">관리자 인증</h2>
+            <p className="text-sub text-sm mb-3 break-keep">
+              비밀번호를 한 번 더 확인합니다. 인증 후 10분 동안 같은 작업을 반복할 수 있어요.
+            </p>
+            <input
+              type="password" autoFocus className="field" value={stepUpPw}
+              onChange={(e) => setStepUpPw(e.target.value)} placeholder="비밀번호"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && stepUpPw && !stepUpBusy) doStepUpThenApply();
+                else if (e.key === 'Escape') { setStepUpOpen(false); setPendingAction(null); }
+              }}
+            />
+            {stepUpErr && <p className="text-warm text-sm mt-2 break-keep">{stepUpErr}</p>}
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => { setStepUpOpen(false); setPendingAction(null); }} className="btn-outline flex-1">취소</button>
+              <button onClick={doStepUpThenApply} disabled={stepUpBusy || !stepUpPw}
+                className={pendingAction?.kind === 'revoke' ? 'btn-warm flex-1' : 'btn-primary flex-1'}>
+                {stepUpBusy ? '확인 중…' : '인증 후 적용'}
               </button>
             </div>
           </div>

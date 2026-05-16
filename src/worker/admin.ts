@@ -146,6 +146,149 @@ export async function handleAdmin(
     });
   }
 
+  // POST /api/admin/users/access/bulk - 여러 user 동시 권한 변경 (admin·master)
+  // body: { userIds: number[], days?: number, revoke?: boolean }
+  // - days: +N일 연장 (각 user 의 현재 access_until 기준)
+  // - revoke: true 면 즉시 만료 (access_until = now - 1)
+  // master·demo·자기 자신은 silently 제외 (skipped 카운트 반환)
+  if (rest === '/users/access/bulk' && request.method === 'POST') {
+    if (!(await isAdminVerified(env, sessionToken))) {
+      return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
+    }
+    interface BulkAccessBody { userIds?: unknown; days?: unknown; revoke?: unknown }
+    let body: BulkAccessBody;
+    try {
+      body = (await request.json()) as BulkAccessBody;
+    } catch {
+      return err('잘못된 요청입니다.');
+    }
+    const rawIds = Array.isArray(body.userIds) ? body.userIds : [];
+    const requested = [
+      ...new Set(
+        rawIds
+          .map((x) => (typeof x === 'number' ? x : Number(x)))
+          .filter((n) => Number.isInteger(n) && n > 0),
+      ),
+    ].slice(0, 500);
+    if (requested.length === 0) return err('userIds 가 비어있어요.');
+
+    // 자기 자신·master·demo 제외 (silently)
+    const ph = requested.map(() => '?').join(',');
+    const { results: targets } = await env.DB.prepare(
+      `SELECT id, is_master, is_demo, access_until FROM users WHERE id IN (${ph})`,
+    )
+      .bind(...requested)
+      .all<{ id: number; is_master: number; is_demo: number; access_until: number | null }>();
+    const eligible = targets.filter(
+      (t) => t.id !== user.id && !t.is_master && !t.is_demo,
+    );
+    const skipped = requested.length - eligible.length;
+    if (eligible.length === 0) return ok({ updated: 0, skipped });
+
+    // 액션 결정
+    const MAX_DAYS = 3650;
+    let updated = 0;
+    if (body.revoke === true) {
+      // 즉시 만료 - 일괄 UPDATE
+      const ephIds = eligible.map((t) => t.id);
+      const ph2 = ephIds.map(() => '?').join(',');
+      const expiredAt = Date.now() - 1;
+      await env.DB.prepare(
+        `UPDATE users SET access_until = ? WHERE id IN (${ph2})`,
+      )
+        .bind(expiredAt, ...ephIds)
+        .run();
+      updated = ephIds.length;
+      await audit(
+        env,
+        user.id,
+        'users.access.bulk_revoke',
+        { ids: ephIds, count: updated, by_role: user.is_master ? 'master' : 'admin' },
+        request,
+      );
+    } else if (typeof body.days === 'number' && Number.isFinite(body.days)) {
+      const days = Math.floor(body.days);
+      if (days < 1 || days > MAX_DAYS) return err(`days 는 1-${MAX_DAYS} 사이여야 해요.`);
+      const dayMs = 24 * 60 * 60 * 1000;
+      const cap = Date.now() + MAX_DAYS * dayMs;
+      // 각 user 의 현재 access_until 기준 누적
+      const stmts = eligible.map((t) => {
+        const base = t.access_until && t.access_until > Date.now() ? t.access_until : Date.now();
+        const next = Math.min(base + days * dayMs, cap);
+        return env.DB.prepare('UPDATE users SET access_until = ? WHERE id = ?').bind(next, t.id);
+      });
+      await env.DB.batch(stmts);
+      updated = eligible.length;
+      await audit(
+        env,
+        user.id,
+        'users.access.bulk_extend',
+        { ids: eligible.map((t) => t.id), days, count: updated, by_role: user.is_master ? 'master' : 'admin' },
+        request,
+      );
+    } else {
+      return err('days 또는 revoke=true 중 하나 필요해요.');
+    }
+
+    return ok({ updated, skipped });
+  }
+
+  // POST /api/admin/users/role/bulk - master 만, 여러 user 의 is_admin 일괄 토글
+  // body: { userIds: number[], is_admin: boolean }
+  // master·자기 자신은 silently 제외.
+  if (rest === '/users/role/bulk' && request.method === 'POST') {
+    if (!user.is_master) return err('마스터 권한이 필요해요.', 403);
+    if (!(await isAdminVerified(env, sessionToken))) {
+      return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
+    }
+    interface BulkRoleBody { userIds?: unknown; is_admin?: unknown }
+    let body: BulkRoleBody;
+    try {
+      body = (await request.json()) as BulkRoleBody;
+    } catch {
+      return err('잘못된 요청입니다.');
+    }
+    const nextIsAdmin = body.is_admin === true ? 1 : body.is_admin === false ? 0 : null;
+    if (nextIsAdmin === null) return err('is_admin (boolean) 이 필요해요.');
+    const rawIds = Array.isArray(body.userIds) ? body.userIds : [];
+    const requested = [
+      ...new Set(
+        rawIds
+          .map((x) => (typeof x === 'number' ? x : Number(x)))
+          .filter((n) => Number.isInteger(n) && n > 0),
+      ),
+    ].slice(0, 500);
+    if (requested.length === 0) return err('userIds 가 비어있어요.');
+
+    // 자기 자신·master·demo 제외 (access/bulk 와 일관성. demo 가 어드민으로 승격되는 케이스 차단).
+    const ph = requested.map(() => '?').join(',');
+    const { results: targets } = await env.DB.prepare(
+      `SELECT id, is_master, is_demo FROM users WHERE id IN (${ph})`,
+    )
+      .bind(...requested)
+      .all<{ id: number; is_master: number; is_demo: number }>();
+    const eligibleIds = targets
+      .filter((t) => t.id !== user.id && !t.is_master && !t.is_demo)
+      .map((t) => t.id);
+    const skipped = requested.length - eligibleIds.length;
+    if (eligibleIds.length === 0) return ok({ updated: 0, skipped });
+
+    const ph2 = eligibleIds.map(() => '?').join(',');
+    await env.DB.prepare(
+      `UPDATE users SET is_admin = ? WHERE id IN (${ph2})`,
+    )
+      .bind(nextIsAdmin, ...eligibleIds)
+      .run();
+    await audit(
+      env,
+      user.id,
+      'users.role.bulk',
+      { ids: eligibleIds, is_admin: !!nextIsAdmin, count: eligibleIds.length },
+      request,
+    );
+    return ok({ updated: eligibleIds.length, skipped });
+  }
+
   // POST /api/admin/users/access - admin + master 둘 다, 다른 user 의 access_until 연장.
   // 사장님 결정 2026-05-16: 가입 시 30일 기본, 연장은 admin/master 가능.
   // body: { userId, days?: number, until?: number, infinite?: boolean }

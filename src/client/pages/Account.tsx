@@ -230,7 +230,7 @@ export default function Account() {
       )}
 
       <p className="text-sub text-sm mt-4 text-center">
-        AI 분석, 다크모드, 직원 추가 등은 다음 단계에서 추가될 예정입니다.
+        다크모드, 직원 추가 등은 다음 단계에서 추가될 예정입니다.
       </p>
     </div>
   );

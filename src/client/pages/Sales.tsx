@@ -128,11 +128,13 @@ export default function Sales() {
   const menuCacheKey = `menus:${userId}`;
   const TTL_MENUS = 5 * 60 * 1000;
 
+  // user 로드 전 userId=0 캐시 hit 회피 (다른 user 의 stale 데이터 노출 방지 +
+  // 신규 가입자 첫 진입 시 1프레임 빈 grid 깜빡임 차단).
   const [menus, setMenus] = useState<Menu[]>(
-    () => getCache<Menu[]>(menuCacheKey) ?? [],
+    () => (userId ? getCache<Menu[]>(menuCacheKey) ?? [] : []),
   );
   const [menusLoaded, setMenusLoaded] = useState<boolean>(
-    () => (getCache<Menu[]>(menuCacheKey)?.length ?? 0) > 0,
+    () => userId ? (getCache<Menu[]>(menuCacheKey)?.length ?? 0) > 0 : false,
   );
   const [loadError, setLoadError] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);

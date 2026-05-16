@@ -849,36 +849,24 @@ export default function BI() {
         )}
       </div>
 
-      {/* AI 인사이트 - 항상 지난 달 전체 분석. range selector와 무관, 한 번 생성 후 D1 영구 저장. */}
-      <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03]">
-        <div className="flex items-baseline gap-1.5 mb-3">
-          <span className="text-base leading-none shrink-0">💡</span>
-          <h3 className="font-semibold text-accent break-keep">
-            {aiWindow.cardTitle}
-          </h3>
-          <span className="text-sub text-xs num shrink-0">· {aiPeriodDays}일치</span>
-        </div>
-        {(() => {
-          const periodKey = `${aiWindow.fromMs}:${aiWindow.toMs}`;
-          const data = aiByPeriod[periodKey];
-          if (data === undefined || data === null) {
-            return (
-              <div className="space-y-2 anim-fade">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-5/6" />
-                <Skeleton className="h-4 w-4/5" />
-              </div>
-            );
-          }
-          if (data.length === 0) {
-            return (
-              <p className="text-sub text-sm py-2 break-keep">
-                이 기간엔 데이터가 아직 적어요. 더 쌓이면 더 정확한 분석을 드릴 수 있어요.
-              </p>
-            );
-          }
-          return (
-            <ul className="space-y-2 text-sm leading-relaxed anim-fade">
+      {/* AI 인사이트 - 항상 지난 달 전체 분석. range selector와 무관, 한 번 생성 후 D1 영구 저장.
+          데이터 도착 + 비어있지 않을 때만 카드 마운트. loading skeleton 표시 안 함 (phantom 깜빡임 차단).
+          데이터 0건 (신규 사장님) → 영영 안 보임. D1 hit 빠르게 끝나니 데이터 있는 사장님은
+          마운트 후 ~200-500ms 내 카드 anim-fade 로 자연스럽게 등장. */}
+      {(() => {
+        const periodKey = `${aiWindow.fromMs}:${aiWindow.toMs}`;
+        const data = aiByPeriod[periodKey];
+        if (!data || data.length === 0) return null;
+        return (
+          <div className="card p-4 mb-4 border-accent/25 bg-accent/[0.03] anim-fade">
+            <div className="flex items-baseline gap-1.5 mb-3">
+              <span className="text-base leading-none shrink-0">💡</span>
+              <h3 className="font-semibold text-accent break-keep">
+                {aiWindow.cardTitle}
+              </h3>
+              <span className="text-sub text-xs num shrink-0">· {aiPeriodDays}일치</span>
+            </div>
+            <ul className="space-y-2 text-sm leading-relaxed">
               {data.map((t, i) => (
                 <li key={i} className="flex gap-2">
                   <span className="text-accent/50 shrink-0 select-none">•</span>
@@ -886,9 +874,9 @@ export default function BI() {
                 </li>
               ))}
             </ul>
-          );
-        })()}
-      </div>
+          </div>
+        );
+      })()}
 
       {loading || !stats ? (
         <>

@@ -8,22 +8,39 @@ const safeJson = async <T>(req: Request): Promise<T | null> => {
   }
 };
 
+// codepoint 길이 (이모지 surrogate pair·variation selector 보호).
+const cpLength = (s: string): number => [...s].length;
+
+// 빈 입력 → 기본 📦. 비어있지 않은데 cap 초과면 validateMenu 가 명시적 reject (silent downgrade X).
 const cleanEmoji = (e: string | undefined | null): string => {
   if (!e) return '📦';
-  const t = e.trim();
-  return t || '📦';
+  return e.trim() || '📦';
 };
+
+const MAX_AMOUNT = 1_000_000_000; // 10억 cap (BI/AI overflow 방어)
+const MAX_EMOJI_CP = 4;
 
 const validateMenu = (b: {
   name?: string;
+  category?: string;
   cost?: number;
   price?: number;
+  emoji?: string;
 }): string | null => {
   if (!b.name || !b.name.trim()) return '메뉴 이름을 입력해주세요.';
-  if (b.cost == null || !Number.isInteger(b.cost) || b.cost < 0)
+  if (cpLength(b.name.trim()) > 40) return '메뉴 이름은 40자 이내여야 합니다.';
+  if (b.category != null && cpLength(b.category.trim()) > 20)
+    return '분류는 20자 이내여야 합니다.';
+  if (b.cost == null || !Number.isFinite(b.cost) || b.cost < 0 || !Number.isInteger(b.cost))
     return '원가는 0원 이상의 정수여야 합니다.';
-  if (b.price == null || !Number.isInteger(b.price) || b.price < 0)
+  if (!Number.isSafeInteger(b.cost) || b.cost > MAX_AMOUNT)
+    return `원가는 ${MAX_AMOUNT.toLocaleString('ko-KR')}원 이내여야 합니다.`;
+  if (b.price == null || !Number.isFinite(b.price) || b.price < 0 || !Number.isInteger(b.price))
     return '판매가는 0원 이상의 정수여야 합니다.';
+  if (!Number.isSafeInteger(b.price) || b.price > MAX_AMOUNT)
+    return `판매가는 ${MAX_AMOUNT.toLocaleString('ko-KR')}원 이내여야 합니다.`;
+  if (b.emoji != null && b.emoji.trim() && cpLength(b.emoji.trim()) > MAX_EMOJI_CP)
+    return '이모지는 1개만 사용해주세요.';
   return null;
 };
 

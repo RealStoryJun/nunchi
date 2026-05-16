@@ -245,6 +245,7 @@ export default function Menus() {
             <label className="label">이름</label>
             <input
               required
+              maxLength={40}
               className="field"
               value={form.name}
               onChange={(e) => onNameChange(e.target.value)}
@@ -257,6 +258,7 @@ export default function Menus() {
           <label className="label">분류 (선택)</label>
           <input
             className="field"
+            maxLength={20}
             value={form.category}
             onChange={(e) => setForm({ ...form, category: e.target.value })}
             placeholder="예: 음료 / 의류 / 디저트"
@@ -270,6 +272,8 @@ export default function Menus() {
               required
               type="number"
               inputMode="numeric"
+              min={0}
+              max={1_000_000_000}
               className="field num"
               value={form.cost}
               onChange={(e) => setForm({ ...form, cost: e.target.value })}
@@ -281,6 +285,8 @@ export default function Menus() {
               required
               type="number"
               inputMode="numeric"
+              min={0}
+              max={1_000_000_000}
               className="field num"
               value={form.price}
               onChange={(e) => setForm({ ...form, price: e.target.value })}

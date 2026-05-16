@@ -8,6 +8,7 @@ interface Slide {
   badge: string;
   title: string;
   body: string;
+  footnote?: string; // body 와 토픽 분리된 작은 안내문 (예: 세션 정책)
   preview: () => JSX.Element;
 }
 
@@ -16,7 +17,7 @@ const SLIDES: Slide[] = [
     emoji: '🏷️',
     badge: '1단계',
     title: '먼저, 상품을 등록해요',
-    body: '팔고 있는 메뉴·상품을 등록하면 한 탭으로 판매를 기록할 수 있어요.',
+    body: '팔고 있는 메뉴·상품을 등록하면 빠르게 판매를 기록할 수 있어요.',
     preview: () => (
       <div className="grid grid-cols-3 gap-2 max-w-[260px] mx-auto">
         {[
@@ -40,32 +41,38 @@ const SLIDES: Slide[] = [
     ),
   },
   {
-    emoji: '👆',
+    emoji: '🛒',
     badge: '2단계',
-    title: '손님이 사면, 한 탭',
-    body: '상품을 한 번 누르면 매출에 즉시 반영돼요. 잘못 눌러도 옆에 있는 취소 버튼으로 되돌릴 수 있어요.',
+    title: '카트에 담고, 한 번에 기록',
+    body: '메뉴 타일을 탭해서 카트에 담아요. 잘못 담았으면 수량을 조절해서 빼고, 한 번에 기록하면 끝.',
     preview: () => (
       <div className="card p-3 max-w-[280px] mx-auto">
-        <div className="text-sub text-xs">오늘의 매출</div>
-        <div className="num text-2xl font-bold text-accent leading-tight mt-0.5">
-          14,500원
+        <div className="flex items-baseline justify-between">
+          <span className="text-xs font-medium">담은 목록</span>
+          <span className="num text-xs text-sub">합계 9,500원</span>
         </div>
         <ul className="mt-2 divide-y divide-border/60">
           <li className="flex items-center gap-2 py-1.5 text-xs">
             <span className="w-5 text-center">☕</span>
             <span className="flex-1 truncate">아메리카노</span>
-            <span className="num font-medium">+4,500원</span>
-            <span className="text-warm text-[11px] px-1.5 py-0.5 rounded
-                             bg-warm/10">취소</span>
+            <span className="num text-sub">×1</span>
+            <span className="num font-medium">4,500원</span>
+            <span className="text-sub text-[11px] px-1">−</span>
+            <span className="text-sub text-[11px] px-1">✕</span>
           </li>
           <li className="flex items-center gap-2 py-1.5 text-xs">
             <span className="w-5 text-center">🥛</span>
             <span className="flex-1 truncate">카페라떼</span>
-            <span className="num font-medium">+5,000원</span>
-            <span className="text-warm text-[11px] px-1.5 py-0.5 rounded
-                             bg-warm/10">취소</span>
+            <span className="num text-sub">×1</span>
+            <span className="num font-medium">5,000원</span>
+            <span className="text-sub text-[11px] px-1">−</span>
+            <span className="text-sub text-[11px] px-1">✕</span>
           </li>
         </ul>
+        <button type="button"
+          className="btn-primary w-full mt-3 h-9 text-xs font-semibold pointer-events-none">
+          2건 기록하기
+        </button>
       </div>
     ),
   },
@@ -74,6 +81,7 @@ const SLIDES: Slide[] = [
     badge: '3단계',
     title: '매출·이익 한눈에',
     body: '오늘·이번 주·이번 달 매출과 순이익·마진율, 인기 상품, 분류별 비중을 자동으로 보여드려요.',
+    footnote: '보안상 한 기기에서만 로그인이 유지돼요. 다른 기기로 로그인하면 이전 기기는 자동 로그아웃돼요.',
     preview: () => (
       <div className="grid grid-cols-2 gap-2 max-w-[280px] mx-auto">
         {[
@@ -171,7 +179,7 @@ export default function Tutorial() {
             {slide.title}
           </h1>
           <p
-            className="anim-slide-r text-sub mt-3 leading-relaxed max-w-md"
+            className="anim-slide-r text-sub mt-3 leading-relaxed max-w-md break-keep"
             style={{ animationDelay: '180ms' }}
           >
             {slide.body}
@@ -182,6 +190,14 @@ export default function Tutorial() {
           >
             {slide.preview()}
           </div>
+          {slide.footnote && (
+            <p
+              className="anim-slide-r text-sub/80 text-xs mt-4 max-w-md break-keep leading-relaxed"
+              style={{ animationDelay: '300ms' }}
+            >
+              {slide.footnote}
+            </p>
+          )}
         </div>
       </main>
 

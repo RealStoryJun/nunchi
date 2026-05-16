@@ -95,7 +95,27 @@ export const handleSales = async (
       .bind(body.menuId, user.id)
       .first<MenuRow>();
     if (!menu) return err('메뉴를 찾을 수 없습니다.', 404);
-    const soldAt = body.soldAt ?? Date.now();
+    // soldAt 검증: 숫자만 + safe-integer + 합리적 도메인 범위.
+    // 하한 = 2000-01-01 (그 이전 ms 는 1970-stat 차트 오염 유발).
+    // 상한 = now + 24h (사장님이 오늘 마감 후 다음 날 새벽 입력 정도만 허용).
+    // 외부 API 호출로 임의 값 들어오면 stats/CSV/AI 인사이트 전부 오염 → 베타 전 차단.
+    const MIN_SOLD_AT = 946684800000; // 2000-01-01 UTC
+    const MAX_SOLD_AT = Date.now() + 24 * 60 * 60 * 1000;
+    const soldAtRaw = body.soldAt;
+    let soldAt: number;
+    if (soldAtRaw === undefined || soldAtRaw === null) {
+      soldAt = Date.now();
+    } else if (
+      typeof soldAtRaw === 'number' &&
+      Number.isFinite(soldAtRaw) &&
+      Number.isSafeInteger(soldAtRaw) &&
+      soldAtRaw >= MIN_SOLD_AT &&
+      soldAtRaw <= MAX_SOLD_AT
+    ) {
+      soldAt = soldAtRaw;
+    } else {
+      return err('soldAt 값이 잘못됐어요.');
+    }
     const r = await env.DB.prepare(
       `INSERT INTO sales (user_id, menu_id, quantity, cost_at_sale, price_at_sale, sold_at)
        VALUES (?, ?, ?, ?, ?, ?)`,

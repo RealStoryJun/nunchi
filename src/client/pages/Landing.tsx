@@ -8,14 +8,9 @@ export default function Landing() {
   if (user) return <Navigate to="/sales" replace />;
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="px-6 py-5 flex items-center justify-between max-w-5xl mx-auto w-full">
+      <header className="px-6 py-5 max-w-5xl mx-auto w-full">
+        {/* 상단 우측 '로그인' 제거 (2026-05-16) - 가운데 hero에 큰 로그인 버튼 있어 중복 */}
         <Logo />
-        <Link
-          to="/login"
-          className="text-sub hover:text-ink text-sm px-3 py-2.5 rounded-md"
-        >
-          로그인
-        </Link>
       </header>
       <main className="flex-1 flex items-center">
         <div className="max-w-5xl mx-auto w-full px-6 py-12 grid md:grid-cols-2 gap-12 items-center">
@@ -58,8 +53,8 @@ export default function Landing() {
                 <div className="flex items-center gap-3">
                   <span className="text-2xl" aria-hidden>⚡</span>
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-ink">5월 새로워진 점</div>
-                    <div className="text-sm text-sub mt-0.5">봇 차단 · 2FA · 암호화</div>
+                    <div className="font-semibold text-ink">업데이트 내역</div>
+                    <div className="text-sm text-sub mt-0.5">눈치가 어떻게 좋아졌는지</div>
                   </div>
                 </div>
               </Link>

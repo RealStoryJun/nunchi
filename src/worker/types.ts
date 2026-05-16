@@ -22,6 +22,7 @@ export interface SessionUser {
   business_name: string;
   business_type: string | null;
   is_admin: boolean;
+  is_master: boolean; // 2026-05-16 신설. admin 부여·계정 삭제 권한 (사장님 god8night@naver.com 만)
 }
 
 export interface UserRow {
@@ -34,6 +35,7 @@ export interface UserRow {
   recovery_answer_hash: string;
   created_at: number;
   is_admin: number;
+  is_master: number;
 }
 
 // keep in sync with src/client/lib/businessTypes.ts

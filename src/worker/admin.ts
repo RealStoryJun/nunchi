@@ -116,23 +116,29 @@ export async function handleAdmin(
     const q = (url.searchParams.get('q') ?? '').trim();
     const like = `%${q.replace(/[%_\\]/g, (m) => '\\' + m)}%`;
     const { results } = await env.DB.prepare(
-      `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, u.is_demo,
+      `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, u.is_master, u.is_demo,
               u.totp_enabled_at, u.created_at,
               (SELECT COUNT(*) FROM sales WHERE user_id = u.id) AS sales_count,
-              (SELECT COUNT(*) FROM menus WHERE user_id = u.id AND archived = 0) AS menu_count
+              (SELECT COUNT(*) FROM menus WHERE user_id = u.id AND archived = 0) AS menu_count,
+              (SELECT MAX(at) FROM user_login_events WHERE user_id = u.id) AS last_login_at,
+              (SELECT MAX(t) FROM (
+                SELECT MAX(sold_at) AS t FROM sales WHERE user_id = u.id
+                UNION ALL SELECT MAX(created_at) FROM customer_needs WHERE user_id = u.id
+                UNION ALL SELECT MAX(at) FROM user_login_events WHERE user_id = u.id
+              )) AS last_activity_at
        FROM users u
        WHERE ? = '' OR u.email LIKE ? ESCAPE '\\' OR u.business_name LIKE ? ESCAPE '\\'
        ORDER BY u.created_at DESC
        LIMIT 500`,
     )
       .bind(q, like, like)
-      .all<AdminUserRow>();
+      .all<AdminUserRow & { is_master: number; last_login_at: number | null; last_activity_at: number | null }>();
     const total = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
-    // 검색은 view-only - audit log 노이즈 회피 (mutation만 기록)
     return ok({
       users: results.map((r) => ({
         ...r,
         is_admin: !!r.is_admin,
+        is_master: !!r.is_master,
         is_demo: !!r.is_demo,
         mfa_enabled: !!r.totp_enabled_at,
       })),
@@ -140,8 +146,39 @@ export async function handleAdmin(
     });
   }
 
-  // POST /api/admin/users/delete - step-up 통과 필수
+  // POST /api/admin/users/role - master 만, 다른 user 의 is_admin 토글 (자기 자신 토글 X)
+  if (rest === '/users/role' && request.method === 'POST') {
+    if (!user.is_master) return err('마스터 권한이 필요해요.', 403);
+    if (!(await isAdminVerified(env, sessionToken))) {
+      return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
+    }
+    let body: { userId?: unknown; is_admin?: unknown } | null = null;
+    try {
+      body = (await request.json()) as { userId?: unknown; is_admin?: unknown };
+    } catch {
+      return err('잘못된 요청입니다.');
+    }
+    const targetId = typeof body?.userId === 'number' ? body.userId : NaN;
+    const nextIsAdmin = body?.is_admin === true ? 1 : body?.is_admin === false ? 0 : null;
+    if (!Number.isInteger(targetId) || targetId <= 0 || nextIsAdmin === null) {
+      return err('userId 와 is_admin (boolean) 이 필요해요.');
+    }
+    if (targetId === user.id) return err('자기 자신의 권한은 바꿀 수 없어요.');
+    const target = await env.DB.prepare('SELECT is_master FROM users WHERE id = ?')
+      .bind(targetId)
+      .first<{ is_master: number }>();
+    if (!target) return err('사용자를 찾을 수 없어요.', 404);
+    if (target.is_master) return err('마스터 계정의 권한은 바꿀 수 없어요.');
+    await env.DB.prepare('UPDATE users SET is_admin = ? WHERE id = ?')
+      .bind(nextIsAdmin, targetId)
+      .run();
+    await audit(env, user.id, 'users.role', { targetId, is_admin: !!nextIsAdmin }, request);
+    return ok({ userId: targetId, is_admin: !!nextIsAdmin });
+  }
+
+  // POST /api/admin/users/delete - master 만 + step-up 통과 필수 (2026-05-16 사장님 결정)
   if (rest === '/users/delete' && request.method === 'POST') {
+    if (!user.is_master) return err('마스터 권한이 필요해요.', 403);
     if (!(await isAdminVerified(env, sessionToken))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
@@ -159,9 +196,21 @@ export async function handleAdmin(
           .filter((n) => Number.isInteger(n) && n > 0),
       ),
     ].slice(0, 500);
-    const ids = requested.filter((n) => n !== user.id);
-    const skippedSelf = ids.length !== requested.length;
-    if (ids.length === 0) return ok({ deleted: 0, skippedSelf });
+    const beforeSelf = requested.filter((n) => n !== user.id);
+    const skippedSelf = beforeSelf.length !== requested.length;
+    if (beforeSelf.length === 0) return ok({ deleted: 0, skippedSelf, skippedMasters: 0 });
+
+    // 다른 마스터 계정도 삭제 대상에서 제외 (master 1명 invariant 방어, defense-in-depth)
+    const ph0 = beforeSelf.map(() => '?').join(',');
+    const { results: masterRows } = await env.DB.prepare(
+      `SELECT id FROM users WHERE id IN (${ph0}) AND is_master = 1`,
+    )
+      .bind(...beforeSelf)
+      .all<{ id: number }>();
+    const masterIds = new Set(masterRows.map((r) => r.id));
+    const ids = beforeSelf.filter((n) => !masterIds.has(n));
+    const skippedMasters = beforeSelf.length - ids.length;
+    if (ids.length === 0) return ok({ deleted: 0, skippedSelf, skippedMasters });
 
     const ph = ids.map(() => '?').join(',');
     await env.DB.batch([
@@ -172,8 +221,8 @@ export async function handleAdmin(
       env.DB.prepare(`DELETE FROM sessions WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM users WHERE id IN (${ph})`).bind(...ids),
     ]);
-    await audit(env, user.id, 'users.delete', { ids, count: ids.length }, request);
-    return ok({ deleted: ids.length, skippedSelf });
+    await audit(env, user.id, 'users.delete', { ids, count: ids.length, skippedMasters }, request);
+    return ok({ deleted: ids.length, skippedSelf, skippedMasters });
   }
 
   // GET /api/admin/stats - 시스템 통계 (데모 계정 제외)

@@ -15,7 +15,8 @@ export default function Login() {
   const [code, setCode] = useState('');
 
   if (loading) return null;
-  if (user) return <Navigate to="/sales" replace />;
+  // admin/master 는 /admin 으로 자동 진입 (사장님 결정 2026-05-16). 일반 user 는 /sales.
+  if (user) return <Navigate to={user.is_admin || user.is_master ? '/admin' : '/sales'} replace />;
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -26,7 +27,7 @@ export default function Login() {
       if (r.kind === 'mfa') {
         setMfaToken(r.mfa_token);
       } else {
-        navigate('/sales');
+        navigate(r.user.is_admin || r.user.is_master ? '/admin' : '/sales');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '로그인에 실패했습니다.');
@@ -41,8 +42,8 @@ export default function Login() {
     setError(null);
     setPending(true);
     try {
-      await loginMfa(mfaToken, code);
-      navigate('/sales');
+      const u = await loginMfa(mfaToken, code);
+      navigate(u.is_admin || u.is_master ? '/admin' : '/sales');
     } catch (err) {
       setError(err instanceof Error ? err.message : '인증에 실패했습니다.');
       // 토큰 만료 메시지면 1단계로 복귀

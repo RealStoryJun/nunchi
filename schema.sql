@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
   recovery_answer_hash TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   is_admin INTEGER NOT NULL DEFAULT 0,
+  -- 마스터 권한 (사장님 본인만). admin 부여·계정 삭제 가능. 2026-05-16 신설.
+  is_master INTEGER NOT NULL DEFAULT 0,
   -- 2FA (TOTP) — opt-in. totp_secret NULL이면 비활성. backup_codes는 PBKDF2 hash JSON 배열.
   totp_secret TEXT,
   totp_backup_codes_hash TEXT,

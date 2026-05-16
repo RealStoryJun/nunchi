@@ -208,6 +208,7 @@ export const handleAuth = async (
           business_name: businessName,
           business_type: null,
           is_admin: false,
+          is_master: false,
           mfa_enabled: false,
         },
       },
@@ -234,7 +235,7 @@ export const handleAuth = async (
     if (!ipRl.ok) return tooMany(ipRl.retryAfterMs);
 
     const user = await env.DB.prepare(
-      'SELECT id, email, password_hash, business_name, business_type, is_admin, totp_secret, totp_enabled_at FROM users WHERE email = ?',
+      'SELECT id, email, password_hash, business_name, business_type, is_admin, is_master, totp_secret, totp_enabled_at FROM users WHERE email = ?',
     )
       .bind(email)
       .first<
@@ -246,6 +247,7 @@ export const handleAuth = async (
           | 'business_name'
           | 'business_type'
           | 'is_admin'
+          | 'is_master'
         > & { totp_secret: string | null; totp_enabled_at: number | null }
       >();
     // 사용자 존재 여부와 무관하게 PBKDF2 한 번 돌려서 timing 균형
@@ -292,6 +294,7 @@ export const handleAuth = async (
           business_name: user.business_name,
           business_type: user.business_type,
           is_admin: !!user.is_admin,
+          is_master: !!user.is_master,
           mfa_enabled: false,
         },
       },
@@ -322,7 +325,7 @@ export const handleAuth = async (
     if (!userRl.ok) return tooMany(userRl.retryAfterMs);
 
     const u = await env.DB.prepare(
-      'SELECT id, email, business_name, business_type, is_admin, totp_secret, totp_backup_codes_hash FROM users WHERE id = ?',
+      'SELECT id, email, business_name, business_type, is_admin, is_master, totp_secret, totp_backup_codes_hash FROM users WHERE id = ?',
     )
       .bind(pending.user_id)
       .first<{
@@ -331,6 +334,7 @@ export const handleAuth = async (
         business_name: string;
         business_type: string | null;
         is_admin: number;
+        is_master: number;
         totp_secret: string | null;
         totp_backup_codes_hash: string | null;
       }>();
@@ -413,6 +417,7 @@ export const handleAuth = async (
           business_name: u.business_name,
           business_type: u.business_type,
           is_admin: !!u.is_admin,
+          is_master: !!u.is_master,
           mfa_enabled: true,
         },
       },

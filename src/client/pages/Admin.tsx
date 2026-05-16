@@ -12,11 +12,14 @@ interface AdminUser {
   business_name: string;
   business_type: string | null;
   is_admin: boolean;
+  is_master: boolean;
   is_demo: boolean;
   mfa_enabled: boolean;
   created_at: number;
   sales_count: number;
   menu_count: number;
+  last_login_at: number | null;     // user_login_events 최신 timestamp
+  last_activity_at: number | null;  // sales·needs·login 중 최신
 }
 interface AdminStats {
   total_users: number;
@@ -75,7 +78,7 @@ export default function Admin() {
           </button>
         ))}
       </div>
-      {tab === 'users' && <UsersTab meId={user.id} />}
+      {tab === 'users' && <UsersTab meId={user.id} isMaster={!!user.is_master} />}
       {tab === 'stats' && <StatsTab />}
       {tab === 'audit' && <AuditTab />}
       {tab === 'push' && <PushTab />}
@@ -180,7 +183,7 @@ function AuditTab() {
 }
 
 // ─── 사용자 탭 (기존 + step-up 모달) ───────────────────────────────────
-function UsersTab({ meId }: { meId: number }) {
+function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
   const [q, setQ] = useState('');
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [total, setTotal] = useState<number | null>(null);
@@ -230,7 +233,51 @@ function UsersTab({ meId }: { meId: number }) {
   const requestBulkDelete = () => {
     if (selected.size === 0) return;
     if (!confirm(`선택한 ${selected.size}개 계정을 삭제할까요?\n해당 계정의 메뉴·판매 기록도 함께 삭제되며, 되돌릴 수 없습니다.`)) return;
+    setPendingAction({ kind: 'delete' });
     setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
+  };
+
+  // 마스터만: 다른 user 의 admin 권한 토글 (master·자기 자신은 토글 X).
+  // delete 와 동일하게 step-up 모달 거침 (10분 TTL 통과 시 즉시, 아니면 비밀번호 재입력).
+  const [roleBusy, setRoleBusy] = useState<number | null>(null);
+  // 모달이 어느 작업을 수행할지 보관 (delete vs role)
+  const [pendingAction, setPendingAction] = useState<
+    { kind: 'delete' } | { kind: 'role'; user: AdminUser; next: boolean } | null
+  >(null);
+
+  const requestRoleToggle = (u: AdminUser) => {
+    if (!isMaster || u.id === meId || u.is_master) return;
+    const next = !u.is_admin;
+    if (!confirm(`${u.business_name} (${u.email}) 을 어드민으로 ${next ? '지정' : '해제'}할까요?`)) return;
+    setPendingAction({ kind: 'role', user: u, next });
+    setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
+  };
+
+  const doStepUpThenRole = async () => {
+    if (!pendingAction || pendingAction.kind !== 'role') return;
+    setStepUpBusy(true); setStepUpErr(null);
+    try {
+      await apiPost('/api/admin/step-up', { password: stepUpPw });
+    } catch (e) {
+      setStepUpErr(e instanceof Error ? e.message : '인증 실패');
+      setStepUpBusy(false);
+      return;
+    }
+    setRoleBusy(pendingAction.user.id);
+    try {
+      await apiPost('/api/admin/users/role', {
+        userId: pendingAction.user.id,
+        is_admin: pendingAction.next,
+      });
+      setStepUpOpen(false);
+      setPendingAction(null);
+      await refetch();
+    } catch (e) {
+      setStepUpErr(e instanceof Error ? e.message : '권한 변경 실패');
+    } finally {
+      setRoleBusy(null);
+      setStepUpBusy(false);
+    }
   };
 
   const doStepUpThenDelete = async () => {
@@ -245,13 +292,18 @@ function UsersTab({ meId }: { meId: number }) {
     setBusy(true);
     try {
       const ids = [...selected];
-      const d = await apiPost<{ deleted: number; skippedSelf: boolean }>(
+      const d = await apiPost<{ deleted: number; skippedSelf: boolean; skippedMasters?: number }>(
         '/api/admin/users/delete', { ids },
       );
       setSelected(new Set());
       setStepUpOpen(false);
+      setPendingAction(null);
       await refetch();
-      if (d.skippedSelf) alert('본인 계정은 삭제할 수 없어 제외했습니다.');
+      const notes: string[] = [];
+      if (d.skippedSelf) notes.push('본인 계정은 제외했어요');
+      if (d.skippedMasters && d.skippedMasters > 0)
+        notes.push(`마스터 계정 ${d.skippedMasters}개는 제외했어요`);
+      if (notes.length > 0) alert(notes.join('. '));
     } catch (e) {
       setError(e instanceof Error ? e.message : '삭제 실패');
     } finally {
@@ -280,11 +332,15 @@ function UsersTab({ meId }: { meId: number }) {
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setSelected(new Set())}
               className="text-sm text-sub px-3 h-9 rounded-lg hover:bg-black/5">선택 해제</button>
-            <button type="button" onClick={requestBulkDelete} disabled={busy}
-              className="btn-warm px-4 h-9 text-sm inline-flex items-center gap-1.5 disabled:opacity-50">
-              <NavIcon name="trash" size={15} />
-              {busy ? '삭제 중…' : '선택 삭제'}
-            </button>
+            {isMaster ? (
+              <button type="button" onClick={requestBulkDelete} disabled={busy}
+                className="btn-warm px-4 h-9 text-sm inline-flex items-center gap-1.5 disabled:opacity-50">
+                <NavIcon name="trash" size={15} />
+                {busy ? '삭제 중…' : '선택 삭제'}
+              </button>
+            ) : (
+              <span className="text-sub text-xs">삭제는 마스터만</span>
+            )}
           </div>
         </div>
       )}
@@ -299,34 +355,59 @@ function UsersTab({ meId }: { meId: number }) {
             <input type="checkbox" checked={allSelected} onChange={toggleAll}
               className="w-4 h-4 accent-accent shrink-0" aria-label="전체 선택" />
             <span className="flex-1">계정 ({users.length})</span>
-            <span className="hidden sm:block w-28 text-right">가입일</span>
+            <span className="hidden md:block w-24 text-right">최근 활동</span>
+            <span className="hidden sm:block w-24 text-right">가입일</span>
             <span className="w-14 text-right">판매</span>
           </div>
           {users.map((u) => {
             const self = u.id === meId;
             return (
-              <label key={u.id}
-                className={`px-4 py-3 flex items-center gap-3 ${self ? 'opacity-70' : 'cursor-pointer hover:bg-black/[0.02]'}`}>
+              <div key={u.id}
+                className={`px-4 py-3 flex items-center gap-3 ${self ? 'opacity-70' : 'hover:bg-black/[0.02]'}`}>
                 <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleOne(u.id)}
-                  disabled={self} className="w-4 h-4 accent-accent shrink-0 disabled:opacity-40"
+                  disabled={self || !isMaster} className="w-4 h-4 accent-accent shrink-0 disabled:opacity-40"
                   aria-label={`${u.business_name} 선택`} />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                  {/* flex-wrap 제거 - business_name truncate 가 실제로 발동되도록.
+                      배지는 shrink-0 로 한 줄 유지, 이름이 길면 ellipsis. 사장님 chip wrap 룰 자동 🔴 회피. */}
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span className="font-medium truncate">{u.business_name}</span>
-                    {u.is_admin && <span className="text-[11px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">ADMIN</span>}
+                    {u.is_master && <span className="text-[11px] font-bold text-warm bg-warm/10 px-1.5 py-0.5 rounded shrink-0">MASTER</span>}
+                    {u.is_admin && !u.is_master && <span className="text-[11px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">ADMIN</span>}
                     {u.is_demo && <span className="text-[11px] font-bold text-sub bg-border/40 px-1.5 py-0.5 rounded shrink-0">DEMO</span>}
                     {u.mfa_enabled && <span className="text-[11px] shrink-0" title="2단계 인증">🔒</span>}
-                    {self && <span className="text-[11px] text-sub shrink-0">(나)</span>}
+                    {self && !u.is_master && <span className="text-[11px] text-sub shrink-0">(나)</span>}
                   </div>
                   <div className="text-sub text-xs num truncate">{u.email}</div>
                   <div className="text-sub text-[11px] mt-0.5">
                     {businessTypeLabel(u.business_type)} · 메뉴 {u.menu_count}개
                     <span className="sm:hidden"> · 가입 {fmtDate(u.created_at)}</span>
+                    {u.last_login_at && (
+                      <span className="md:hidden"> · 마지막 로그인 {fmtDateTime(u.last_login_at)}</span>
+                    )}
                   </div>
                 </div>
-                <span className="hidden sm:block w-28 text-right text-xs text-sub num">{fmtDate(u.created_at)}</span>
+                <span className="hidden md:block w-24 text-right text-[11px] text-sub num">
+                  {u.last_activity_at ? fmtDateTime(u.last_activity_at) : '-'}
+                </span>
+                <span className="hidden sm:block w-24 text-right text-xs text-sub num">{fmtDate(u.created_at)}</span>
                 <span className="w-14 text-right num text-sm">{u.sales_count}</span>
-              </label>
+                {isMaster && !self && !u.is_master && (
+                  <button
+                    type="button"
+                    onClick={() => requestRoleToggle(u)}
+                    disabled={roleBusy === u.id}
+                    className={`text-xs px-2.5 h-9 md:h-7 rounded border shrink-0 disabled:opacity-50 ${
+                      u.is_admin
+                        ? 'text-sub border-border hover:border-warm hover:text-warm'
+                        : 'text-accent border-accent/40 hover:bg-accent/10'
+                    }`}
+                    title={u.is_admin ? '어드민 해제' : '어드민 지정'}
+                  >
+                    {roleBusy === u.id ? '…' : u.is_admin ? '해제' : '어드민'}
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -335,7 +416,7 @@ function UsersTab({ meId }: { meId: number }) {
       {stepUpOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 anim-fade"
-          onClick={(e) => { if (e.target === e.currentTarget) setStepUpOpen(false); }}
+          onClick={(e) => { if (e.target === e.currentTarget) { setStepUpOpen(false); setPendingAction(null); } }}
         >
           <div className="card max-w-sm md:max-w-md w-full p-5 anim-pop">
             <h2 className="font-semibold mb-2">관리자 인증</h2>
@@ -346,16 +427,24 @@ function UsersTab({ meId }: { meId: number }) {
               type="password" autoFocus className="field" value={stepUpPw}
               onChange={(e) => setStepUpPw(e.target.value)} placeholder="비밀번호"
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && stepUpPw && !stepUpBusy) doStepUpThenDelete();
-                else if (e.key === 'Escape') setStepUpOpen(false);
+                if (e.key === 'Enter' && stepUpPw && !stepUpBusy) {
+                  if (pendingAction?.kind === 'role') doStepUpThenRole();
+                  else doStepUpThenDelete();
+                } else if (e.key === 'Escape') { setStepUpOpen(false); setPendingAction(null); }
               }}
             />
             {stepUpErr && <p className="text-warm text-sm mt-2 break-keep">{stepUpErr}</p>}
             <div className="flex gap-2 mt-4">
-              <button onClick={() => setStepUpOpen(false)} className="btn-outline flex-1">취소</button>
-              <button onClick={doStepUpThenDelete} disabled={stepUpBusy || !stepUpPw} className="btn-warm flex-1">
-                {stepUpBusy ? '확인 중…' : '인증 후 삭제'}
-              </button>
+              <button onClick={() => { setStepUpOpen(false); setPendingAction(null); }} className="btn-outline flex-1">취소</button>
+              {pendingAction?.kind === 'role' ? (
+                <button onClick={doStepUpThenRole} disabled={stepUpBusy || !stepUpPw} className="btn-primary flex-1">
+                  {stepUpBusy ? '확인 중…' : '인증 후 권한 변경'}
+                </button>
+              ) : (
+                <button onClick={doStepUpThenDelete} disabled={stepUpBusy || !stepUpPw} className="btn-warm flex-1">
+                  {stepUpBusy ? '확인 중…' : '인증 후 삭제'}
+                </button>
+              )}
             </div>
           </div>
         </div>

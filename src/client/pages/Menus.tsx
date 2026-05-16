@@ -170,10 +170,14 @@ export default function Menus() {
 
   const archive = async (id: number) => {
     if (!confirm('이 메뉴를 보관(숨김)할까요? 과거 매출 기록은 유지됩니다.')) return;
-    await apiDelete(`/api/menus/${id}`);
-    invalidate(cacheKey);
-    await load({ force: true });
-    if (editing?.id === id) closeForm();
+    try {
+      await apiDelete(`/api/menus/${id}`);
+      invalidate(cacheKey);
+      await load({ force: true });
+      if (editing?.id === id) closeForm();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '보관에 실패했어요.');
+    }
   };
 
   const move = async (id: number, dir: 'up' | 'down') => {
@@ -184,6 +188,8 @@ export default function Menus() {
       await apiPost(`/api/menus/${id}/${dir}`);
       invalidate(cacheKey);
       await load({ force: true });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '순서 변경에 실패했어요.');
     } finally {
       reorderingRef.current = false;
       setReordering(false);

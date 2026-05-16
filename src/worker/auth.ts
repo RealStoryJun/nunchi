@@ -189,11 +189,14 @@ export const handleAuth = async (
     const passwordHash = await hashPassword(body.password);
     const answerHash = await hashPassword(normalizeAnswer(recoveryAnswer));
     const now = Date.now();
+    // 신규 가입자에게 기본 30일 access_until 부여 (2026-05-16 사장님 결정).
+    // 만료 시 mutation API 차단(read-only). admin/master 가 연장.
+    const accessUntil = now + 30 * 24 * 60 * 60 * 1000;
     const result = await env.DB.prepare(
-      `INSERT INTO users (email, password_hash, business_name, recovery_question, recovery_answer_hash, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (email, password_hash, business_name, recovery_question, recovery_answer_hash, created_at, access_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind(email, passwordHash, businessName, recoveryQuestion, answerHash, now)
+      .bind(email, passwordHash, businessName, recoveryQuestion, answerHash, now, accessUntil)
       .run();
     const userId = Number(result.meta.last_row_id);
     const { token, expiresAt } = await createSession(env, userId);
@@ -209,6 +212,7 @@ export const handleAuth = async (
           business_type: null,
           is_admin: false,
           is_master: false,
+          access_until: accessUntil,
           mfa_enabled: false,
         },
       },
@@ -235,7 +239,7 @@ export const handleAuth = async (
     if (!ipRl.ok) return tooMany(ipRl.retryAfterMs);
 
     const user = await env.DB.prepare(
-      'SELECT id, email, password_hash, business_name, business_type, is_admin, is_master, totp_secret, totp_enabled_at FROM users WHERE email = ?',
+      'SELECT id, email, password_hash, business_name, business_type, is_admin, is_master, access_until, totp_secret, totp_enabled_at FROM users WHERE email = ?',
     )
       .bind(email)
       .first<
@@ -248,6 +252,7 @@ export const handleAuth = async (
           | 'business_type'
           | 'is_admin'
           | 'is_master'
+          | 'access_until'
         > & { totp_secret: string | null; totp_enabled_at: number | null }
       >();
     // 사용자 존재 여부와 무관하게 PBKDF2 한 번 돌려서 timing 균형
@@ -295,6 +300,7 @@ export const handleAuth = async (
           business_type: user.business_type,
           is_admin: !!user.is_admin,
           is_master: !!user.is_master,
+          access_until: user.access_until,
           mfa_enabled: false,
         },
       },
@@ -325,7 +331,7 @@ export const handleAuth = async (
     if (!userRl.ok) return tooMany(userRl.retryAfterMs);
 
     const u = await env.DB.prepare(
-      'SELECT id, email, business_name, business_type, is_admin, is_master, totp_secret, totp_backup_codes_hash FROM users WHERE id = ?',
+      'SELECT id, email, business_name, business_type, is_admin, is_master, access_until, totp_secret, totp_backup_codes_hash FROM users WHERE id = ?',
     )
       .bind(pending.user_id)
       .first<{
@@ -335,6 +341,7 @@ export const handleAuth = async (
         business_type: string | null;
         is_admin: number;
         is_master: number;
+        access_until: number | null;
         totp_secret: string | null;
         totp_backup_codes_hash: string | null;
       }>();
@@ -418,6 +425,7 @@ export const handleAuth = async (
           business_type: u.business_type,
           is_admin: !!u.is_admin,
           is_master: !!u.is_master,
+          access_until: u.access_until,
           mfa_enabled: true,
         },
       },

@@ -117,7 +117,7 @@ export async function handleAdmin(
     const like = `%${q.replace(/[%_\\]/g, (m) => '\\' + m)}%`;
     const { results } = await env.DB.prepare(
       `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, u.is_master, u.is_demo,
-              u.totp_enabled_at, u.created_at,
+              u.totp_enabled_at, u.created_at, u.access_until,
               (SELECT COUNT(*) FROM sales WHERE user_id = u.id) AS sales_count,
               (SELECT COUNT(*) FROM menus WHERE user_id = u.id AND archived = 0) AS menu_count,
               (SELECT MAX(at) FROM user_login_events WHERE user_id = u.id) AS last_login_at,
@@ -132,7 +132,7 @@ export async function handleAdmin(
        LIMIT 500`,
     )
       .bind(q, like, like)
-      .all<AdminUserRow & { is_master: number; last_login_at: number | null; last_activity_at: number | null }>();
+      .all<AdminUserRow & { is_master: number; last_login_at: number | null; last_activity_at: number | null; access_until: number | null }>();
     const total = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
     return ok({
       users: results.map((r) => ({
@@ -144,6 +144,73 @@ export async function handleAdmin(
       })),
       total: total?.n ?? results.length,
     });
+  }
+
+  // POST /api/admin/users/access - admin + master 둘 다, 다른 user 의 access_until 연장.
+  // 사장님 결정 2026-05-16: 가입 시 30일 기본, 연장은 admin/master 가능.
+  // body: { userId, days?: number, until?: number, infinite?: boolean }
+  // - days: +N일 연장 (현재 access_until 또는 now 기준 + N일)
+  // - until: 특정 timestamp (ms epoch) 로 설정
+  // - infinite: true 면 NULL (무제한). admin 은 무제한 권한 부여 X (master 만)
+  if (rest === '/users/access' && request.method === 'POST') {
+    if (!(await isAdminVerified(env, sessionToken))) {
+      return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
+    }
+    interface AccessBody { userId?: unknown; days?: unknown; until?: unknown; infinite?: unknown }
+    let body: AccessBody;
+    try {
+      body = (await request.json()) as AccessBody;
+    } catch {
+      return err('잘못된 요청입니다.');
+    }
+    const targetId = typeof body.userId === 'number' ? body.userId : NaN;
+    if (!Number.isInteger(targetId) || targetId <= 0) return err('userId 가 필요해요.');
+    const target = await env.DB.prepare('SELECT is_master, access_until FROM users WHERE id = ?')
+      .bind(targetId)
+      .first<{ is_master: number; access_until: number | null }>();
+    if (!target) return err('사용자를 찾을 수 없어요.', 404);
+    if (target.is_master) return err('마스터 계정의 사용 기간은 바꿀 수 없어요.');
+
+    const MAX_DAYS = 3650;
+    const MAX_UNTIL_FROM_NOW = MAX_DAYS * 24 * 60 * 60 * 1000;
+    let newAccessUntil: number | null;
+    if (body.infinite === true) {
+      if (!user.is_master) return err('무제한 부여는 마스터만 가능해요.', 403);
+      newAccessUntil = null;
+    } else if (typeof body.until === 'number' && Number.isFinite(body.until) && body.until > 0) {
+      // until 도 cap 필요 - admin 이 until: 1e18 같은 우회로 master-only 무제한을 흉내내지 못하게.
+      // 과거 시점 거부 (ban 용도면 별도 endpoint 만들기. 지금은 연장 전용).
+      const u = Math.floor(body.until);
+      if (u <= Date.now()) return err('until 은 미래 시점이어야 해요.');
+      const cap = Date.now() + MAX_UNTIL_FROM_NOW;
+      if (u > cap) return err(`until 은 최대 ${MAX_DAYS}일 이내만 허용해요. 무제한은 master 만 infinite=true 로.`);
+      newAccessUntil = u;
+    } else if (typeof body.days === 'number' && Number.isFinite(body.days)) {
+      const days = Math.floor(body.days);
+      if (days < 1 || days > MAX_DAYS) return err(`days 는 1-${MAX_DAYS} 사이여야 해요.`);
+      // 현재 만료일이 미래면 거기서 +N일, 아니면 now 부터 +N일
+      const base = target.access_until && target.access_until > Date.now()
+        ? target.access_until
+        : Date.now();
+      newAccessUntil = base + days * 24 * 60 * 60 * 1000;
+      // 누적 연장이 cap 넘으면 cap 으로 (silent)
+      const cap = Date.now() + MAX_UNTIL_FROM_NOW;
+      if (newAccessUntil > cap) newAccessUntil = cap;
+    } else {
+      return err('days 또는 until 또는 infinite=true 중 하나 필요해요.');
+    }
+
+    await env.DB.prepare('UPDATE users SET access_until = ? WHERE id = ?')
+      .bind(newAccessUntil, targetId)
+      .run();
+    await audit(
+      env,
+      user.id,
+      'users.access',
+      { targetId, access_until: newAccessUntil, by_role: user.is_master ? 'master' : 'admin' },
+      request,
+    );
+    return ok({ userId: targetId, access_until: newAccessUntil });
   }
 
   // POST /api/admin/users/role - master 만, 다른 user 의 is_admin 토글 (자기 자신 토글 X)

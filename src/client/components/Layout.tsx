@@ -62,16 +62,44 @@ export default function Layout({ children }: { children: ReactNode }) {
           </button>
         </div>
       </aside>
-      {/* 모바일 헤더 */}
-      <header className="md:hidden sticky top-0 z-20 bg-card/90 backdrop-blur border-b border-border px-4 h-14 flex items-center justify-between">
-        <Logo size={26} />
-        {user && (
-          <span className="text-sm font-semibold truncate max-w-[55%]">
-            {user.business_name}
-          </span>
-        )}
-      </header>
-      <main className="flex-1 pb-24 md:pb-10 md:px-8 md:py-6">{children}</main>
+      {/* 우측 column (모바일 헤더 + 배너 + 본문). 데스크탑에서 aside 옆 vertical stack. */}
+      <div className="flex-1 min-w-0 md:flex md:flex-col">
+        {/* 모바일 헤더 */}
+        <header className="md:hidden sticky top-0 z-20 bg-card/90 backdrop-blur border-b border-border px-4 h-14 flex items-center justify-between">
+          <Logo size={26} />
+          {user && (
+            <span className="text-sm font-semibold truncate max-w-[55%]">
+              {user.business_name}
+            </span>
+          )}
+        </header>
+        {/* 사용 기간 만료 임박/만료 배너 (2026-05-16). master·access_until null 인 사용자는 비표시.
+            <= 0 으로 boundary 정정 (정확히 0일 시점 = 만료). */}
+        {user && !user.is_master && user.access_until != null && (() => {
+          const now = Date.now();
+          const remainMs = user.access_until - now;
+          const dayMs = 24 * 60 * 60 * 1000;
+          if (remainMs <= 0) {
+            return (
+              <div className="bg-warm/10 border-b border-warm/30 px-6 py-2 text-warm text-sm text-center break-keep">
+                사용 기간이 끝났어요. 입력·수정이 막혀 있어요. 연장은{' '}
+                <a href="mailto:god8night@gmail.com" className="underline font-medium">관리자에게 문의</a>해주세요.
+              </div>
+            );
+          }
+          if (remainMs < 7 * dayMs) {
+            const remainDays = Math.ceil(remainMs / dayMs);
+            return (
+              <div className="bg-warn/10 border-b border-warn/30 px-6 py-2 text-warn text-sm text-center break-keep">
+                사용 기간이 {remainDays}일 남았어요. 끝나면 입력·수정이 막혀요. 연장은{' '}
+                <a href="mailto:god8night@gmail.com" className="underline font-medium">관리자에게 문의</a>해주세요.
+              </div>
+            );
+          }
+          return null;
+        })()}
+        <main className="flex-1 pb-24 md:pb-10 md:px-8 md:py-6">{children}</main>
+      </div>
       <BottomNav />
     </div>
   );

@@ -15,7 +15,10 @@ CREATE TABLE IF NOT EXISTS users (
   totp_backup_codes_hash TEXT,
   totp_enabled_at INTEGER,
   -- 데모/시드 계정 마킹 — 시스템 통계에서 제외 (guest1-5, mobile-qa, onboarding-qa)
-  is_demo INTEGER NOT NULL DEFAULT 0
+  is_demo INTEGER NOT NULL DEFAULT 0,
+  -- 사용 기간 (ms epoch). NULL = 무제한 (master·demo 계정). 일반 user 는 가입 시 +30일 자동.
+  -- 만료 시 read-only 모드 (mutation API 403, 조회는 그대로). admin/master 가 연장.
+  access_until INTEGER
 );
 
 -- 기존 DB 마이그레이션 (apply by hand): 컬럼 없으면 추가

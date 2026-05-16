@@ -9,6 +9,7 @@ export interface User {
   business_type: string | null;
   is_admin?: boolean;
   is_master?: boolean; // 2026-05-16 신설. admin 부여·계정 삭제 권한
+  access_until?: number | null; // 2026-05-16 신설. NULL = 무제한. 만료 시 read-only.
   mfa_enabled?: boolean;
 }
 

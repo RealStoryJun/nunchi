@@ -20,6 +20,7 @@ interface AdminUser {
   menu_count: number;
   last_login_at: number | null;     // user_login_events 최신 timestamp
   last_activity_at: number | null;  // sales·needs·login 중 최신
+  access_until: number | null;      // 사용 기간 만료 (NULL = 무제한, master·demo)
 }
 interface AdminStats {
   total_users: number;
@@ -245,6 +246,22 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
     { kind: 'delete' } | { kind: 'role'; user: AdminUser; next: boolean } | null
   >(null);
 
+  // admin + master 둘 다: 다른 user 의 access_until 연장 (master 는 무제한 부여 가능, admin 은 days 만)
+  const [accessBusy, setAccessBusy] = useState<number | null>(null);
+  const extendAccess = async (u: AdminUser, days: number) => {
+    if (u.is_master) return;
+    if (!confirm(`${u.business_name} 의 사용 기간을 +${days}일 연장할까요?`)) return;
+    setAccessBusy(u.id);
+    try {
+      await apiPost('/api/admin/users/access', { userId: u.id, days });
+      await refetch();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '연장 실패');
+    } finally {
+      setAccessBusy(null);
+    }
+  };
+
   const requestRoleToggle = (u: AdminUser) => {
     if (!isMaster || u.id === meId || u.is_master) return;
     const next = !u.is_admin;
@@ -361,51 +378,85 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
           </div>
           {users.map((u) => {
             const self = u.id === meId;
+            const showActions = !self && !u.is_master;
             return (
               <div key={u.id}
-                className={`px-4 py-3 flex items-center gap-3 ${self ? 'opacity-70' : 'hover:bg-black/[0.02]'}`}>
-                <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleOne(u.id)}
-                  disabled={self || !isMaster} className="w-4 h-4 accent-accent shrink-0 disabled:opacity-40"
-                  aria-label={`${u.business_name} 선택`} />
-                <div className="flex-1 min-w-0">
-                  {/* flex-wrap 제거 - business_name truncate 가 실제로 발동되도록.
-                      배지는 shrink-0 로 한 줄 유지, 이름이 길면 ellipsis. 사장님 chip wrap 룰 자동 🔴 회피. */}
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-medium truncate">{u.business_name}</span>
-                    {u.is_master && <span className="text-[11px] font-bold text-warm bg-warm/10 px-1.5 py-0.5 rounded shrink-0">MASTER</span>}
-                    {u.is_admin && !u.is_master && <span className="text-[11px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">ADMIN</span>}
-                    {u.is_demo && <span className="text-[11px] font-bold text-sub bg-border/40 px-1.5 py-0.5 rounded shrink-0">DEMO</span>}
-                    {u.mfa_enabled && <span className="text-[11px] shrink-0" title="2단계 인증">🔒</span>}
-                    {self && !u.is_master && <span className="text-[11px] text-sub shrink-0">(나)</span>}
+                className={`px-4 py-3 ${self ? 'opacity-70' : 'hover:bg-black/[0.02]'}`}>
+                {/* 정보 row - 모바일·데스크탑 공통, 한 줄 */}
+                <div className="flex items-start gap-3">
+                  <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggleOne(u.id)}
+                    disabled={self || !isMaster}
+                    className="w-4 h-4 mt-1 accent-accent shrink-0 disabled:opacity-40"
+                    aria-label={`${u.business_name} 선택`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-medium truncate">{u.business_name}</span>
+                      {u.is_master && <span className="text-[11px] font-bold text-warm bg-warm/10 px-1.5 py-0.5 rounded shrink-0">MASTER</span>}
+                      {u.is_admin && !u.is_master && <span className="text-[11px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">ADMIN</span>}
+                      {u.is_demo && <span className="text-[11px] font-bold text-sub bg-border/40 px-1.5 py-0.5 rounded shrink-0">DEMO</span>}
+                      {u.mfa_enabled && <span className="text-[11px] shrink-0" title="2단계 인증">🔒</span>}
+                      {self && !u.is_master && <span className="text-[11px] text-sub shrink-0">(나)</span>}
+                    </div>
+                    <div className="text-sub text-xs num truncate">{u.email}</div>
+                    <div className="text-sub text-[11px] mt-0.5">
+                      {businessTypeLabel(u.business_type)} · 메뉴 {u.menu_count}개
+                      <span className="sm:hidden"> · 가입 {fmtDate(u.created_at)}</span>
+                      {u.last_login_at && (
+                        <span className="md:hidden"> · 최근 {fmtDateTime(u.last_login_at)}</span>
+                      )}
+                      {!u.is_master && !u.is_demo && (
+                        <>
+                          {' '}·{' '}
+                          {u.access_until == null ? (
+                            <span className="text-accent">무제한</span>
+                          ) : u.access_until < Date.now() ? (
+                            <span className="text-warm font-medium">만료</span>
+                          ) : (
+                            <span>D-{Math.ceil((u.access_until - Date.now()) / (24 * 60 * 60 * 1000))}</span>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-sub text-xs num truncate">{u.email}</div>
-                  <div className="text-sub text-[11px] mt-0.5">
-                    {businessTypeLabel(u.business_type)} · 메뉴 {u.menu_count}개
-                    <span className="sm:hidden"> · 가입 {fmtDate(u.created_at)}</span>
-                    {u.last_login_at && (
-                      <span className="md:hidden"> · 마지막 로그인 {fmtDateTime(u.last_login_at)}</span>
+                  <span className="hidden md:block w-24 text-right text-[11px] text-sub num shrink-0">
+                    {u.last_activity_at ? fmtDateTime(u.last_activity_at) : '없음'}
+                  </span>
+                  <span className="hidden sm:block w-24 text-right text-xs text-sub num shrink-0">{fmtDate(u.created_at)}</span>
+                  <span className="hidden sm:block w-14 text-right num text-sm shrink-0">{u.sales_count}</span>
+                </div>
+                {/* 액션 row - master·self·자동 비표시 케이스 제외. mobile/desktop 모두 정보 row 아래에 stack
+                    (이전 absolute 트릭 = chip wrap 위험 + 좁은 폭에서 정보 row 7줄 wrap 발생, 사장님 룰 위반).
+                    desktop 에서도 자연스러운 row 2단 (사용자 행위 빈도 낮은 영역이라 OK). */}
+                {showActions && (
+                  <div className="flex items-center gap-2 justify-end mt-2 pl-7">
+                    <span className="sm:hidden text-sub text-xs num mr-auto">판매 {u.sales_count}</span>
+                    {!u.is_demo && (
+                      <button
+                        type="button"
+                        onClick={() => extendAccess(u, 30)}
+                        disabled={accessBusy === u.id}
+                        className="text-xs px-2.5 h-9 md:h-8 rounded border border-accent/40 text-accent hover:bg-accent/10 shrink-0 disabled:opacity-50"
+                        title="사용 기간 +30일 연장"
+                      >
+                        {accessBusy === u.id ? '…' : '+30일'}
+                      </button>
+                    )}
+                    {isMaster && (
+                      <button
+                        type="button"
+                        onClick={() => requestRoleToggle(u)}
+                        disabled={roleBusy === u.id}
+                        className={`text-xs px-2.5 h-9 md:h-8 rounded border shrink-0 disabled:opacity-50 ${
+                          u.is_admin
+                            ? 'text-sub border-border hover:border-warm hover:text-warm'
+                            : 'text-accent border-accent/40 hover:bg-accent/10'
+                        }`}
+                        title={u.is_admin ? '어드민 해제' : '어드민 지정'}
+                      >
+                        {roleBusy === u.id ? '…' : u.is_admin ? '해제' : '어드민'}
+                      </button>
                     )}
                   </div>
-                </div>
-                <span className="hidden md:block w-24 text-right text-[11px] text-sub num">
-                  {u.last_activity_at ? fmtDateTime(u.last_activity_at) : '-'}
-                </span>
-                <span className="hidden sm:block w-24 text-right text-xs text-sub num">{fmtDate(u.created_at)}</span>
-                <span className="w-14 text-right num text-sm">{u.sales_count}</span>
-                {isMaster && !self && !u.is_master && (
-                  <button
-                    type="button"
-                    onClick={() => requestRoleToggle(u)}
-                    disabled={roleBusy === u.id}
-                    className={`text-xs px-2.5 h-9 md:h-7 rounded border shrink-0 disabled:opacity-50 ${
-                      u.is_admin
-                        ? 'text-sub border-border hover:border-warm hover:text-warm'
-                        : 'text-accent border-accent/40 hover:bg-accent/10'
-                    }`}
-                    title={u.is_admin ? '어드민 해제' : '어드민 지정'}
-                  >
-                    {roleBusy === u.id ? '…' : u.is_admin ? '해제' : '어드민'}
-                  </button>
                 )}
               </div>
             );

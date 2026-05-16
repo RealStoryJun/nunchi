@@ -63,6 +63,22 @@ export default {
 
       if (!session) return err('로그인이 필요합니다.', 401);
 
+      // 사용 기간 만료 시 read-only 모드 (2026-05-16 사장님 결정).
+      // master 는 무제한 (access_until = NULL). GET·HEAD 면제, /api/auth/* + /api/admin/* + onboarding(/api/me/*) 면제.
+      // onboarding 면제 이유: 가입 직후 30일 OK 지만 늦게 onboarding 들어와 만료된 사용자는 본인 정보 설정 가능해야.
+      if (
+        !session.user.is_master &&
+        session.user.access_until != null &&
+        session.user.access_until < Date.now() &&
+        request.method !== 'GET' &&
+        request.method !== 'HEAD' &&
+        !path.startsWith('/api/admin/') &&
+        path !== '/api/admin' &&
+        !path.startsWith('/api/me/') // /api/me/business-type, /api/me/business-name 등 본인 설정 mutation
+      ) {
+        return err('사용 기간이 만료됐어요. 관리자에게 문의해주세요.', 403);
+      }
+
       if (path === '/api/admin' || path.startsWith('/api/admin/')) {
         return await handleAdmin(
           request,

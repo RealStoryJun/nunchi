@@ -239,11 +239,22 @@ export default function Sales() {
     } else {
       const okMenus = items.length - failed.length;
       setCart(failed);
-      alert(
-        okMenus > 0
-          ? `${okMenus}개 메뉴는 기록했지만 ${failed.length}개는 실패했어요. 다시 시도해주세요.`
-          : '기록에 실패했어요. 다시 시도해주세요.',
-      );
+      // 만료(403) 등 서버 에러 메시지가 모두 같으면 그 메시지 그대로 표시 - "다시 시도" 권유 X
+      const firstErr = failed[0] && (results[items.indexOf(failed[0])] as PromiseRejectedResult).reason;
+      const errMsg = firstErr instanceof Error ? firstErr.message : '';
+      const allSame =
+        errMsg &&
+        results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+          .every((r) => r.reason instanceof Error && r.reason.message === errMsg);
+      if (allSame && okMenus === 0) {
+        alert(errMsg);
+      } else {
+        alert(
+          okMenus > 0
+            ? `${okMenus}개 메뉴는 기록했지만 ${failed.length}개는 실패했어요. 다시 시도해주세요.`
+            : '기록에 실패했어요. 다시 시도해주세요.',
+        );
+      }
     }
   };
 

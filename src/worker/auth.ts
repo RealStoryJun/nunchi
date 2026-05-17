@@ -1,4 +1,8 @@
 import { Env, ok, err, UserRow, ADMIN_CREATED_SENTINEL } from './types';
+
+// 어드민 생성 sentinel 비교 - case-insensitive (사용자가 본인 question 에 대소문자 변형 입력 시 우회 방어).
+const isAdminCreatedSentinel = (v: string | null | undefined): boolean =>
+  typeof v === 'string' && v.toLowerCase() === ADMIN_CREATED_SENTINEL;
 import {
   hashPassword,
   verifyPassword,
@@ -574,7 +578,7 @@ export const handleAuth = async (
       .first<{ recovery_question: string }>();
     // 어드민 생성 계정(sentinel)은 fake question 으로 위장 - sentinel 평문 노출 + dummy answer 로 인한 account takeover 차단.
     // 사용자는 첫 로그인 후 보안질문을 직접 설정해야 정상 recover 가능 (PR B2).
-    const realQuestion = row?.recovery_question && row.recovery_question !== ADMIN_CREATED_SENTINEL
+    const realQuestion = row?.recovery_question && !isAdminCreatedSentinel(row.recovery_question)
       ? row.recovery_question
       : null;
     const question = realQuestion ?? (await fakeQuestionFor(email));
@@ -613,7 +617,7 @@ export const handleAuth = async (
     const valid = await verifyPassword(normalizeAnswer(body.answer), stored);
     // 어드민 생성 계정(sentinel)은 verify 강제 실패 - dummy answer 평문 노출로 인한 account takeover 차단.
     // 사용자는 첫 로그인 후 본인 보안질문 직접 설정 (PR B2) 해야 비번찾기 가능.
-    const isSentinel = row?.recovery_question === ADMIN_CREATED_SENTINEL;
+    const isSentinel = isAdminCreatedSentinel(row?.recovery_question);
     if (!row || !valid || isSentinel) {
       await Promise.all([
         recordAttempt(env, emailKey),
@@ -641,18 +645,66 @@ export const handleAuth = async (
   if (path === '/me' && request.method === 'GET') {
     const session = await getSessionUser(request, env);
     if (!session) return err('로그인이 필요합니다.', 401);
-    // mfa_enabled 동기 조회 (session.user 캐시는 mfa 미포함)
+    // mfa_enabled + requires_security_setup 동기 조회 (session.user 캐시 미포함).
+    // sentinel 사용자는 첫 로그인 후 보안질문 설정 강제 (PR B2 모달).
     const row = await env.DB.prepare(
-      'SELECT totp_enabled_at FROM users WHERE id = ?',
+      'SELECT totp_enabled_at, recovery_question FROM users WHERE id = ?',
     )
       .bind(session.user.id)
-      .first<{ totp_enabled_at: number | null }>();
+      .first<{ totp_enabled_at: number | null; recovery_question: string }>();
     return ok({
       user: {
         ...session.user,
         mfa_enabled: !!row?.totp_enabled_at,
+        requires_security_setup: isAdminCreatedSentinel(row?.recovery_question),
       },
     });
+  }
+
+  // POST /api/auth/recovery-question - 본인 보안질문 변경.
+  // sentinel 사용자(어드민이 생성, 첫 설정): password 면제 (임시 비번으로 방금 로그인, 새 보안질문 설정만).
+  // 일반 사용자(변경): current password 재확인 필수 + pwd-confirm rate-limit (세션 hijack 시 silent recovery 변경 차단).
+  // 인증 필요. read-only 게이트는 /api/auth/* prefix 면제 (만료 사용자도 설정 가능).
+  if (path === '/recovery-question' && request.method === 'POST') {
+    const session = await getSessionUser(request, env);
+    if (!session) return err('로그인이 필요합니다.', 401);
+    const body = await safeJson<{ question: string; answer: string; password?: string }>(request);
+    if (!body?.question || !body.answer) return err('필수 항목이 누락되었습니다.');
+    const question = body.question.trim();
+    const answer = body.answer.trim();
+    if (question.length < 4) return err('보안질문은 4자 이상 입력해주세요.');
+    if (question.length > 100) return err('보안질문은 100자 이내로 입력해주세요.');
+    if (answer.length < 4) return err('답변은 4자 이상 입력해주세요.');
+    if (isAdminCreatedSentinel(question)) return err('이 질문은 사용할 수 없어요.');
+
+    const currentRow = await env.DB.prepare(
+      'SELECT password_hash, recovery_question FROM users WHERE id = ?',
+    )
+      .bind(session.user.id)
+      .first<{ password_hash: string; recovery_question: string }>();
+    if (!currentRow) return err('사용자를 찾을 수 없어요.', 404);
+
+    const isFirstSetup = isAdminCreatedSentinel(currentRow.recovery_question);
+    if (!isFirstSetup) {
+      // 일반 변경 - password 재확인 강제 (2fa setup·disable 과 동일 패턴)
+      if (!body.password) return err('비밀번호를 입력해주세요.');
+      const rlKey = `pwd-confirm:${session.user.id}`;
+      const rl = await checkRateLimit(env, rlKey, 5, 15 * 60 * 1000);
+      if (!rl.ok) return tooMany(rl.retryAfterMs);
+      if (!(await verifyPassword(body.password, currentRow.password_hash))) {
+        await recordAttempt(env, rlKey);
+        return err('비밀번호가 일치하지 않습니다.', 401);
+      }
+      await resetAttempts(env, rlKey);
+    }
+
+    const answerHash = await hashPassword(normalizeAnswer(answer));
+    await env.DB.prepare(
+      'UPDATE users SET recovery_question = ?, recovery_answer_hash = ? WHERE id = ?',
+    )
+      .bind(question, answerHash, session.user.id)
+      .run();
+    return ok({});
   }
 
   return err('찾을 수 없는 경로입니다.', 404);

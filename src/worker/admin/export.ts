@@ -1,6 +1,7 @@
 import type { Env, SessionUser } from '../types';
-import { err } from '../types';
+import { err, businessCategoryOf, isBusinessType } from '../types';
 import { checkRateLimit, recordAttempt, tooMany } from '../ratelimit';
+import { NEEDS_PRESETS } from '../../client/lib/needsPresets';
 import { audit, isAdminVerified } from './helpers';
 
 // 어드민 CSV 내보내기 (판매·니즈). step-up 통과 필수, 최대 50,000 row cap, UTF-8 BOM,
@@ -151,7 +152,7 @@ export async function handleAdminExport(
       if (toMs != null) { condsN.push('n.created_at <= ?'); argsN.push(toMs); }
       const whereN = condsN.length ? `WHERE ${condsN.join(' AND ')}` : '';
       const { results } = await env.DB.prepare(
-        `SELECT n.id, n.user_id, u.email, u.business_name,
+        `SELECT n.id, n.user_id, u.email, u.business_name, u.business_type,
                 n.gender, n.age_band, n.with_child, n.purpose, n.residence,
                 n.menu_ids, n.created_at
          FROM customer_needs n
@@ -163,19 +164,32 @@ export async function handleAdminExport(
         .bind(...argsN, CAP)
         .all<{
           id: number; user_id: number; email: string; business_name: string;
+          business_type: string | null;
           gender: string | null; age_band: string | null; with_child: number | null;
           purpose: string | null; residence: string | null;
           menu_ids: string | null; created_at: number;
         }>();
-      const headers = ['ID', '사용자 ID', '이메일', '가게 이름', '성별', '연령대', '자녀 동반', '방문 목적', '거주지', '관심 메뉴 ID', '등록 시각(KST)'];
-      const rows = results.map((r) => [
-        r.id, r.user_id, r.email, r.business_name,
-        krGender(r.gender), krAgeBand(r.age_band),
-        r.with_child == null ? '' : r.with_child ? '있음' : '없음',
-        krPurpose(r.purpose), krResidence(r.residence),
-        r.menu_ids ?? '',
-        fmtKstDateTime(r.created_at),
-      ]);
+      // 헤더: 업종 컬럼 추가 (카테고리별 의미 다른 필드 해석 단서).
+      // with_child/purpose/residence 의 정확한 의미는 row 의 카테고리 따라 다름 - 사용자가 업종 컬럼 보고 매핑.
+      const headers = ['ID', '사용자 ID', '이메일', '가게 이름', '업종', '성별', '연령대', '자녀/회원/차종', '목적/사유', '거주/경로', '관심 메뉴 ID', '등록 시각(KST)'];
+      const rows = results.map((r) => {
+        const cat = isBusinessType(r.business_type) ? businessCategoryOf(r.business_type) : 'retail_food';
+        const preset = NEEDS_PRESETS[cat];
+        const lookup = (slot: 'withChild' | 'purpose' | 'residence', v: string | null): string => {
+          if (v == null) return '';
+          const opt = preset[slot].options.find((o) => o.v === v);
+          return opt?.l ?? v;
+        };
+        return [
+          r.id, r.user_id, r.email, r.business_name, r.business_type ?? '',
+          krGender(r.gender), krAgeBand(r.age_band),
+          lookup('withChild', r.with_child == null ? null : r.with_child ? 'yes' : 'no'),
+          lookup('purpose', r.purpose),
+          lookup('residence', r.residence),
+          r.menu_ids ?? '',
+          fmtKstDateTime(r.created_at),
+        ];
+      });
       csv = toCsv(headers, rows);
       rowCount = rows.length;
       filename = `nunchi-needs-${fnameSuffix}.csv`;
@@ -225,15 +239,6 @@ const krGender = (v: string | null): string =>
   v === 'female' ? '여성' : v === 'male' ? '남성' : v ?? '';
 const krAgeBand = (v: string | null): string =>
   v === '10s_20s' ? '10·20대' : v === '30s_40s' ? '30·40대' : v === '50plus' ? '50대 이상' : v ?? '';
-const krPurpose = (v: string | null): string => {
-  if (v === 'meal_replacement') return '식사대용';
-  if (v === 'gift') return '선물용';
-  if (v === 'kids_snack') return '자녀 간식용';
-  return v ?? '';
-};
-const krResidence = (v: string | null): string =>
-  v === 'busan' ? '부산' : v === 'outside' ? '부산 외' : v ?? '';
-
 // CSV 인코딩. 콤마·따옴표·줄바꿈 escape + Excel formula injection 방어.
 // 문자열 값만 `=+-@` 시작 시 single quote prefix (OWASP CSV Injection).
 // 숫자는 prefix 하지 않음 (음수 `-1000` 등 정상 데이터 보존).

@@ -65,7 +65,7 @@ export async function handleAdmin(
     return handleAdminStats(rest, request, env);
   }
   if (rest === '/audit' || rest === '/ai-usage') {
-    return handleAdminLogs(rest, request, env, url, sessionToken);
+    return handleAdminLogs(rest, request, env, url, user, sessionToken);
   }
   if (rest === '/push/send') {
     return handleAdminPush(rest, request, env, user, sessionToken);

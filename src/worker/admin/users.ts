@@ -102,7 +102,7 @@ export async function handleAdminUsers(
     const rlKey = `admin-users-bulk:${user.id}`;
     const rl = await checkRateLimit(env, rlKey, 10, 60_000);
     if (!rl.ok) return tooMany(rl.retryAfterMs);
-    if (!(await isAdminVerified(env, sessionToken))) {
+    if (!(await isAdminVerified(env, sessionToken, user))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
     await recordAttempt(env, rlKey);
@@ -192,7 +192,7 @@ export async function handleAdminUsers(
     const rlKey = `admin-users-bulk:${user.id}`;
     const rl = await checkRateLimit(env, rlKey, 10, 60_000);
     if (!rl.ok) return tooMany(rl.retryAfterMs);
-    if (!(await isAdminVerified(env, sessionToken))) {
+    if (!(await isAdminVerified(env, sessionToken, user))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
     await recordAttempt(env, rlKey);
@@ -255,7 +255,7 @@ export async function handleAdminUsers(
     const rlKey = `admin-users-single:${user.id}`;
     const rl = await checkRateLimit(env, rlKey, 30, 60_000);
     if (!rl.ok) return tooMany(rl.retryAfterMs);
-    if (!(await isAdminVerified(env, sessionToken))) {
+    if (!(await isAdminVerified(env, sessionToken, user))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
     await recordAttempt(env, rlKey);
@@ -326,7 +326,7 @@ export async function handleAdminUsers(
     const rlKey = `admin-users-single:${user.id}`;
     const rl = await checkRateLimit(env, rlKey, 30, 60_000);
     if (!rl.ok) return tooMany(rl.retryAfterMs);
-    if (!(await isAdminVerified(env, sessionToken))) {
+    if (!(await isAdminVerified(env, sessionToken, user))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
     await recordAttempt(env, rlKey);
@@ -363,7 +363,7 @@ export async function handleAdminUsers(
     const rlKey = `admin-users-single:${user.id}`;
     const rl = await checkRateLimit(env, rlKey, 30, 60_000);
     if (!rl.ok) return tooMany(rl.retryAfterMs);
-    if (!(await isAdminVerified(env, sessionToken))) {
+    if (!(await isAdminVerified(env, sessionToken, user))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
     await recordAttempt(env, rlKey);
@@ -421,7 +421,7 @@ export async function handleAdminUsers(
     const rlKey = `admin-users-single:${user.id}`;
     const rl = await checkRateLimit(env, rlKey, 30, 60_000);
     if (!rl.ok) return tooMany(rl.retryAfterMs);
-    if (!(await isAdminVerified(env, sessionToken))) {
+    if (!(await isAdminVerified(env, sessionToken, user))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
     await recordAttempt(env, rlKey);
@@ -469,7 +469,7 @@ export async function handleAdminUsers(
     const rlKey = `admin-users-bulk:${user.id}`;
     const rl = await checkRateLimit(env, rlKey, 10, 60_000);
     if (!rl.ok) return tooMany(rl.retryAfterMs);
-    if (!(await isAdminVerified(env, sessionToken))) {
+    if (!(await isAdminVerified(env, sessionToken, user))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
     await recordAttempt(env, rlKey);

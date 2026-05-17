@@ -1,4 +1,4 @@
-import type { Env } from '../types';
+import type { Env, SessionUser } from '../types';
 import { ok, err } from '../types';
 import { isAdminVerified } from './helpers';
 
@@ -10,6 +10,7 @@ export async function handleAdminLogs(
   request: Request,
   env: Env,
   url: URL,
+  user: SessionUser,
   sessionToken: string,
 ): Promise<Response> {
   // GET /api/admin/audit?kind=audit|login|push&q=&from=&to=&cursor=&limit=
@@ -72,7 +73,7 @@ export async function handleAdminLogs(
 
     if (kind === 'login') {
       // 사용자 IP/UA 노출은 스토킹 단서가 될 수 있어 step-up 요구 (사장님 정책 "보안은 과해야").
-      if (!(await isAdminVerified(env, sessionToken))) {
+      if (!(await isAdminVerified(env, sessionToken, user))) {
         return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
       }
       const conds: string[] = [];

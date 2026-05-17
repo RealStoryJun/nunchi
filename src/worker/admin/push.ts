@@ -23,16 +23,18 @@ export async function handleAdminPush(
     const rl = await checkRateLimit(env, rlKey, 5, 60_000);
     if (!rl.ok) return tooMany(rl.retryAfterMs);
 
-    // step-up 게이트 (mutation)
-    const stepUp = await env.DB.prepare(
-      'SELECT admin_verified_until FROM sessions WHERE token = ?',
-    )
-      .bind(sessionToken)
-      .first<{ admin_verified_until: number }>();
-    if (!stepUp || stepUp.admin_verified_until < Date.now()) {
-      // 실패도 audit 에 남김 (운영자 토큰 탈취 시 추적 가능)
-      await audit(env, user.id, 'push.send', { reason: 'step-up_missing' }, request, false, 'step-up 미통과');
-      return err('관리자 step-up 인증이 필요합니다 (비밀번호 재입력).', 401);
+    // step-up 게이트 (mutation). master 는 면제 (2026-05-17 사장님 결정).
+    if (!user.is_master) {
+      const stepUp = await env.DB.prepare(
+        'SELECT admin_verified_until FROM sessions WHERE token = ?',
+      )
+        .bind(sessionToken)
+        .first<{ admin_verified_until: number }>();
+      if (!stepUp || stepUp.admin_verified_until < Date.now()) {
+        // 실패도 audit 에 남김 (운영자 토큰 탈취 시 추적 가능)
+        await audit(env, user.id, 'push.send', { reason: 'step-up_missing' }, request, false, 'step-up 미통과');
+        return err('관리자 step-up 인증이 필요합니다 (비밀번호 재입력).', 401);
+      }
     }
     // step-up 통과 시점에 rate-limit 카운터 ↑ (성공 발송도 budget 소모)
     await recordAttempt(env, rlKey);

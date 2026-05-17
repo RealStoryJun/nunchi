@@ -24,7 +24,7 @@ export async function handleAdminExport(
     const rlKey = `admin-csv-export:${user.id}`;
     const rl = await checkRateLimit(env, rlKey, 5, 60_000);
     if (!rl.ok) return tooMany(rl.retryAfterMs);
-    if (!(await isAdminVerified(env, sessionToken))) {
+    if (!(await isAdminVerified(env, sessionToken, user))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
     const userIdQ = url.searchParams.get('userId');
@@ -131,13 +131,13 @@ export async function handleAdminExport(
           menu_id: number; menu_name: string | null; menu_emoji: string | null;
           quantity: number; cost_at_sale: number; price_at_sale: number; sold_at: number;
         }>();
-      const headers = ['id', 'user_id', 'email', 'business_name', 'menu_id', 'menu_name', 'emoji', 'quantity', 'cost_at_sale', 'price_at_sale', 'total_cost', 'total_price', 'profit', 'sold_at_iso'];
+      const headers = ['ID', '사용자 ID', '이메일', '가게 이름', '메뉴 ID', '메뉴 이름', '이모지', '수량', '개당 원가(원)', '개당 판매가(원)', '총 원가(원)', '총 매출(원)', '이익(원)', '판매 시각(KST)'];
       const rows = results.map((r) => [
         r.id, r.user_id, r.email, r.business_name, r.menu_id, r.menu_name ?? '', r.menu_emoji ?? '',
         r.quantity, r.cost_at_sale, r.price_at_sale,
         r.quantity * r.cost_at_sale, r.quantity * r.price_at_sale,
         r.quantity * (r.price_at_sale - r.cost_at_sale),
-        new Date(r.sold_at).toISOString(),
+        fmtKstDateTime(r.sold_at),
       ]);
       csv = toCsv(headers, rows);
       rowCount = rows.length;
@@ -167,14 +167,14 @@ export async function handleAdminExport(
           purpose: string | null; residence: string | null;
           menu_ids: string | null; created_at: number;
         }>();
-      const headers = ['id', 'user_id', 'email', 'business_name', 'gender', 'age_band', 'with_child', 'purpose', 'residence', 'menu_ids', 'created_at_iso'];
+      const headers = ['ID', '사용자 ID', '이메일', '가게 이름', '성별', '연령대', '자녀 동반', '방문 목적', '거주지', '관심 메뉴 ID', '등록 시각(KST)'];
       const rows = results.map((r) => [
         r.id, r.user_id, r.email, r.business_name,
-        r.gender ?? '', r.age_band ?? '',
-        r.with_child == null ? '' : r.with_child ? 'yes' : 'no',
-        r.purpose ?? '', r.residence ?? '',
+        krGender(r.gender), krAgeBand(r.age_band),
+        r.with_child == null ? '' : r.with_child ? '있음' : '없음',
+        krPurpose(r.purpose), krResidence(r.residence),
         r.menu_ids ?? '',
-        new Date(r.created_at).toISOString(),
+        fmtKstDateTime(r.created_at),
       ]);
       csv = toCsv(headers, rows);
       rowCount = rows.length;
@@ -207,6 +207,32 @@ export async function handleAdminExport(
 
   return err('찾을 수 없는 경로입니다.', 404);
 }
+
+// KST format - 사장님 친화 (Excel/Google Sheets 에서도 자동 인식).
+function fmtKstDateTime(ms: number): string {
+  const d = new Date(ms + 9 * 3600 * 1000);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const da = String(d.getUTCDate()).padStart(2, '0');
+  const h = String(d.getUTCHours()).padStart(2, '0');
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  return `${y}-${mo}-${da} ${h}:${mi}`;
+}
+
+// needs enum → 한국어 라벨 (음식점 기준, 다른 카테고리 사용자는 raw fallback).
+// 카테고리별 정확한 라벨은 row 별 user.business_type 매핑 필요 (deferred).
+const krGender = (v: string | null): string =>
+  v === 'female' ? '여성' : v === 'male' ? '남성' : v ?? '';
+const krAgeBand = (v: string | null): string =>
+  v === '10s_20s' ? '10·20대' : v === '30s_40s' ? '30·40대' : v === '50plus' ? '50대 이상' : v ?? '';
+const krPurpose = (v: string | null): string => {
+  if (v === 'meal_replacement') return '식사대용';
+  if (v === 'gift') return '선물용';
+  if (v === 'kids_snack') return '자녀 간식용';
+  return v ?? '';
+};
+const krResidence = (v: string | null): string =>
+  v === 'busan' ? '부산' : v === 'outside' ? '부산 외' : v ?? '';
 
 // CSV 인코딩. 콤마·따옴표·줄바꿈 escape + Excel formula injection 방어.
 // 문자열 값만 `=+-@` 시작 시 single quote prefix (OWASP CSV Injection).

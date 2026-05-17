@@ -1,13 +1,17 @@
-import type { Env } from '../types';
+import type { Env, SessionUser } from '../types';
 
 // 어드민 helpers: 모든 sub 핸들러가 공통으로 쓰는 step-up 검증·감사 로그 INSERT.
 // admin.ts (dispatcher) 도 import 하지만 helpers 가 dispatcher 를 import 하지 않음 (circular 회피).
 
-// step-up 통과 여부 확인 - sessions.admin_verified_until > now
+// step-up 통과 여부 확인 - sessions.admin_verified_until > now.
+// master 는 자동 통과 (사장님 결정 2026-05-17: master 1명 운영 환경에서 매번 비번 입력 부담 회피).
+// admin (non-master) 은 그대로 step-up 필수 (보안 layer 유지).
 export async function isAdminVerified(
   env: Env,
   sessionToken: string,
+  user?: SessionUser,
 ): Promise<boolean> {
+  if (user?.is_master) return true;
   const row = await env.DB.prepare(
     'SELECT admin_verified_until FROM sessions WHERE token = ?',
   )

@@ -63,9 +63,9 @@ export default {
 
       if (!session) return err('로그인이 필요합니다.', 401);
 
-      // 사용 기간 만료 시 read-only 모드 (2026-05-16 사장님 결정).
-      // master 는 무제한 (access_until = NULL). GET·HEAD 면제, /api/auth/* + /api/admin/* + onboarding(/api/me/*) 면제.
-      // onboarding 면제 이유: 가입 직후 30일 OK 지만 늦게 onboarding 들어와 만료된 사용자는 본인 정보 설정 가능해야.
+      // 사용 기간 만료 시 read-only 모드. master 는 무제한, GET/HEAD 면제, admin endpoint 면제.
+      // onboarding 면제는 명시 화이트리스트 (prefix 면제하면 향후 신규 endpoint 자동 우회).
+      // push 면제: 만료돼도 디바이스 알림 등록·해제는 정책상 자유.
       if (
         !session.user.is_master &&
         session.user.access_until != null &&
@@ -74,7 +74,9 @@ export default {
         request.method !== 'HEAD' &&
         !path.startsWith('/api/admin/') &&
         path !== '/api/admin' &&
-        !path.startsWith('/api/me/') // /api/me/business-type, /api/me/business-name 등 본인 설정 mutation
+        path !== '/api/me/business-type' &&
+        path !== '/api/me/business-name' &&
+        !path.startsWith('/api/push')
       ) {
         return err('사용 기간이 만료됐어요. 관리자에게 문의해주세요.', 403);
       }

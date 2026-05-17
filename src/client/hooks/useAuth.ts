@@ -50,6 +50,15 @@ export const logout = async () => {
   setState({ user: null, loading: false });
 };
 
+// master 무제한·access_until null 무제한·만료 시 read-only.
+// 백엔드 게이트(worker/index.ts)가 최종 방어선. 이 함수는 UX 사전 차단용.
+export const isUserReadOnly = (user: User | null): boolean => {
+  if (!user) return false;
+  if (user.is_master) return false;
+  if (user.access_until == null) return false;
+  return user.access_until < Date.now();
+};
+
 export function useAuth() {
   const [state, setLocal] = useState<AuthState>(_cache);
   useEffect(() => {
@@ -75,5 +84,12 @@ export function useAuth() {
     setState({ user: data.user, loading: false });
     return data.user;
   }, []);
-  return { ...state, login, loginMfa, logout, refresh: refreshAuth };
+  return {
+    ...state,
+    isReadOnly: isUserReadOnly(state.user),
+    login,
+    loginMfa,
+    logout,
+    refresh: refreshAuth,
+  };
 }

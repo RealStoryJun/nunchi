@@ -26,7 +26,7 @@ const empty = {
 };
 
 export default function Menus() {
-  const { user } = useAuth();
+  const { user, isReadOnly } = useAuth();
   const userId = user?.id ?? 0;
   const cacheKey = `menus:${userId}`;
   const TTL_MENUS = 5 * 60 * 1000;
@@ -203,7 +203,7 @@ export default function Menus() {
           <h1 className="font-display text-2xl md:text-3xl text-ink">메뉴 관리</h1>
           <span className="text-sub text-sm">{menus.length}개 활성</span>
         </div>
-        {!formOpen && menus.length > 0 && (
+        {!formOpen && menus.length > 0 && !isReadOnly && (
           <button
             type="button"
             onClick={openNew}
@@ -312,13 +312,17 @@ export default function Menus() {
       ) : menus.length === 0 && !formOpen ? (
         <div className="card p-10 text-center">
           <p className="text-sub mb-4">아직 메뉴가 없어요.</p>
-          <button
-            type="button"
-            onClick={openNew}
-            className="btn-primary inline-flex px-5"
-          >
-            + 첫 메뉴 추가하기
-          </button>
+          {isReadOnly ? (
+            <p className="text-sub text-sm">사용 기간이 만료돼 새 메뉴를 추가할 수 없어요.</p>
+          ) : (
+            <button
+              type="button"
+              onClick={openNew}
+              className="btn-primary inline-flex px-5"
+            >
+              + 첫 메뉴 추가하기
+            </button>
+          )}
         </div>
       ) : menus.length === 0 ? null : (
         <div className="space-y-6">
@@ -347,34 +351,36 @@ export default function Menus() {
                       <button
                         type="button"
                         onClick={() => move(m.id, 'up')}
-                        disabled={idx === 0 || reordering}
+                        disabled={idx === 0 || reordering || isReadOnly}
                         className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
-                        aria-label="위로"
+                        aria-label={isReadOnly ? '위로 (사용 기간 만료)' : '위로'}
                       >
                         <NavIcon name="chevron-up" size={18} />
                       </button>
                       <button
                         type="button"
                         onClick={() => move(m.id, 'down')}
-                        disabled={idx === items.length - 1 || reordering}
+                        disabled={idx === items.length - 1 || reordering || isReadOnly}
                         className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
-                        aria-label="아래로"
+                        aria-label={isReadOnly ? '아래로 (사용 기간 만료)' : '아래로'}
                       >
                         <NavIcon name="chevron-down" size={18} />
                       </button>
                       <button
                         type="button"
                         onClick={() => startEdit(m)}
-                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub"
-                        aria-label="수정"
+                        disabled={isReadOnly}
+                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
+                        aria-label={isReadOnly ? '수정 (사용 기간 만료)' : '수정'}
                       >
                         <NavIcon name="edit" size={16} />
                       </button>
                       <button
                         type="button"
                         onClick={() => archive(m.id)}
-                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub"
-                        aria-label="보관"
+                        disabled={isReadOnly}
+                        className="w-11 h-11 inline-flex items-center justify-center rounded-lg border border-border text-sub disabled:opacity-30"
+                        aria-label={isReadOnly ? '보관 (사용 기간 만료)' : '보관'}
                       >
                         <NavIcon name="archive" size={16} />
                       </button>

@@ -26,6 +26,7 @@ function CartBody({
   cart,
   totalQty,
   submitting,
+  readOnly,
   onSetQty,
   onRemove,
   onClear,
@@ -34,6 +35,7 @@ function CartBody({
   cart: CartItem[];
   totalQty: number;
   submitting: boolean;
+  readOnly: boolean;
   onSetQty: (menuId: number, qty: number) => void;
   onRemove: (menuId: number) => void;
   onClear: () => void;
@@ -108,11 +110,13 @@ function CartBody({
         <button
           type="button"
           onClick={onSubmit}
-          disabled={cart.length === 0 || submitting}
+          disabled={cart.length === 0 || submitting || readOnly}
           className="btn-primary flex-1 h-10 text-sm disabled:opacity-40"
         >
           {submitting
             ? '기록 중…'
+            : readOnly
+            ? '사용 기간 만료'
             : cart.length === 0
             ? '담긴 항목 없음'
             : `${totalQty}건 기록하기`}
@@ -123,7 +127,7 @@ function CartBody({
 }
 
 export default function Sales() {
-  const { user } = useAuth();
+  const { user, isReadOnly } = useAuth();
   const userId = user?.id ?? 0;
   const menuCacheKey = `menus:${userId}`;
   const TTL_MENUS = 5 * 60 * 1000;
@@ -182,7 +186,7 @@ export default function Sales() {
   const totalQty = useMemo(() => cart.reduce((s, c) => s + c.qty, 0), [cart]);
 
   const addToCart = (m: Menu) => {
-    if (submitting) return;
+    if (submitting || isReadOnly) return;
     const wasEmpty = cart.length === 0;
     setCart((prev) => {
       const i = prev.findIndex((c) => c.menuId === m.id);
@@ -264,6 +268,7 @@ export default function Sales() {
     cart,
     totalQty,
     submitting,
+    readOnly: isReadOnly,
     onSetQty: setQty,
     onRemove: removeItem,
     onClear: clearCart,
@@ -340,7 +345,7 @@ export default function Sales() {
                           name={m.name}
                           price={m.price}
                           onTap={() => addToCart(m)}
-                          disabled={submitting}
+                          disabled={submitting || isReadOnly}
                         />
                       </div>
                     ))}
@@ -405,10 +410,14 @@ export default function Sales() {
               <button
                 type="button"
                 onClick={submit}
-                disabled={submitting}
+                disabled={submitting || isReadOnly}
                 className="btn-primary w-full h-10 text-sm disabled:opacity-40"
               >
-                {submitting ? '기록 중…' : `${totalQty}건 기록하기`}
+                {submitting
+                  ? '기록 중…'
+                  : isReadOnly
+                  ? '사용 기간 만료'
+                  : `${totalQty}건 기록하기`}
               </button>
             </div>
           )}

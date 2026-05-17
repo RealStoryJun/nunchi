@@ -1,9 +1,9 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import Logo from './Logo';
 import BottomNav from './BottomNav';
 import NavIcon, { IconName } from './NavIcon';
-import { useAuth, logout } from '../hooks/useAuth';
+import { useAuth, logout, refreshAuth } from '../hooks/useAuth';
 
 const sideItems: { to: string; label: string; icon: IconName }[] = [
   { to: '/needs', label: '고객 니즈', icon: 'users' },
@@ -20,6 +20,16 @@ export default function Layout({ children }: { children: ReactNode }) {
     await logout();
     navigate('/login');
   };
+  // 만료 시점에 자동 refresh - 카트 담고 자정 넘겼을 때 stale isReadOnly 방지.
+  // 7일 이내일 때만 timer (setTimeout 25일 wrap-around 회피).
+  useEffect(() => {
+    if (!user || user.is_master || user.access_until == null) return;
+    const remainMs = user.access_until - Date.now();
+    if (remainMs <= 0) return;
+    if (remainMs > 7 * 24 * 60 * 60 * 1000) return;
+    const t = window.setTimeout(() => refreshAuth(), remainMs + 1000);
+    return () => window.clearTimeout(t);
+  }, [user?.access_until, user?.is_master]);
   const navItems = user?.is_admin
     ? [...sideItems, { to: '/admin', label: '계정 관리', icon: 'shield' as IconName }]
     : sideItems;

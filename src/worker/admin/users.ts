@@ -353,7 +353,7 @@ export async function handleAdminUsers(
     ].slice(0, 500);
     const beforeSelf = requested.filter((n) => n !== user.id);
     const skippedSelf = beforeSelf.length !== requested.length;
-    if (beforeSelf.length === 0) return ok({ deleted: 0, skippedSelf, skippedMasters: 0 });
+    if (beforeSelf.length === 0) return ok({ deleted: 0, deletedIds: [], skippedSelf, skippedMasters: 0 });
 
     // 다른 마스터 계정도 삭제 대상에서 제외 (master 1명 invariant 방어, defense-in-depth)
     const ph0 = beforeSelf.map(() => '?').join(',');
@@ -365,7 +365,7 @@ export async function handleAdminUsers(
     const masterIds = new Set(masterRows.map((r) => r.id));
     const ids = beforeSelf.filter((n) => !masterIds.has(n));
     const skippedMasters = beforeSelf.length - ids.length;
-    if (ids.length === 0) return ok({ deleted: 0, skippedSelf, skippedMasters });
+    if (ids.length === 0) return ok({ deleted: 0, deletedIds: [], skippedSelf, skippedMasters });
 
     const ph = ids.map(() => '?').join(',');
     await env.DB.batch([
@@ -377,7 +377,7 @@ export async function handleAdminUsers(
       env.DB.prepare(`DELETE FROM users WHERE id IN (${ph})`).bind(...ids),
     ]);
     await audit(env, user.id, 'users.delete', { ids, count: ids.length, skippedMasters }, request);
-    return ok({ deleted: ids.length, skippedSelf, skippedMasters });
+    return ok({ deleted: ids.length, deletedIds: ids, skippedSelf, skippedMasters });
   }
 
   return err('찾을 수 없는 경로입니다.', 404);

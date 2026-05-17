@@ -441,18 +441,6 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
     return next;
   });
 
-  const refetch = async () => {
-    setBusyList(true);
-    try {
-      const d = await apiGet<{ users: AdminUser[]; total: number }>(
-        `/api/admin/users?q=${encodeURIComponent(q)}&_ts=${Date.now()}`,
-      );
-      setUsers(d.users); setTotal(d.total);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '실패');
-    } finally { setBusyList(false); }
-  };
-
   const requestBulkDelete = () => {
     if (selected.size === 0) return;
     if (!confirm(`선택한 ${selected.size}개 계정을 삭제할까요?\n해당 계정의 메뉴·판매 기록도 함께 삭제되며, 되돌릴 수 없습니다.`)) return;
@@ -478,13 +466,17 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
     setBusy(true);
     try {
       const ids = [...selected];
-      const d = await apiPost<{ deleted: number; skippedSelf: boolean; skippedMasters?: number }>(
+      const d = await apiPost<{ deleted: number; deletedIds: number[]; skippedSelf: boolean; skippedMasters?: number }>(
         '/api/admin/users/delete', { ids },
       );
+      // 낙관적 갱신: 서버가 알려준 deletedIds 만 클라 state 에서 제거.
+      // refetch 대신 즉시 반영 → D1 read-after-write 지연 회피 (사장님 보고 14→1→13 stale 버그 fix).
+      const deletedSet = new Set(d.deletedIds);
+      setUsers((prev) => (prev ?? []).filter((u) => !deletedSet.has(u.id)));
+      setTotal((prev) => Math.max(0, (prev ?? 0) - d.deletedIds.length));
       setSelected(new Set());
       setStepUpOpen(false);
       setPendingAction(null);
-      await refetch();
       const notes: string[] = [];
       if (d.skippedSelf) notes.push('본인 계정은 제외했어요');
       if (d.skippedMasters && d.skippedMasters > 0)

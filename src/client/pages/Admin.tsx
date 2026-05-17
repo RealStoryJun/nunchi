@@ -418,6 +418,8 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
   const [stepUpErr, setStepUpErr] = useState<string | null>(null);
   const [stepUpBusy, setStepUpBusy] = useState(false);
   const [csvOpen, setCsvOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -495,8 +497,12 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
         <p className="text-sub text-sm min-w-0 truncate">
           전체 {total ?? '…'}개 계정{q && users ? ` · "${q}" 검색결과 ${users.length}개` : ''}
         </p>
-        <button type="button" onClick={() => setCsvOpen(true)}
-          className="text-xs text-accent hover:underline shrink-0">📥 CSV 내보내기</button>
+        <div className="flex items-center gap-3 shrink-0">
+          <button type="button" onClick={() => setCreateOpen(true)}
+            className="btn-primary px-3 h-8 text-xs">+ 신규 계정</button>
+          <button type="button" onClick={() => setCsvOpen(true)}
+            className="text-xs text-accent hover:underline">📥 CSV 내보내기</button>
+        </div>
       </div>
       <div className="card p-2 mb-3 flex items-center gap-2">
         <span className="text-sub pl-1.5"><NavIcon name="search" size={18} /></span>
@@ -509,6 +515,29 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
         )}
       </div>
       {csvOpen && <AdminCsvExportModal onClose={() => setCsvOpen(false)} />}
+      {createOpen && (
+        <AdminCreateUserModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={(u) => {
+            // 낙관적 갱신 - refetch 안 함 (D1 stale read 회피, PR A 동일 패턴)
+            setUsers((prev) => [
+              {
+                id: u.id, email: u.email, business_name: u.business_name,
+                business_type: null, is_admin: false, is_master: false, is_demo: false,
+                mfa_enabled: false, totp_enabled_at: null, created_at: Date.now(),
+                sales_count: 0, menu_count: 0,
+                access_until: u.access_until ?? null,
+                last_login_at: null, last_activity_at: null,
+              },
+              ...(prev ?? []),
+            ]);
+            setTotal((prev) => (prev ?? 0) + 1);
+          }}
+        />
+      )}
+      {resetTarget && (
+        <AdminPasswordResetModal user={resetTarget} onClose={() => setResetTarget(null)} />
+      )}
       {selected.size > 0 && (
         <div className="card p-3 mb-3 flex items-center justify-between bg-warm/[0.04] border-warm/30 anim-fade">
           <span className="text-sm"><b className="num">{selected.size}</b>개 선택됨</span>
@@ -538,9 +567,10 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
             <input type="checkbox" checked={allSelected} onChange={toggleAll}
               className="w-4 h-4 accent-accent shrink-0" aria-label="전체 선택" />
             <span className="flex-1">계정 ({users.length})</span>
-            <span className="hidden md:block w-24 text-right">최근 활동</span>
-            <span className="hidden sm:block w-24 text-right">가입일</span>
+            <span className="hidden md:block w-20 text-right">최근 활동</span>
+            <span className="hidden sm:block w-20 text-right">가입일</span>
             <span className="w-14 text-right">판매</span>
+            <span className="w-9 shrink-0" aria-hidden />
           </div>
           {users.map((u) => {
             const self = u.id === meId;
@@ -553,12 +583,12 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
                   aria-label={`${u.business_name} 선택`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-medium truncate">{u.business_name}</span>
+                    <span className="font-medium truncate min-w-[60px] sm:min-w-[80px]">{u.business_name}</span>
                     {u.is_master && <span className="text-[11px] font-bold text-warm bg-warm/10 px-1.5 py-0.5 rounded shrink-0">MASTER</span>}
                     {u.is_admin && !u.is_master && <span className="text-[11px] font-bold text-accent bg-accent/10 px-1.5 py-0.5 rounded shrink-0">ADMIN</span>}
                     {u.is_demo && <span className="text-[11px] font-bold text-sub bg-border/40 px-1.5 py-0.5 rounded shrink-0">DEMO</span>}
                     {u.mfa_enabled && <span className="text-[11px] shrink-0" title="2단계 인증">🔒</span>}
-                    {self && !u.is_master && <span className="text-[11px] text-sub shrink-0">(나)</span>}
+                    {self && !u.is_master && <span className="hidden sm:inline-flex text-[11px] text-sub shrink-0">(나)</span>}
                   </div>
                   <div className="text-sub text-xs num truncate">{u.email}</div>
                   <div className="text-sub text-[11px] mt-0.5">
@@ -581,11 +611,19 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
                     )}
                   </div>
                 </div>
-                <span className="hidden md:block w-24 text-right text-[11px] text-sub num shrink-0">
+                <span className="hidden md:block w-20 text-right text-[11px] text-sub num shrink-0">
                   {u.last_activity_at ? fmtDateTime(u.last_activity_at) : '없음'}
                 </span>
-                <span className="hidden sm:block w-24 text-right text-xs text-sub num shrink-0">{fmtDate(u.created_at)}</span>
-                <span className="w-14 text-right num text-sm shrink-0">{u.sales_count}</span>
+                <span className="hidden sm:block w-20 text-right text-xs text-sub num shrink-0">{fmtDate(u.created_at)}</span>
+                <span className="w-14 text-right num text-sm shrink-0 tabular-nums">{u.sales_count}</span>
+                {!self && !u.is_master ? (
+                  <button type="button" onClick={() => setResetTarget(u)}
+                    className="w-9 h-9 inline-flex items-center justify-center rounded text-sub hover:bg-black/5 shrink-0"
+                    title="비밀번호 재설정"
+                    aria-label={`${u.business_name} 비밀번호 재설정`}>🔐</button>
+                ) : (
+                  <span className="w-9 shrink-0" aria-hidden />
+                )}
               </div>
             );
           })}
@@ -1063,5 +1101,198 @@ function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
         </div>
       )}
     </>
+  );
+}
+
+// ─── 임시 비번 표시 카드 (생성·reset 공통) ───────────────────────────────
+function TempPasswordCard({ tempPw, label }: { tempPw: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(tempPw);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard 권한 없으면 select-all 로 폴백
+    }
+  };
+  return (
+    <div className="bg-warn/10 border border-warn/30 rounded-lg p-3 space-y-2">
+      <p className="text-warn text-sm font-medium">⚠️ {label} - 이 화면을 닫으면 다시 볼 수 없어요</p>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 bg-bg p-2 rounded text-center font-mono text-base tracking-wider select-all break-all">
+          {tempPw}
+        </code>
+        <button type="button" onClick={copy}
+          className="btn-outline px-3 h-10 text-sm shrink-0">
+          {copied ? '✓ 복사' : '복사'}
+        </button>
+      </div>
+      <p className="text-warn text-xs">사용자에게 안전한 채널로 전달해주세요. 첫 로그인 후 보안질문 설정을 안내해주세요.</p>
+    </div>
+  );
+}
+
+// ─── 신규 계정 생성 모달 ────────────────────────────────────────────────
+function AdminCreateUserModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (u: { id: number; email: string; business_name: string; access_until: number | null }) => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [days, setDays] = useState<string>('30');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ tempPw: string; email: string; days: number } | null>(null);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    const d = Math.max(1, Math.min(3650, Number(days) || 30));
+    setBusy(true); setError(null);
+    try {
+      const r = await apiPost<{
+        user: { id: number; email: string; business_name: string; access_until: number | null };
+        temp_password: string;
+      }>('/api/admin/users/create', { email: email.trim().toLowerCase(), businessName: businessName.trim(), days: d });
+      onCreated(r.user);
+      setCreated({ tempPw: r.temp_password, email: r.user.email, days: d });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '생성 실패');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 임시 비번 표시 중에는 backdrop 닫기 차단 (실수 닫으면 비번 다시 못 봄)
+  const onBackdrop = () => { if (created) return; onClose(); };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onBackdrop}>
+      <div className="card max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        {created ? (
+          <>
+            <h3 className="font-semibold text-lg">계정이 생성됐어요</h3>
+            <div className="text-sm space-y-1">
+              <p>이메일: <b className="num">{created.email}</b></p>
+              <p>사용 기간: {created.days}일</p>
+            </div>
+            <TempPasswordCard tempPw={created.tempPw} label="임시 비밀번호" />
+            <button type="button" onClick={onClose} className="btn-primary w-full h-10">확인</button>
+          </>
+        ) : (
+          <form onSubmit={submit} className="space-y-4">
+            <h3 className="font-semibold text-lg">신규 사용자 계정 생성</h3>
+            <p className="text-sub text-sm">
+              임시 비밀번호가 자동 생성됩니다. 사용자가 첫 로그인 후 보안질문을 직접 설정해야 비밀번호 찾기를 쓸 수 있어요.
+            </p>
+            <div>
+              <label className="label">이메일</label>
+              <input type="email" required className="field num" value={email}
+                onChange={(e) => setEmail(e.target.value)} disabled={busy}
+                placeholder="user@example.com" />
+            </div>
+            <div>
+              <label className="label">가게 이름</label>
+              <input required maxLength={40} className="field" value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)} disabled={busy}
+                placeholder="예: 든든한식당" />
+            </div>
+            <div>
+              <label className="label">사용 기간 (일, 1-3650)</label>
+              <input type="number" inputMode="numeric" min={1} max={3650} className="field num" value={days}
+                onChange={(e) => setDays(e.target.value)} disabled={busy} />
+            </div>
+            {error && <p className="text-warm text-sm">{error}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} disabled={busy}
+                className="btn-outline flex-1 h-10">취소</button>
+              <button type="submit" disabled={busy || !email.trim() || !businessName.trim()}
+                className="btn-primary flex-1 h-10">
+                {busy ? '생성 중…' : '생성'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── 비번 reset 모달 ────────────────────────────────────────────────────
+function AdminPasswordResetModal({
+  user,
+  onClose,
+}: {
+  user: AdminUser;
+  onClose: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reset, setReset] = useState<{ tempPw: string; email: string; businessName: string } | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const submit = async () => {
+    if (busy) return;
+    setBusy(true); setError(null);
+    try {
+      const r = await apiPost<{ temp_password: string; email: string; business_name: string }>(
+        '/api/admin/users/password/reset', { userId: user.id },
+      );
+      setReset({ tempPw: r.temp_password, email: r.email, businessName: r.business_name });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'reset 실패');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // 임시 비번 표시 중에는 backdrop 닫기 차단 (실수 닫으면 비번 다시 못 봄)
+  const onBackdrop = () => { if (reset) return; onClose(); };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onBackdrop}>
+      <div className="card max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        {reset ? (
+          <>
+            <h3 className="font-semibold text-lg">비밀번호가 재설정됐어요</h3>
+            <div className="text-sm space-y-1">
+              <p>대상: <b>{reset.businessName}</b></p>
+              <p className="text-sub num">{reset.email}</p>
+              <p className="text-sub text-xs mt-2">기존 로그인 세션은 모두 자동 로그아웃됐어요.</p>
+            </div>
+            <TempPasswordCard tempPw={reset.tempPw} label="새 임시 비밀번호" />
+            <button type="button" onClick={onClose} className="btn-primary w-full h-10">확인</button>
+          </>
+        ) : (
+          <>
+            <h3 className="font-semibold text-lg">비밀번호 재설정</h3>
+            <p className="text-sm">
+              <b>{user.business_name}</b> (<span className="num">{user.email}</span>) 의
+              비밀번호를 새 임시 비밀번호로 재설정합니다.
+            </p>
+            <p className="text-sub text-sm break-keep">
+              기존 비밀번호는 무효화되고 모든 디바이스에서 자동 로그아웃됩니다.
+              임시 비밀번호는 1회만 표시되니 즉시 사용자에게 전달해주세요.
+            </p>
+            <label className="flex items-start gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)}
+                className="w-4 h-4 mt-0.5 accent-accent" />
+              <span>위 내용을 확인했고, 진행합니다.</span>
+            </label>
+            {error && <p className="text-warm text-sm">{error}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} disabled={busy}
+                className="btn-outline flex-1 h-10">취소</button>
+              <button type="button" onClick={submit} disabled={busy || !confirmed}
+                className="btn-warm flex-1 h-10">
+                {busy ? '처리 중…' : '비밀번호 재설정'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }

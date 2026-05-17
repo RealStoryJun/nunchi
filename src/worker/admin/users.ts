@@ -1,7 +1,30 @@
 import type { Env, SessionUser } from '../types';
-import { ok, err } from '../types';
+import { ok, err, ADMIN_CREATED_SENTINEL } from '../types';
 import { checkRateLimit, recordAttempt, tooMany } from '../ratelimit';
+import { hashPassword, validateEmail, validatePassword } from '../crypto';
 import { audit, isAdminVerified } from './helpers';
+
+// 임시 비번 자동 생성 (혼동 자 O/0/l/1/I 제외 charset, 12자).
+// validatePassword (alpha+digit 필수) 통과까지 regen - 1회 평균, 10회 fallback 에 '2' 강제 prefix.
+const TEMP_PW_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+function generateTempPassword(): string {
+  for (let i = 0; i < 10; i++) {
+    const bytes = crypto.getRandomValues(new Uint8Array(12));
+    const pw = Array.from(bytes, (b) => TEMP_PW_CHARS[b % TEMP_PW_CHARS.length]).join('');
+    if (validatePassword(pw) === null) return pw;
+  }
+  // fallback (확률 ~0%) - 강제로 alpha+digit 보장
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return 'A2' + Array.from(bytes, (b) => TEMP_PW_CHARS[b % TEMP_PW_CHARS.length]).join('');
+}
+
+// JSON response 에 Cache-Control: no-store 강제 (temp_password 평문 캐싱 방어)
+function okNoStore<T>(data: T): Response {
+  const res = ok(data);
+  const headers = new Headers(res.headers);
+  headers.set('Cache-Control', 'no-store');
+  return new Response(res.body, { status: res.status, headers });
+}
 
 // 어드민 사용자 관리: 검색·권한·사용기간·삭제. 모든 mutation 은 step-up 통과 필수.
 // access/role 의 단건/일괄 분리, master·demo·self 제외 규칙 일관.
@@ -325,6 +348,112 @@ export async function handleAdminUsers(
       .run();
     await audit(env, user.id, 'users.role', { targetId, is_admin: !!nextIsAdmin }, request);
     return ok({ userId: targetId, is_admin: !!nextIsAdmin });
+  }
+
+  // POST /api/admin/users/create - admin/master, 어드민이 임의로 신규 계정 생성 (signup 우회).
+  // 비번 자동 12자, 보안질문 sentinel (PR B2 가 첫 로그인 시 모달로 강제 변경). 임시 비번 응답에 1회만 노출.
+  if (rest === '/users/create' && request.method === 'POST') {
+    const rlKey = `admin-users-single:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 30, 60_000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
+    if (!(await isAdminVerified(env, sessionToken))) {
+      return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
+    }
+    await recordAttempt(env, rlKey);
+
+    interface CreateBody { email?: unknown; businessName?: unknown; days?: unknown }
+    let body: CreateBody;
+    try { body = (await request.json()) as CreateBody; } catch { return err('잘못된 요청입니다.'); }
+
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const businessName = typeof body.businessName === 'string' ? body.businessName.trim() : '';
+    const daysRaw = typeof body.days === 'number' && Number.isFinite(body.days) ? body.days : 30;
+    const days = Math.floor(daysRaw);
+
+    if (!email || !validateEmail(email)) return err('이메일 형식이 올바르지 않습니다.');
+    if (!businessName) return err('가게 이름을 입력해주세요.');
+    if (businessName.length > 40) return err('가게 이름은 40자 이내로 입력해주세요.');
+    if (days < 1 || days > 3650) return err('사용 기간은 1-3650일 사이여야 해요.');
+
+    const existing = await env.DB.prepare('SELECT id FROM users WHERE email = ?')
+      .bind(email).first();
+    if (existing) return err('이미 가입된 이메일입니다.');
+
+    const tempPassword = generateTempPassword();
+    const passwordHash = await hashPassword(tempPassword);
+    // dummy answer hash (사용자가 답 모름, 보안질문도 sentinel)
+    const dummyAnswerHash = await hashPassword('관리자에게_문의');
+    const now = Date.now();
+    const accessUntil = now + days * 24 * 60 * 60 * 1000;
+
+    const result = await env.DB.prepare(
+      `INSERT INTO users (email, password_hash, business_name, recovery_question, recovery_answer_hash, created_at, access_until)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(email, passwordHash, businessName, ADMIN_CREATED_SENTINEL, dummyAnswerHash, now, accessUntil)
+      .run();
+    const newUserId = Number(result.meta.last_row_id);
+
+    await audit(env, user.id, 'users.create', { newUserId, email, businessName, days }, request);
+    return okNoStore({
+      user: {
+        id: newUserId,
+        email,
+        business_name: businessName,
+        access_until: accessUntil,
+        is_admin: false,
+        is_master: false,
+      },
+      temp_password: tempPassword,
+    });
+  }
+
+  // POST /api/admin/users/password/reset - admin/master, 사용자가 비번 잊었을 때 임시 비번 발급.
+  // 기존 세션 전체 invalidate (보안 - 다른 디바이스 자동 로그아웃).
+  if (rest === '/users/password/reset' && request.method === 'POST') {
+    const rlKey = `admin-users-single:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 30, 60_000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
+    if (!(await isAdminVerified(env, sessionToken))) {
+      return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
+    }
+    await recordAttempt(env, rlKey);
+
+    let body: { userId?: unknown } | null = null;
+    try { body = (await request.json()) as { userId?: unknown }; } catch { return err('잘못된 요청입니다.'); }
+
+    const targetId = typeof body?.userId === 'number' ? body.userId : NaN;
+    if (!Number.isInteger(targetId) || targetId <= 0) return err('userId 가 필요해요.');
+    if (targetId === user.id) {
+      await audit(env, user.id, 'users.password.reset', { targetId, reason: 'self' }, request, false, '자기 자신 변경 시도');
+      return err('자기 자신의 비밀번호는 이 화면에서 바꿀 수 없어요.');
+    }
+
+    const target = await env.DB.prepare('SELECT is_master, email, business_name FROM users WHERE id = ?')
+      .bind(targetId).first<{ is_master: number; email: string; business_name: string }>();
+    if (!target) return err('사용자를 찾을 수 없어요.', 404);
+    if (target.is_master) return err('마스터 계정의 비밀번호는 바꿀 수 없어요.');
+
+    // per-target rate-limit (defense-in-depth) - 한 admin 이 같은 user 폭주 reset 차단
+    const targetRlKey = `password-reset-target:${targetId}`;
+    const targetRl = await checkRateLimit(env, targetRlKey, 3, 60 * 60 * 1000);
+    if (!targetRl.ok) return tooMany(targetRl.retryAfterMs);
+
+    const tempPassword = generateTempPassword();
+    const passwordHash = await hashPassword(tempPassword);
+
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(passwordHash, targetId),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(targetId),
+    ]);
+    await recordAttempt(env, targetRlKey);
+
+    await audit(env, user.id, 'users.password.reset', { targetId, email: target.email }, request);
+    return okNoStore({
+      temp_password: tempPassword,
+      email: target.email,
+      business_name: target.business_name,
+    });
   }
 
   // POST /api/admin/users/delete - master 만 + step-up 통과 필수 (2026-05-16 사장님 결정)

@@ -1,3 +1,8 @@
+// 어드민이 임의 생성한 계정의 recovery_question sentinel.
+// auth.ts (recover/start, recover/verify) 가 이 값 보면 fake question + force-fail (account takeover 차단).
+// admin/users.ts (create endpoint) 가 INSERT 시 사용.
+export const ADMIN_CREATED_SENTINEL = '__admin_created__';
+
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;

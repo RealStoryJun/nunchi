@@ -1,4 +1,4 @@
-import { Env, ok, err, UserRow } from './types';
+import { Env, ok, err, UserRow, ADMIN_CREATED_SENTINEL } from './types';
 import {
   hashPassword,
   verifyPassword,
@@ -572,7 +572,12 @@ export const handleAuth = async (
     )
       .bind(email)
       .first<{ recovery_question: string }>();
-    const question = row?.recovery_question ?? (await fakeQuestionFor(email));
+    // 어드민 생성 계정(sentinel)은 fake question 으로 위장 - sentinel 평문 노출 + dummy answer 로 인한 account takeover 차단.
+    // 사용자는 첫 로그인 후 보안질문을 직접 설정해야 정상 recover 가능 (PR B2).
+    const realQuestion = row?.recovery_question && row.recovery_question !== ADMIN_CREATED_SENTINEL
+      ? row.recovery_question
+      : null;
+    const question = realQuestion ?? (await fakeQuestionFor(email));
     return ok({ recoveryQuestion: question });
   }
 
@@ -599,14 +604,17 @@ export const handleAuth = async (
     if (!ipRl.ok) return tooMany(ipRl.retryAfterMs);
 
     const row = await env.DB.prepare(
-      'SELECT id, recovery_answer_hash FROM users WHERE email = ?',
+      'SELECT id, recovery_question, recovery_answer_hash FROM users WHERE email = ?',
     )
       .bind(email)
-      .first<{ id: number; recovery_answer_hash: string }>();
+      .first<{ id: number; recovery_question: string; recovery_answer_hash: string }>();
     // 등록 안 된 이메일도 PBKDF2 한 번 돌려서 timing 균형
     const stored = row?.recovery_answer_hash ?? (await getDummyHash());
     const valid = await verifyPassword(normalizeAnswer(body.answer), stored);
-    if (!row || !valid) {
+    // 어드민 생성 계정(sentinel)은 verify 강제 실패 - dummy answer 평문 노출로 인한 account takeover 차단.
+    // 사용자는 첫 로그인 후 본인 보안질문 직접 설정 (PR B2) 해야 비번찾기 가능.
+    const isSentinel = row?.recovery_question === ADMIN_CREATED_SENTINEL;
+    if (!row || !valid || isSentinel) {
       await Promise.all([
         recordAttempt(env, emailKey),
         recordAttempt(env, ipKey),

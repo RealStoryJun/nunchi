@@ -112,7 +112,7 @@ export async function handleAdminLogs(
       args.push(pat, pat);
     }
     if (fromMs != null) { conds.push('p.created_at >= ?'); args.push(fromMs); }
-    if (toMs != null) { conds.push('p.created_at < ?'); args.push(toMs); }
+    if (toMs != null) { conds.push('p.created_at <= ?'); args.push(toMs); }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const { results } = await env.DB.prepare(
       `SELECT p.id, p.admin_user_id, u.email AS admin_email,

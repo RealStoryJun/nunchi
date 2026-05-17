@@ -39,12 +39,13 @@ export async function handleAdminExport(
     let fromMs: number | null = null;
     let toMs: number | null = null;
     if (ymQ && /^\d{4}-(0[1-9]|1[0-2])$/.test(ymQ)) {
-      // YYYY-MM (KST 기준). KST = UTC+9. 그 달의 KST 1일 0시 ~ 다음 달 1일 0시.
+      // YYYY-MM (KST 기준). 그 달의 KST 1일 0시 ~ 다음 달 1일 0시 직전 (inclusive).
+      // sales.ts/stats.ts 의 sold_at <= ? 와 일관 (UI 는 to = 23:59:59.999 inclusive 로 보냄).
       const [y, m] = ymQ.split('-').map(Number);
-      const startKst = Date.UTC(y, m - 1, 1, -9, 0, 0); // KST 1일 0시 = UTC 전날 15시
+      const startKst = Date.UTC(y, m - 1, 1, -9, 0, 0);
       const endKst = Date.UTC(y, m, 1, -9, 0, 0);
       fromMs = startKst;
-      toMs = endKst;
+      toMs = endKst - 1;
     } else {
       if (fromQ && /^\d+$/.test(fromQ)) {
         const n = Number(fromQ);
@@ -70,7 +71,7 @@ export async function handleAdminExport(
     const fnameSuffix = ymQ
       ? ymQ
       : (fromMs != null && toMs != null)
-        ? `${new Date(fromMs + 9 * 3600 * 1000).toISOString().slice(0, 10)}_${new Date(toMs - 1 + 9 * 3600 * 1000).toISOString().slice(0, 10)}`
+        ? `${new Date(fromMs + 9 * 3600 * 1000).toISOString().slice(0, 10)}_${new Date(toMs + 9 * 3600 * 1000).toISOString().slice(0, 10)}`
         : `all-${todayKst}`;
 
     let csv = '';
@@ -78,7 +79,7 @@ export async function handleAdminExport(
     let rowCount = 0;
     if (rest === '/export/sales') {
       if (fromMs != null) { conds.push('s.sold_at >= ?'); args.push(fromMs); }
-      if (toMs != null) { conds.push('s.sold_at < ?'); args.push(toMs); }
+      if (toMs != null) { conds.push('s.sold_at <= ?'); args.push(toMs); }
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       const { results } = await env.DB.prepare(
         `SELECT s.id, s.user_id, u.email, u.business_name, s.menu_id,
@@ -114,7 +115,7 @@ export async function handleAdminExport(
       const argsN: (string | number)[] = [];
       if (targetUserId) { condsN.push('n.user_id = ?'); argsN.push(targetUserId); }
       if (fromMs != null) { condsN.push('n.created_at >= ?'); argsN.push(fromMs); }
-      if (toMs != null) { condsN.push('n.created_at < ?'); argsN.push(toMs); }
+      if (toMs != null) { condsN.push('n.created_at <= ?'); argsN.push(toMs); }
       const whereN = condsN.length ? `WHERE ${condsN.join(' AND ')}` : '';
       const { results } = await env.DB.prepare(
         `SELECT n.id, n.user_id, u.email, u.business_name,

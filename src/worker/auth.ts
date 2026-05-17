@@ -183,7 +183,11 @@ export const handleAuth = async (
       .bind(email)
       .first();
     if (existing) {
-      return err('이미 가입된 이메일입니다.');
+      // timing oracle 균형: 미등록 분기는 PBKDF2 + INSERT (수백 ms) 라 여기서도 hash 1회 실행.
+      // login/recover/verify (auth.ts:259-261) 와 동일 패턴.
+      await hashPassword(body.password ?? '');
+      // enum 약화: 이미 가입된 이메일임을 단정짓지 않고 안내문으로 우회 경로 시사.
+      return err('이 이메일로는 가입할 수 없어요. 로그인 또는 비밀번호 찾기를 이용해주세요.');
     }
 
     const passwordHash = await hashPassword(body.password);

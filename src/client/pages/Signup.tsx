@@ -211,7 +211,16 @@ export default function Signup() {
             </div>
             {/* Turnstile widget - site key 있을 때만 렌더 */}
             {siteKey && <div ref={turnstileRef} className="flex justify-center" />}
-            {error && <p className="text-warm text-sm">{error}</p>}
+            {error && (
+              <div className="text-warm text-sm space-y-1">
+                <p>{error}</p>
+                {error.includes('비밀번호 찾기') && (
+                  <p>
+                    <Link to="/recover" className="underline font-medium">비밀번호 찾기로 이동</Link>
+                  </p>
+                )}
+              </div>
+            )}
             <button
               type="submit"
               disabled={pending || (!!siteKey && !turnstileToken)}

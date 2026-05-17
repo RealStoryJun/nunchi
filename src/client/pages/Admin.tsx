@@ -648,8 +648,8 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
             <span className="hidden md:block w-20 text-right">최근 활동</span>
             <span className="hidden sm:block w-20 text-right">가입일</span>
             <span className="w-14 text-right">판매</span>
-            <span className="w-9 shrink-0" aria-hidden />
-            <span className="w-9 shrink-0" aria-hidden />
+            <span className="w-[88px] shrink-0" aria-hidden />
+            <span className="w-12 shrink-0" aria-hidden />
           </div>
           {users.map((u) => {
             const self = u.id === meId;
@@ -695,18 +695,18 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
                 </span>
                 <span className="hidden sm:block w-20 text-right text-xs text-sub num shrink-0">{fmtDate(u.created_at)}</span>
                 <span className="w-14 text-right num text-sm shrink-0 tabular-nums">{u.sales_count}</span>
-                {!self && !u.is_master ? (
-                  <button type="button" onClick={() => setResetTarget(u)}
-                    className="w-9 h-9 inline-flex items-center justify-center rounded text-sub hover:bg-black/5 shrink-0"
-                    title="비밀번호 재설정"
-                    aria-label={`${u.business_name} 비밀번호 재설정`}>🔐</button>
-                ) : (
-                  <span className="w-9 shrink-0" aria-hidden />
-                )}
+                <button type="button"
+                  onClick={!self && !u.is_master ? () => setResetTarget(u) : undefined}
+                  disabled={self || u.is_master}
+                  className="btn-outline px-2 h-8 text-xs shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
+                  aria-label={`${u.business_name} 비밀번호 재설정`}>
+                  비번 재설정
+                </button>
                 <button type="button" onClick={() => setCsvTarget(u)}
-                  className="w-9 h-9 inline-flex items-center justify-center rounded text-sub hover:bg-black/5 shrink-0"
-                  title="매출·니즈 CSV 내보내기"
-                  aria-label={`${u.business_name} CSV 내보내기`}>📥</button>
+                  className="btn-outline px-2 h-8 text-xs shrink-0"
+                  aria-label={`${u.business_name} CSV 내보내기`}>
+                  CSV
+                </button>
               </div>
             );
           })}
@@ -1392,12 +1392,14 @@ function AdminUserCsvModal({ user, onClose }: { user: AdminUser; onClose: () => 
     setBusy(true); setError(null);
     try {
       const qs = `userId=${user.id}&period=${period}`;
-      // sales 먼저 → 500ms 후 needs (브라우저 두 번째 다운로드 차단 방어)
-      triggerDownload(`/api/admin/export/sales?${qs}`);
-      await new Promise((r) => window.setTimeout(r, 500));
-      triggerDownload(`/api/admin/export/needs?${qs}`);
-      await new Promise((r) => window.setTimeout(r, 200));
-      alert('매출·니즈 CSV 두 파일이 다운로드됐어요.');
+      // fetch + Blob - 401/403 에러를 명확히 표시 + X-Truncated 헤더 활용 가능
+      const salesInfo = await fetchAndDownload(`/api/admin/export/sales?${qs}`);
+      const needsInfo = await fetchAndDownload(`/api/admin/export/needs?${qs}`);
+      const truncNote = [
+        salesInfo.truncated ? `매출 ${salesInfo.rowCount}건 (5만 제한 도달, 더 좁은 기간으로 다시 받아주세요)` : '',
+        needsInfo.truncated ? `니즈 ${needsInfo.rowCount}건 (5만 제한 도달)` : '',
+      ].filter(Boolean).join('\n');
+      alert(`매출·니즈 CSV 두 파일이 다운로드됐어요.${truncNote ? `\n\n⚠ ${truncNote}` : ''}`);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : '다운로드 실패');
@@ -1449,11 +1451,33 @@ function AdminUserCsvModal({ user, onClose }: { user: AdminUser; onClose: () => 
   );
 }
 
-function triggerDownload(url: string) {
+// fetch → blob → download. 401/403 시 JSON 에러 메시지 throw, X-Truncated/X-Row-Count 헤더 활용.
+async function fetchAndDownload(url: string): Promise<{ truncated: boolean; rowCount: number }> {
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const body = await res.json() as { error?: string };
+      if (body?.error) msg = body.error;
+    } catch { /* JSON 파싱 실패 - status 만 표시 */ }
+    throw new Error(msg);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') ?? '';
+  const m = cd.match(/filename="([^"]+)"/);
+  const filename = m ? m[1] : 'export.csv';
+  const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
+  a.href = objectUrl;
+  a.download = filename;
   a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+  // revoke 는 다음 tick 에 (브라우저가 다운로드 시작할 시간 확보)
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  return {
+    truncated: res.headers.get('X-Truncated') === '1',
+    rowCount: Number(res.headers.get('X-Row-Count') ?? '0'),
+  };
 }

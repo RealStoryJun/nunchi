@@ -51,9 +51,11 @@ export async function handleAdminUsers(
   sessionToken: string,
 ): Promise<Response> {
   // GET /api/admin/users?q=검색어
+  // master 는 모든 계정 조회, admin (non-master) 은 master 계정 제외 (사장님 결정 2026-05-17)
   if (rest === '/users' && request.method === 'GET') {
     const q = (url.searchParams.get('q') ?? '').trim();
     const like = `%${q.replace(/[%_\\]/g, (m) => '\\' + m)}%`;
+    const showMasters = user.is_master ? 1 : 0;
     const { results } = await env.DB.prepare(
       `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, u.is_master, u.is_demo,
               u.totp_enabled_at, u.created_at, u.access_until,
@@ -66,13 +68,18 @@ export async function handleAdminUsers(
                 UNION ALL SELECT MAX(at) FROM user_login_events WHERE user_id = u.id
               )) AS last_activity_at
        FROM users u
-       WHERE ? = '' OR u.email LIKE ? ESCAPE '\\' OR u.business_name LIKE ? ESCAPE '\\'
+       WHERE (? = 1 OR u.is_master = 0)
+         AND (? = '' OR u.email LIKE ? ESCAPE '\\' OR u.business_name LIKE ? ESCAPE '\\')
        ORDER BY u.created_at DESC
        LIMIT 500`,
     )
-      .bind(q, like, like)
+      .bind(showMasters, q, like, like)
       .all<AdminUserRow & { is_master: number; last_login_at: number | null; last_activity_at: number | null; access_until: number | null }>();
-    const total = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first<{ n: number }>();
+    const total = await env.DB.prepare(
+      'SELECT COUNT(*) AS n FROM users WHERE ? = 1 OR is_master = 0',
+    )
+      .bind(showMasters)
+      .first<{ n: number }>();
     return ok({
       users: results.map((r) => ({
         ...r,
@@ -265,9 +272,9 @@ export async function handleAdminUsers(
       await audit(env, user.id, 'users.access', { targetId, reason: 'self' }, request, false, '자기 자신 변경 시도');
       return err('자기 자신의 사용 기간은 바꿀 수 없어요.');
     }
-    const target = await env.DB.prepare('SELECT is_master, access_until FROM users WHERE id = ?')
+    const target = await env.DB.prepare('SELECT is_master, access_until, email, business_name FROM users WHERE id = ?')
       .bind(targetId)
-      .first<{ is_master: number; access_until: number | null }>();
+      .first<{ is_master: number; access_until: number | null; email: string; business_name: string }>();
     if (!target) return err('사용자를 찾을 수 없어요.', 404);
     if (target.is_master) return err('마스터 계정의 사용 기간은 바꿀 수 없어요.');
 
@@ -307,7 +314,7 @@ export async function handleAdminUsers(
       env,
       user.id,
       'users.access',
-      { targetId, access_until: newAccessUntil, by_role: user.is_master ? 'master' : 'admin' },
+      { targetId, email: target.email, businessName: target.business_name, access_until: newAccessUntil, by_role: user.is_master ? 'master' : 'admin' },
       request,
     );
     return ok({ userId: targetId, access_until: newAccessUntil });
@@ -338,15 +345,15 @@ export async function handleAdminUsers(
       await audit(env, user.id, 'users.role', { targetId, reason: 'self' }, request, false, '자기 자신 변경 시도');
       return err('자기 자신의 권한은 바꿀 수 없어요.');
     }
-    const target = await env.DB.prepare('SELECT is_master FROM users WHERE id = ?')
+    const target = await env.DB.prepare('SELECT is_master, email, business_name FROM users WHERE id = ?')
       .bind(targetId)
-      .first<{ is_master: number }>();
+      .first<{ is_master: number; email: string; business_name: string }>();
     if (!target) return err('사용자를 찾을 수 없어요.', 404);
     if (target.is_master) return err('마스터 계정의 권한은 바꿀 수 없어요.');
     await env.DB.prepare('UPDATE users SET is_admin = ? WHERE id = ?')
       .bind(nextIsAdmin, targetId)
       .run();
-    await audit(env, user.id, 'users.role', { targetId, is_admin: !!nextIsAdmin }, request);
+    await audit(env, user.id, 'users.role', { targetId, email: target.email, businessName: target.business_name, is_admin: !!nextIsAdmin }, request);
     return ok({ userId: targetId, is_admin: !!nextIsAdmin });
   }
 
@@ -497,6 +504,14 @@ export async function handleAdminUsers(
     if (ids.length === 0) return ok({ deleted: 0, deletedIds: [], skippedSelf, skippedMasters });
 
     const ph = ids.map(() => '?').join(',');
+    // DELETE 전에 emails snapshot (audit log 에 "누구 삭제" 추적 가능)
+    const { results: deletedRows } = await env.DB.prepare(
+      `SELECT email FROM users WHERE id IN (${ph})`,
+    )
+      .bind(...ids)
+      .all<{ email: string }>();
+    const emails = deletedRows.map((r) => r.email);
+
     await env.DB.batch([
       env.DB.prepare(`DELETE FROM sales WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM customer_needs WHERE user_id IN (${ph})`).bind(...ids),
@@ -505,7 +520,7 @@ export async function handleAdminUsers(
       env.DB.prepare(`DELETE FROM sessions WHERE user_id IN (${ph})`).bind(...ids),
       env.DB.prepare(`DELETE FROM users WHERE id IN (${ph})`).bind(...ids),
     ]);
-    await audit(env, user.id, 'users.delete', { ids, count: ids.length, skippedMasters }, request);
+    await audit(env, user.id, 'users.delete', { ids, emails, count: ids.length, skippedMasters }, request);
     return ok({ deleted: ids.length, deletedIds: ids, skippedSelf, skippedMasters });
   }
 

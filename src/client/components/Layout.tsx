@@ -30,8 +30,11 @@ export default function Layout({ children }: { children: ReactNode }) {
     const t = window.setTimeout(() => refreshAuth(), remainMs + 1000);
     return () => window.clearTimeout(t);
   }, [user?.access_until, user?.is_master]);
-  const navItems = user?.is_admin
-    ? [...sideItems, { to: '/admin', label: '계정 관리', icon: 'shield' as IconName }]
+  // 어드민 모드 - admin/master 시 일반 nav 숨김. URL 직접 입력은 허용 (본인 가게 확인용).
+  // 헤더 가게 이름 자리도 "관리자 모드" 라벨로 교체.
+  const isAdminMode = !!user?.is_admin;
+  const navItems: { to: string; label: string; icon: IconName }[] = isAdminMode
+    ? [{ to: '/admin', label: '관리자', icon: 'shield' }]
     : sideItems;
   return (
     <div className="min-h-screen md:flex">
@@ -39,10 +42,17 @@ export default function Layout({ children }: { children: ReactNode }) {
       <aside className="hidden md:flex md:flex-col md:w-64 md:shrink-0 md:border-r md:border-border md:bg-card md:min-h-screen md:p-6 md:gap-6">
         <Logo />
         {user && (
-          <div className="text-sm">
-            <div className="text-sub">가게 이름</div>
-            <div className="font-semibold truncate">{user.business_name}</div>
-          </div>
+          isAdminMode ? (
+            <span className="inline-flex items-center gap-1 self-start bg-warm/10 text-warm text-xs font-semibold px-2 py-1 rounded-full">
+              <NavIcon name="shield" size={14} />
+              관리자 모드
+            </span>
+          ) : (
+            <div className="text-sm">
+              <div className="text-sub">가게 이름</div>
+              <div className="font-semibold truncate">{user.business_name}</div>
+            </div>
+          )
         )}
         <nav className="flex flex-col gap-1">
           {navItems.map((it) => (
@@ -62,7 +72,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
         </nav>
-        <div className="mt-auto">
+        <div className={isAdminMode ? 'mt-2' : 'mt-auto'}>
           <button
             type="button"
             onClick={onLogout}
@@ -78,9 +88,16 @@ export default function Layout({ children }: { children: ReactNode }) {
         <header className="md:hidden sticky top-0 z-20 bg-card/90 backdrop-blur border-b border-border px-4 h-14 flex items-center justify-between">
           <Logo size={26} />
           {user && (
-            <span className="text-sm font-semibold truncate max-w-[55%]">
-              {user.business_name}
-            </span>
+            isAdminMode ? (
+              <span className="inline-flex items-center gap-1 bg-warm/10 text-warm text-xs font-semibold px-2 py-1 rounded-full shrink-0">
+                <NavIcon name="shield" size={12} />
+                관리자 모드
+              </span>
+            ) : (
+              <span className="text-sm font-semibold truncate max-w-[55%]">
+                {user.business_name}
+              </span>
+            )
           )}
         </header>
         {/* 사용 기간 만료 임박/만료 배너 (2026-05-16). master·access_until null 인 사용자는 비표시.
@@ -108,9 +125,9 @@ export default function Layout({ children }: { children: ReactNode }) {
           }
           return null;
         })()}
-        <main className="flex-1 pb-24 md:pb-10 md:px-8 md:py-6">{children}</main>
+        <main className={`flex-1 ${isAdminMode ? 'pb-10' : 'pb-24'} md:pb-10 md:px-8 md:py-6`}>{children}</main>
       </div>
-      <BottomNav />
+      {!isAdminMode && <BottomNav />}
     </div>
   );
 }

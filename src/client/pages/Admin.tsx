@@ -337,17 +337,87 @@ function LogTab() {
 // 머신 action 토큰 → 한국어 라벨. raw 는 hover/tap 시 title 로 노출 + target_json 에 detail.
 const ACTION_LABELS: Record<string, string> = {
   'step_up': '재인증',
+  'users.create': '계정 생성',
   'users.role': '권한 변경',
   'users.role.bulk': '권한 일괄',
   'users.access': '사용기간',
   'users.access.bulk_extend': '기간 연장',
   'users.access.bulk_revoke': '기간 회수',
   'users.delete': '계정 삭제',
+  'users.password.reset': '비번 재설정',
   'push.send': '푸시 발송',
   'export.sales': '판매 CSV',
   'export.needs': '니즈 CSV',
 };
 const labelFor = (action: string): string => ACTION_LABELS[action] ?? action;
+
+// target_json 의 raw JSON 을 사람 친화 한 줄 요약으로 변환.
+// 사장님 요청: "누구 계정 삭제했는지" 같이 구체적인 정보 표시 (raw 코드 X).
+function formatAuditSummary(action: string, targetJson: string | null): string | null {
+  if (!targetJson) return null;
+  let t: Record<string, unknown>;
+  try { t = JSON.parse(targetJson) as Record<string, unknown>; } catch { return null; }
+  const s = (k: string): string | undefined => (typeof t[k] === 'string' ? t[k] as string : undefined);
+  const n = (k: string): number | undefined => (typeof t[k] === 'number' ? t[k] as number : undefined);
+  const isSelf = t.reason === 'self';
+
+  switch (action) {
+    case 'users.create': {
+      const biz = s('businessName') ?? s('business_name');
+      const email = s('email');
+      const days = n('days');
+      return `${biz ?? '?'} (${email ?? '?'}) 계정 생성${days ? ` · ${days}일` : ''}`;
+    }
+    case 'users.password.reset':
+      if (isSelf) return '자기 자신 변경 시도 (차단)';
+      return `${s('email') ?? `id ${n('targetId')}`} 비밀번호 재설정`;
+    case 'users.access': {
+      if (isSelf) return '자기 자신 변경 시도 (차단)';
+      const who = s('email') ?? s('businessName') ?? `id ${n('targetId')}`;
+      const u = t.access_until;
+      const until = u == null ? '무제한' : new Date(u as number).toISOString().slice(0, 10);
+      return `${who} 사용기간 → ${until}`;
+    }
+    case 'users.access.bulk_extend':
+      return `${n('count') ?? '?'}명 사용기간 +${n('days') ?? '?'}일 연장`;
+    case 'users.access.bulk_revoke':
+      return `${n('count') ?? '?'}명 사용기간 즉시 만료`;
+    case 'users.role': {
+      if (isSelf) return '자기 자신 변경 시도 (차단)';
+      const who = s('email') ?? s('businessName') ?? `id ${n('targetId')}`;
+      return `${who} → ${t.is_admin ? '어드민' : '일반'}`;
+    }
+    case 'users.role.bulk':
+      return `${n('count') ?? '?'}명 → ${t.is_admin ? '어드민' : '일반'}`;
+    case 'users.delete': {
+      const count = n('count');
+      const emails = Array.isArray(t.emails) ? (t.emails as string[]) : null;
+      if (emails && emails.length > 0) {
+        const head = emails.slice(0, 2).join(', ');
+        const more = emails.length > 2 ? ` 외 ${emails.length - 2}명` : '';
+        return `${head}${more} 계정 삭제`;
+      }
+      return `${count ?? '?'}명 계정 삭제`;
+    }
+    case 'push.send': {
+      if (t.reason === 'step-up_missing') return 'step-up 미통과 (차단)';
+      const target = t.target;
+      const tStr = target === 'all' ? '전체' :
+        (target && typeof target === 'object' && 'userId' in target)
+          ? `user ${(target as { userId: number }).userId}` : '?';
+      return `푸시 → ${tStr} · 성공 ${n('sent') ?? 0} / 실패 ${n('failed') ?? 0}`;
+    }
+    case 'export.sales':
+    case 'export.needs': {
+      const period = s('ym') ?? s('period');
+      return `userId ${n('userId') ?? '?'}${period ? ` · ${period}` : ''}`;
+    }
+    case 'step_up':
+      return '재인증 통과';
+    default:
+      return null;
+  }
+}
 
 function LogRow({ kind, row }: { kind: LogKind; row: LogEntry }) {
   if (kind === 'audit') {
@@ -363,7 +433,18 @@ function LogRow({ kind, row }: { kind: LogKind; row: LogEntry }) {
           <span className="text-sub text-xs num shrink-0">{fmtDateTime(r.at)}</span>
         </div>
         <div className="text-sub text-xs num mt-1 truncate">{r.admin_email ?? `id:${r.admin_user_id}`}</div>
-        {r.target_json && <div className="text-sub text-xs num mt-1 break-all">{r.target_json}</div>}
+        {(() => {
+          const summary = formatAuditSummary(r.action, r.target_json);
+          return summary ? (
+            <div className="text-sm mt-1 break-keep">{summary}</div>
+          ) : null;
+        })()}
+        {r.target_json && (
+          <details className="mt-1">
+            <summary className="text-sub text-[11px] cursor-pointer hover:text-ink select-none">자세히</summary>
+            <div className="text-sub text-[11px] num mt-1 break-all bg-bg/40 p-2 rounded">{r.target_json}</div>
+          </details>
+        )}
         {r.error_msg && <div className="text-warm text-xs mt-1 break-keep">⚠ {r.error_msg}</div>}
       </div>
     );

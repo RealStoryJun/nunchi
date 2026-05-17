@@ -27,20 +27,54 @@ export async function handleAdminExport(
     if (!(await isAdminVerified(env, sessionToken))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
-    await recordAttempt(env, rlKey);
     const userIdQ = url.searchParams.get('userId');
+    const periodQ = url.searchParams.get('period');
     const fromQ = url.searchParams.get('from');
     const toQ = url.searchParams.get('to');
     const ymQ = url.searchParams.get('ym');
 
-    // 기간 결정: ym > (from + to) > 무제한
+    // userId 필수화 (per-account CSV 정책, 2026-05-17 사장님 결정).
+    // 전체 사용자 일괄 export 는 의도 X. 어드민이 사용자 row 클릭 시 그 계정 CSV 만.
+    // 검증 실패는 rate-limit budget 안 차감 (input-shape error 라 의도된 시도 아님).
+    const targetUserId = userIdQ && /^\d+$/.test(userIdQ) ? Number(userIdQ) : null;
+    if (!targetUserId) return err('userId 가 필요해요.');
+    await recordAttempt(env, rlKey);
+
+    // 기간 결정: period > ym > (from + to) > 무제한
+    // period: current_month|prev_month|this_year|all (KST 기준)
     // Date max = ±8.64e15 ms. SQLite INTEGER 안에 들어가야 함.
     const MAX_DATE_MS = 8.64e15;
     let fromMs: number | null = null;
     let toMs: number | null = null;
-    if (ymQ && /^\d{4}-(0[1-9]|1[0-2])$/.test(ymQ)) {
-      // YYYY-MM (KST 기준). 그 달의 KST 1일 0시 ~ 다음 달 1일 0시 직전 (inclusive).
-      // sales.ts/stats.ts 의 sold_at <= ? 와 일관 (UI 는 to = 23:59:59.999 inclusive 로 보냄).
+    let periodLabel = '';
+    if (periodQ) {
+      const now = Date.now();
+      const kstNow = new Date(now + 9 * 3600 * 1000);
+      const thisY = kstNow.getUTCFullYear();
+      const thisM = kstNow.getUTCMonth() + 1; // 1-12
+      if (periodQ === 'current_month') {
+        fromMs = Date.UTC(thisY, thisM - 1, 1, -9, 0, 0);
+        toMs = now;
+        periodLabel = `${thisY}${String(thisM).padStart(2, '0')}-current`;
+      } else if (periodQ === 'prev_month') {
+        const prevY = thisM === 1 ? thisY - 1 : thisY;
+        const prevM = thisM === 1 ? 12 : thisM - 1;
+        fromMs = Date.UTC(prevY, prevM - 1, 1, -9, 0, 0);
+        toMs = Date.UTC(thisY, thisM - 1, 1, -9, 0, 0) - 1;
+        periodLabel = `${prevY}${String(prevM).padStart(2, '0')}`;
+      } else if (periodQ === 'this_year') {
+        fromMs = Date.UTC(thisY, 0, 1, -9, 0, 0);
+        toMs = now;
+        periodLabel = `${thisY}-ytd`;
+      } else if (periodQ === 'all') {
+        fromMs = null;
+        toMs = null;
+        periodLabel = 'all';
+      } else {
+        return err('period 값이 잘못됐어요. (current_month/prev_month/this_year/all)');
+      }
+    } else if (ymQ && /^\d{4}-(0[1-9]|1[0-2])$/.test(ymQ)) {
+      // YYYY-MM (KST 기준, backward compat). sales.ts/stats.ts 의 <= 와 일관.
       const [y, m] = ymQ.split('-').map(Number);
       const startKst = Date.UTC(y, m - 1, 1, -9, 0, 0);
       const endKst = Date.UTC(y, m, 1, -9, 0, 0);
@@ -57,18 +91,17 @@ export async function handleAdminExport(
       }
     }
 
-    const targetUserId = userIdQ && /^\d+$/.test(userIdQ) ? Number(userIdQ) : null;
     const conds: string[] = [];
     const args: (string | number)[] = [];
-    if (targetUserId) {
-      conds.push('s.user_id = ?');
-      args.push(targetUserId);
-    }
+    conds.push('s.user_id = ?');
+    args.push(targetUserId);
     const CAP = 50000;
 
-    // 파일명 suffix: ym 있으면 그 값, from/to 있으면 기간, 아니면 '전체-YYYYMMDD'
+    // 파일명 suffix: period > ym > from/to > all
     const todayKst = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10).replace(/-/g, '');
-    const fnameSuffix = ymQ
+    const fnameSuffix = periodLabel
+      ? periodLabel
+      : ymQ
       ? ymQ
       : (fromMs != null && toMs != null)
         ? `${new Date(fromMs + 9 * 3600 * 1000).toISOString().slice(0, 10)}_${new Date(toMs + 9 * 3600 * 1000).toISOString().slice(0, 10)}`
@@ -113,7 +146,7 @@ export async function handleAdminExport(
       // needs - 컬럼이 다르므로 별도 conds 재구성 (sales 의 s.* alias 와 충돌 회피)
       const condsN: string[] = [];
       const argsN: (string | number)[] = [];
-      if (targetUserId) { condsN.push('n.user_id = ?'); argsN.push(targetUserId); }
+      condsN.push('n.user_id = ?'); argsN.push(targetUserId);
       if (fromMs != null) { condsN.push('n.created_at >= ?'); argsN.push(fromMs); }
       if (toMs != null) { condsN.push('n.created_at <= ?'); argsN.push(toMs); }
       const whereN = condsN.length ? `WHERE ${condsN.join(' AND ')}` : '';

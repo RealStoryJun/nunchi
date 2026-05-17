@@ -5,7 +5,6 @@ import { apiGet, apiPost } from '../lib/api';
 import { businessTypeLabel } from '../lib/businessTypes';
 import { Skeleton } from '../components/Skeleton';
 import NavIcon from '../components/NavIcon';
-import AdminCsvExportModal from '../components/AdminCsvExportModal';
 
 interface AdminUser {
   id: number;
@@ -417,9 +416,9 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
   const [stepUpPw, setStepUpPw] = useState('');
   const [stepUpErr, setStepUpErr] = useState<string | null>(null);
   const [stepUpBusy, setStepUpBusy] = useState(false);
-  const [csvOpen, setCsvOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
+  const [csvTarget, setCsvTarget] = useState<AdminUser | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -497,12 +496,8 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
         <p className="text-sub text-sm min-w-0 truncate">
           전체 {total ?? '…'}개 계정{q && users ? ` · "${q}" 검색결과 ${users.length}개` : ''}
         </p>
-        <div className="flex items-center gap-3 shrink-0">
-          <button type="button" onClick={() => setCreateOpen(true)}
-            className="btn-primary px-3 h-8 text-xs">+ 신규 계정</button>
-          <button type="button" onClick={() => setCsvOpen(true)}
-            className="text-xs text-accent hover:underline">📥 CSV 내보내기</button>
-        </div>
+        <button type="button" onClick={() => setCreateOpen(true)}
+          className="btn-primary px-3 h-8 text-xs shrink-0">+ 신규 계정</button>
       </div>
       <div className="card p-2 mb-3 flex items-center gap-2">
         <span className="text-sub pl-1.5"><NavIcon name="search" size={18} /></span>
@@ -514,7 +509,9 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
             className="text-sub text-sm px-2 h-8 rounded hover:bg-black/5">지우기</button>
         )}
       </div>
-      {csvOpen && <AdminCsvExportModal onClose={() => setCsvOpen(false)} />}
+      {csvTarget && (
+        <AdminUserCsvModal user={csvTarget} onClose={() => setCsvTarget(null)} />
+      )}
       {createOpen && (
         <AdminCreateUserModal
           onClose={() => setCreateOpen(false)}
@@ -571,6 +568,7 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
             <span className="hidden sm:block w-20 text-right">가입일</span>
             <span className="w-14 text-right">판매</span>
             <span className="w-9 shrink-0" aria-hidden />
+            <span className="w-9 shrink-0" aria-hidden />
           </div>
           {users.map((u) => {
             const self = u.id === meId;
@@ -624,6 +622,10 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
                 ) : (
                   <span className="w-9 shrink-0" aria-hidden />
                 )}
+                <button type="button" onClick={() => setCsvTarget(u)}
+                  className="w-9 h-9 inline-flex items-center justify-center rounded text-sub hover:bg-black/5 shrink-0"
+                  title="매출·니즈 CSV 내보내기"
+                  aria-label={`${u.business_name} CSV 내보내기`}>📥</button>
               </div>
             );
           })}
@@ -1295,4 +1297,82 @@ function AdminPasswordResetModal({
       </div>
     </div>
   );
+}
+
+// ─── per-account CSV 내보내기 모달 (사용자 row 의 📥 클릭) ──────────────
+// 매출(sales) + 니즈(needs) 두 파일 한 번에 다운로드. 기간 4 옵션.
+function AdminUserCsvModal({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const [period, setPeriod] = useState<'current_month' | 'prev_month' | 'this_year' | 'all'>('current_month');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const download = async () => {
+    if (busy) return;
+    setBusy(true); setError(null);
+    try {
+      const qs = `userId=${user.id}&period=${period}`;
+      // sales 먼저 → 500ms 후 needs (브라우저 두 번째 다운로드 차단 방어)
+      triggerDownload(`/api/admin/export/sales?${qs}`);
+      await new Promise((r) => window.setTimeout(r, 500));
+      triggerDownload(`/api/admin/export/needs?${qs}`);
+      await new Promise((r) => window.setTimeout(r, 200));
+      alert('매출·니즈 CSV 두 파일이 다운로드됐어요.');
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '다운로드 실패');
+      setBusy(false);
+    }
+  };
+
+  const periodOptions: { v: typeof period; label: string }[] = [
+    { v: 'current_month', label: '당월 (이번 달 1일 ~ 오늘)' },
+    { v: 'prev_month', label: '전월 (지난 달 1일 ~ 말일)' },
+    { v: 'this_year', label: '올해 (1월 1일 ~ 오늘)' },
+    { v: 'all', label: '전체 (개시 ~ 오늘)' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={busy ? undefined : onClose}>
+      <div className="card max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-semibold text-lg">매출·니즈 CSV 내보내기</h3>
+        <div className="text-sm space-y-1">
+          <p>대상: <b>{user.business_name}</b></p>
+          <p className="text-sub num">{user.email}</p>
+          <p className="text-sub text-xs">매출(sales) + 니즈(needs) 두 파일이 순서대로 다운로드됩니다.</p>
+        </div>
+        <fieldset className="space-y-2">
+          <legend className="label">기간</legend>
+          {periodOptions.map(({ v, label }) => (
+            <label key={v} className="flex items-center gap-2 cursor-pointer text-sm py-2.5">
+              <input type="radio" name="period" value={v}
+                checked={period === v}
+                onChange={() => setPeriod(v)}
+                disabled={busy}
+                className="w-4 h-4 accent-accent" />
+              <span>{label}</span>
+            </label>
+          ))}
+        </fieldset>
+        {error && <p className="text-warm text-sm">{error}</p>}
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} disabled={busy}
+            className="btn-outline flex-1 h-10">취소</button>
+          <button type="button" onClick={download} disabled={busy}
+            className="btn-primary flex-1 h-10">
+            {busy ? '다운로드 중…' : '다운로드'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function triggerDownload(url: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }

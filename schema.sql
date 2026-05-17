@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 );
 CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
 
--- 어드민이 발송한 알림 이력 — 사장님이 "내가 뭐 보냈더라" 추적용. 90일 보관.
+-- 어드민이 발송한 알림 이력 — 사장님이 "내가 뭐 보냈더라" 추적용. 1년 보관 (cron).
 CREATE TABLE IF NOT EXISTS admin_push_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   admin_user_id INTEGER NOT NULL,

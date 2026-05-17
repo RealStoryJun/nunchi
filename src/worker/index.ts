@@ -12,12 +12,13 @@ import { handlePush } from './push-routes';
 import { getSessionUser } from './session';
 
 export default {
-  // 매시 0분 cleanup - 만료된 세션·1시간+ auth_attempts·만료된 2FA pending·13개월+ AI usage 로그
+  // 매시 0분 cleanup - 만료된 세션·1시간+ auth_attempts·2FA pending·13개월+ AI usage·90일+ login event·1년+ admin log
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
     const now = Date.now();
     const ATTEMPT_WINDOW = 60 * 60 * 1000;
     const AI_LOG_RETENTION = 13 * 31 * 24 * 60 * 60 * 1000; // 13개월
     const LOGIN_EVENT_RETENTION = 90 * 24 * 60 * 60 * 1000; // 90일
+    const ADMIN_LOG_RETENTION = 365 * 24 * 60 * 60 * 1000; // 1년 (감사·발송 이력)
     await env.DB.batch([
       env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
       env.DB.prepare('DELETE FROM auth_attempts WHERE attempted_at < ?').bind(
@@ -26,6 +27,8 @@ export default {
       env.DB.prepare('DELETE FROM auth_pending WHERE expires_at < ?').bind(now),
       env.DB.prepare('DELETE FROM ai_usage_log WHERE at < ?').bind(now - AI_LOG_RETENTION),
       env.DB.prepare('DELETE FROM user_login_events WHERE at < ?').bind(now - LOGIN_EVENT_RETENTION),
+      env.DB.prepare('DELETE FROM admin_audit_log WHERE at < ?').bind(now - ADMIN_LOG_RETENTION),
+      env.DB.prepare('DELETE FROM admin_push_log WHERE created_at < ?').bind(now - ADMIN_LOG_RETENTION),
     ]);
   },
 

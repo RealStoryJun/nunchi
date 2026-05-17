@@ -1,5 +1,6 @@
 import type { Env, SessionUser } from '../types';
 import { err } from '../types';
+import { checkRateLimit, recordAttempt, tooMany } from '../ratelimit';
 import { audit, isAdminVerified } from './helpers';
 
 // 어드민 CSV 내보내기 (판매·니즈). step-up 통과 필수, 최대 50,000 row cap, UTF-8 BOM,
@@ -19,9 +20,14 @@ export async function handleAdminExport(
   // userId 없으면 전체, ym 있으면 그 월(KST), from/to 우선.
   // step-up 필수: 일괄 PII export 는 push 발송보다 데이터 유출 폭이 크므로 비번 재확인 요구.
   if ((rest === '/export/sales' || rest === '/export/needs') && request.method === 'GET') {
+    // rate-limit: admin 토큰 탈취 시 50k row × N회 폭주 방어. 분당 5건 (push 와 동일 정책).
+    const rlKey = `admin-csv-export:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 5, 60_000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
     if (!(await isAdminVerified(env, sessionToken))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
+    await recordAttempt(env, rlKey);
     const userIdQ = url.searchParams.get('userId');
     const fromQ = url.searchParams.get('from');
     const toQ = url.searchParams.get('to');

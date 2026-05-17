@@ -1,5 +1,6 @@
 import type { Env, SessionUser } from '../types';
 import { ok, err } from '../types';
+import { checkRateLimit, recordAttempt, tooMany } from '../ratelimit';
 import { audit, isAdminVerified } from './helpers';
 
 // 어드민 사용자 관리: 검색·권한·사용기간·삭제. 모든 mutation 은 step-up 통과 필수.
@@ -67,9 +68,14 @@ export async function handleAdminUsers(
   // - revoke: true 면 즉시 만료 (access_until = now - 1)
   // master·demo·자기 자신은 silently 제외 (skipped 카운트 반환)
   if (rest === '/users/access/bulk' && request.method === 'POST') {
+    // rate-limit: admin 토큰 탈취 시 500 user × N회 폭주 방어. 분당 10건 (bulk 액션 공통).
+    const rlKey = `admin-users-bulk:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 10, 60_000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
     if (!(await isAdminVerified(env, sessionToken))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
+    await recordAttempt(env, rlKey);
     interface BulkAccessBody { userIds?: unknown; days?: unknown; revoke?: unknown }
     let body: BulkAccessBody;
     try {
@@ -153,9 +159,13 @@ export async function handleAdminUsers(
   // master·자기 자신은 silently 제외.
   if (rest === '/users/role/bulk' && request.method === 'POST') {
     if (!user.is_master) return err('마스터 권한이 필요해요.', 403);
+    const rlKey = `admin-users-bulk:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 10, 60_000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
     if (!(await isAdminVerified(env, sessionToken))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
+    await recordAttempt(env, rlKey);
     interface BulkRoleBody { userIds?: unknown; is_admin?: unknown }
     let body: BulkRoleBody;
     try {
@@ -211,9 +221,14 @@ export async function handleAdminUsers(
   // - until: 특정 timestamp (ms epoch) 로 설정
   // - infinite: true 면 NULL (무제한). admin 은 무제한 권한 부여 X (master 만)
   if (rest === '/users/access' && request.method === 'POST') {
+    // 단건도 rate-limit (bulk 보다 자주 사용되니 분당 30, 별도 키).
+    const rlKey = `admin-users-single:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 30, 60_000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
     if (!(await isAdminVerified(env, sessionToken))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
+    await recordAttempt(env, rlKey);
     interface AccessBody { userId?: unknown; days?: unknown; until?: unknown; infinite?: unknown }
     let body: AccessBody;
     try {
@@ -223,6 +238,10 @@ export async function handleAdminUsers(
     }
     const targetId = typeof body.userId === 'number' ? body.userId : NaN;
     if (!Number.isInteger(targetId) || targetId <= 0) return err('userId 가 필요해요.');
+    if (targetId === user.id) {
+      await audit(env, user.id, 'users.access', { targetId, reason: 'self' }, request, false, '자기 자신 변경 시도');
+      return err('자기 자신의 사용 기간은 바꿀 수 없어요.');
+    }
     const target = await env.DB.prepare('SELECT is_master, access_until FROM users WHERE id = ?')
       .bind(targetId)
       .first<{ is_master: number; access_until: number | null }>();
@@ -274,9 +293,13 @@ export async function handleAdminUsers(
   // POST /api/admin/users/role - master 만, 다른 user 의 is_admin 토글 (자기 자신 토글 X)
   if (rest === '/users/role' && request.method === 'POST') {
     if (!user.is_master) return err('마스터 권한이 필요해요.', 403);
+    const rlKey = `admin-users-single:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 30, 60_000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
     if (!(await isAdminVerified(env, sessionToken))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
+    await recordAttempt(env, rlKey);
     let body: { userId?: unknown; is_admin?: unknown } | null = null;
     try {
       body = (await request.json()) as { userId?: unknown; is_admin?: unknown };
@@ -288,7 +311,10 @@ export async function handleAdminUsers(
     if (!Number.isInteger(targetId) || targetId <= 0 || nextIsAdmin === null) {
       return err('userId 와 is_admin (boolean) 이 필요해요.');
     }
-    if (targetId === user.id) return err('자기 자신의 권한은 바꿀 수 없어요.');
+    if (targetId === user.id) {
+      await audit(env, user.id, 'users.role', { targetId, reason: 'self' }, request, false, '자기 자신 변경 시도');
+      return err('자기 자신의 권한은 바꿀 수 없어요.');
+    }
     const target = await env.DB.prepare('SELECT is_master FROM users WHERE id = ?')
       .bind(targetId)
       .first<{ is_master: number }>();
@@ -304,9 +330,13 @@ export async function handleAdminUsers(
   // POST /api/admin/users/delete - master 만 + step-up 통과 필수 (2026-05-16 사장님 결정)
   if (rest === '/users/delete' && request.method === 'POST') {
     if (!user.is_master) return err('마스터 권한이 필요해요.', 403);
+    const rlKey = `admin-users-bulk:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 10, 60_000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
     if (!(await isAdminVerified(env, sessionToken))) {
       return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
     }
+    await recordAttempt(env, rlKey);
     let body: { ids?: unknown } | null = null;
     try {
       body = (await request.json()) as { ids?: unknown };

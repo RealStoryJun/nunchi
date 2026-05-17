@@ -25,6 +25,17 @@ export default function Protected({
   }, [loading]);
   if (loading) return showSplash ? <LoadingScreen label="가게 정보를 불러오는 중" /> : null;
   if (!user) return <Navigate to="/login" replace />;
+  // admin/master 가 일반 사용자 페이지에 진입 시 /admin 으로 강제 redirect.
+  // PR D 의 escape hatch (URL 직접 입력 허용) 제거 - 사장님 결정 2026-05-18:
+  // "가끔 /sales 로 접속해서 아무것도 안 되는 경우" 차단. 본래 spec "admin 접속은 admin 만" 더 엄격 적용.
+  // /onboarding 은 신규 계정 첫 진입 흐름이라 제외.
+  const adminOnlyBlocked = ['/sales', '/menus', '/bi', '/needs', '/account', '/tutorial'];
+  if (
+    (user.is_admin || user.is_master) &&
+    adminOnlyBlocked.includes(location.pathname)
+  ) {
+    return <Navigate to="/admin" replace />;
+  }
   if (
     requireBusinessType &&
     !user.business_type &&

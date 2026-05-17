@@ -1386,23 +1386,51 @@ function AdminUserCsvModal({ user, onClose }: { user: AdminUser; onClose: () => 
   const [period, setPeriod] = useState<'current_month' | 'prev_month' | 'this_year' | 'all'>('current_month');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // step-up 만료 시 inline form 으로 비번 재확인 → 통과 후 자동 재시도
+  const [showStepUp, setShowStepUp] = useState(false);
+  const [stepUpPw, setStepUpPw] = useState('');
+
+  const doDownload = async () => {
+    const qs = `userId=${user.id}&period=${period}`;
+    const salesInfo = await fetchAndDownload(`/api/admin/export/sales?${qs}`);
+    const needsInfo = await fetchAndDownload(`/api/admin/export/needs?${qs}`);
+    const truncNote = [
+      salesInfo.truncated ? `매출 ${salesInfo.rowCount}건 (5만 제한 도달, 더 좁은 기간으로 다시 받아주세요)` : '',
+      needsInfo.truncated ? `니즈 ${needsInfo.rowCount}건 (5만 제한 도달)` : '',
+    ].filter(Boolean).join('\n');
+    alert(`매출·니즈 CSV 두 파일이 다운로드됐어요.${truncNote ? `\n\n⚠ ${truncNote}` : ''}`);
+    onClose();
+  };
 
   const download = async () => {
     if (busy) return;
     setBusy(true); setError(null);
     try {
-      const qs = `userId=${user.id}&period=${period}`;
-      // fetch + Blob - 401/403 에러를 명확히 표시 + X-Truncated 헤더 활용 가능
-      const salesInfo = await fetchAndDownload(`/api/admin/export/sales?${qs}`);
-      const needsInfo = await fetchAndDownload(`/api/admin/export/needs?${qs}`);
-      const truncNote = [
-        salesInfo.truncated ? `매출 ${salesInfo.rowCount}건 (5만 제한 도달, 더 좁은 기간으로 다시 받아주세요)` : '',
-        needsInfo.truncated ? `니즈 ${needsInfo.rowCount}건 (5만 제한 도달)` : '',
-      ].filter(Boolean).join('\n');
-      alert(`매출·니즈 CSV 두 파일이 다운로드됐어요.${truncNote ? `\n\n⚠ ${truncNote}` : ''}`);
-      onClose();
+      await doDownload();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '다운로드 실패');
+      const msg = e instanceof Error ? e.message : '다운로드 실패';
+      // 관리자 인증 만료 → step-up 인라인 form 자동 표시
+      if (msg.includes('관리자 인증') || msg.includes('재인증')) {
+        setShowStepUp(true);
+        setStepUpPw('');
+        setBusy(false);
+        return;
+      }
+      setError(msg);
+      setBusy(false);
+    }
+  };
+
+  const submitStepUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy || !stepUpPw) return;
+    setBusy(true); setError(null);
+    try {
+      await apiPost('/api/admin/step-up', { password: stepUpPw });
+      setShowStepUp(false); setStepUpPw('');
+      await doDownload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '인증 실패');
       setBusy(false);
     }
   };
@@ -1418,34 +1446,62 @@ function AdminUserCsvModal({ user, onClose }: { user: AdminUser; onClose: () => 
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
       onClick={busy ? undefined : onClose}>
       <div className="card max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-semibold text-lg">매출·니즈 CSV 내보내기</h3>
-        <div className="text-sm space-y-1">
-          <p>대상: <b>{user.business_name}</b></p>
-          <p className="text-sub num">{user.email}</p>
-          <p className="text-sub text-xs">매출(sales) + 니즈(needs) 두 파일이 순서대로 다운로드됩니다.</p>
-        </div>
-        <fieldset className="space-y-2">
-          <legend className="label">기간</legend>
-          {periodOptions.map(({ v, label }) => (
-            <label key={v} className="flex items-center gap-2 cursor-pointer text-sm py-2.5">
-              <input type="radio" name="period" value={v}
-                checked={period === v}
-                onChange={() => setPeriod(v)}
-                disabled={busy}
-                className="w-4 h-4 accent-accent" />
-              <span>{label}</span>
-            </label>
-          ))}
-        </fieldset>
-        {error && <p className="text-warm text-sm">{error}</p>}
-        <div className="flex gap-2">
-          <button type="button" onClick={onClose} disabled={busy}
-            className="btn-outline flex-1 h-10">취소</button>
-          <button type="button" onClick={download} disabled={busy}
-            className="btn-primary flex-1 h-10">
-            {busy ? '다운로드 중…' : '다운로드'}
-          </button>
-        </div>
+        {showStepUp ? (
+          <form onSubmit={submitStepUp} className="space-y-4">
+            <h3 className="font-semibold text-lg">관리자 인증</h3>
+            <p className="text-sub text-sm break-keep">
+              CSV 내보내기는 민감 정보라 10분마다 비밀번호 재확인이 필요해요.
+              인증 후 자동으로 다운로드가 진행됩니다.
+            </p>
+            <div>
+              <label className="label">비밀번호</label>
+              <input type="password" required autoFocus
+                className="field" value={stepUpPw}
+                onChange={(e) => setStepUpPw(e.target.value)}
+                disabled={busy} />
+            </div>
+            {error && <p className="text-warm text-sm">{error}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} disabled={busy}
+                className="btn-outline flex-1 h-10">취소</button>
+              <button type="submit" disabled={busy || !stepUpPw}
+                className="btn-primary flex-1 h-10">
+                {busy ? '인증 중…' : '인증 후 다운로드'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <h3 className="font-semibold text-lg">매출·니즈 CSV 내보내기</h3>
+            <div className="text-sm space-y-1">
+              <p>대상: <b>{user.business_name}</b></p>
+              <p className="text-sub num">{user.email}</p>
+              <p className="text-sub text-xs">매출(sales) + 니즈(needs) 두 파일이 순서대로 다운로드됩니다.</p>
+            </div>
+            <fieldset className="space-y-2">
+              <legend className="label">기간</legend>
+              {periodOptions.map(({ v, label }) => (
+                <label key={v} className="flex items-center gap-2 cursor-pointer text-sm py-2.5">
+                  <input type="radio" name="period" value={v}
+                    checked={period === v}
+                    onChange={() => setPeriod(v)}
+                    disabled={busy}
+                    className="w-4 h-4 accent-accent" />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </fieldset>
+            {error && <p className="text-warm text-sm">{error}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} disabled={busy}
+                className="btn-outline flex-1 h-10">취소</button>
+              <button type="button" onClick={download} disabled={busy}
+                className="btn-primary flex-1 h-10">
+                {busy ? '다운로드 중…' : '다운로드'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

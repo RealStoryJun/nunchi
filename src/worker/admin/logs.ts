@@ -50,6 +50,8 @@ export async function handleAdminLogs(
       }
       if (fromMs != null) { conds.push('a.at >= ?'); args.push(fromMs); }
       if (toMs != null) { conds.push('a.at < ?'); args.push(toMs); }
+      // master 격리: admin (non-master) 은 master 의 audit 행위 row 제외 (2026-05-18 사장님 결정).
+      if (!user.is_master) conds.push('(u.is_master IS NULL OR u.is_master = 0)');
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       const { results } = await env.DB.prepare(
         `SELECT a.id, a.admin_user_id, u.email AS admin_email, a.action, a.target_json,
@@ -114,6 +116,8 @@ export async function handleAdminLogs(
     }
     if (fromMs != null) { conds.push('p.created_at >= ?'); args.push(fromMs); }
     if (toMs != null) { conds.push('p.created_at <= ?'); args.push(toMs); }
+    // master 격리: admin (non-master) 은 master 의 push 발송 row 제외 (audit 와 일관)
+    if (!user.is_master) conds.push('(u.is_master IS NULL OR u.is_master = 0)');
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const { results } = await env.DB.prepare(
       `SELECT p.id, p.admin_user_id, u.email AS admin_email,

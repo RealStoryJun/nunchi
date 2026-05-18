@@ -39,6 +39,15 @@ export async function handleAdminExport(
     // 검증 실패는 rate-limit budget 안 차감 (input-shape error 라 의도된 시도 아님).
     const targetUserId = userIdQ && /^\d+$/.test(userIdQ) ? Number(userIdQ) : null;
     if (!targetUserId) return err('userId 가 필요해요.');
+
+    // master 격리: admin (non-master) 은 master 의 데이터 export 차단 (2026-05-18 사장님 결정).
+    // /users 조회에서 master 가 안 보이지만 audit log 의 admin_user_id 로 추측 가능 → defense-in-depth.
+    const target = await env.DB.prepare('SELECT is_master FROM users WHERE id = ?')
+      .bind(targetUserId).first<{ is_master: number }>();
+    if (!target) return err('사용자를 찾을 수 없어요.', 404);
+    if (target.is_master && !user.is_master) {
+      return err('마스터 계정의 데이터는 마스터만 받을 수 있어요.', 403);
+    }
     await recordAttempt(env, rlKey);
 
     // 기간 결정: period > ym > (from + to) > 무제한

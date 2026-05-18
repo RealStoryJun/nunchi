@@ -490,8 +490,10 @@ export async function handleAdminUsers(
     const target = await env.DB.prepare('SELECT is_master, email, business_name FROM users WHERE id = ?')
       .bind(targetId).first<{ is_master: number; email: string; business_name: string }>();
     if (!target) return err('사용자를 찾을 수 없어요.', 404);
-    if (target.is_master && !user.is_master) {
-      return err('마스터 계정은 마스터만 바꿀 수 있어요.', 403);
+    // master 격리 일관성 (security 🟢 #3): role/delete 와 동일하게 target.is_master 자체를 차단.
+    // master 본인은 self check 에서 이미 걸러짐, 다른 master 변경은 master 1명 invariant 방어.
+    if (target.is_master) {
+      return err('마스터 계정의 AI 설정은 바꿀 수 없어요.', 403);
     }
 
     await env.DB.prepare('UPDATE users SET ai_insights_enabled = ? WHERE id = ?')

@@ -253,8 +253,8 @@ export default function Menus() {
             />
           </div>
         </div>
-        {/* 분류 */}
-        <div className="md:max-w-md">
+        {/* 분류 - 원가/판매가와 시각 균형 (1440 비대칭 회피, design audit 🔴 #2) */}
+        <div className="md:max-w-sm">
           <label className="label">분류 (선택)</label>
           <input
             className="field"

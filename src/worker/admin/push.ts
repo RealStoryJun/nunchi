@@ -77,6 +77,15 @@ export async function handleAdminPush(
       return err('target 형식이 잘못됐어요.');
     }
 
+    // master 격리: admin (non-master) 은 master 에게 push 발송 차단 (access·role·csv·ai-toggle 패턴 일관, logic audit 🟡 #1)
+    if (target !== 'all' && !user.is_master) {
+      const t = await env.DB.prepare('SELECT is_master FROM users WHERE id = ?')
+        .bind(target.userId).first<{ is_master: number }>();
+      if (t?.is_master) {
+        return err('마스터 계정에게는 마스터만 발송할 수 있어요.', 403);
+      }
+    }
+
     // 구독 목록 fetch
     let subs: (PushSubscriptionRow & { id: number })[];
     if (target === 'all') {

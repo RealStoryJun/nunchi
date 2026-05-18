@@ -8,12 +8,12 @@ export default function Landing() {
   if (user) return <Navigate to="/sales" replace />;
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="px-6 py-5 max-w-5xl mx-auto w-full">
+      <header className="px-6 py-5 max-w-6xl mx-auto w-full">
         {/* 상단 우측 '로그인' 제거 (2026-05-16) - 가운데 hero에 큰 로그인 버튼 있어 중복 */}
         <Logo />
       </header>
       <main className="flex-1 flex items-center">
-        <div className="max-w-5xl mx-auto w-full px-6 py-12 grid md:grid-cols-2 gap-12 items-center">
+        <div className="max-w-6xl mx-auto w-full px-6 py-12 grid md:grid-cols-2 gap-12 items-center">
           <div>
             <p className="text-sub mb-3">1인 사업자를 위한</p>
             <h1 className="font-display text-4xl md:text-6xl leading-tight text-accent break-keep">

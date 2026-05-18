@@ -9,6 +9,7 @@ import { handleAdmin } from './admin';
 import { handleNeeds } from './needs';
 import { handleMonthlyCosts } from './monthly-costs';
 import { handlePush } from './push-routes';
+import { handleNeedsFields } from './needs-fields';
 import { getSessionUser } from './session';
 
 export default {
@@ -142,6 +143,15 @@ export default {
           session.user,
           path.replace('/api/monthly-costs', ''),
           url,
+        );
+      }
+
+      if (path === '/api/me/needs-fields' || path.startsWith('/api/me/needs-fields/')) {
+        return await handleNeedsFields(
+          request,
+          env,
+          session.user,
+          path.replace('/api/me/needs-fields', ''),
         );
       }
 

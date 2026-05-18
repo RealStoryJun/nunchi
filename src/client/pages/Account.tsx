@@ -12,6 +12,7 @@ import NavIcon from '../components/NavIcon';
 import TwoFactorCard from '../components/TwoFactorCard';
 import InstallAppCard from '../components/InstallAppCard';
 import NotificationToggleCard from '../components/NotificationToggleCard';
+import CustomNeedsFieldsCard from '../components/CustomNeedsFieldsCard';
 
 export default function Account() {
   const { user } = useAuth();
@@ -228,6 +229,8 @@ export default function Account() {
           <span className="text-sub group-hover:text-accent transition">→</span>
         </Link>
       )}
+
+      <CustomNeedsFieldsCard />
 
       <p className="text-sub text-sm mt-4 text-center">
         다크모드, 직원 추가 등은 다음 단계에서 추가될 예정입니다.

@@ -89,9 +89,28 @@ CREATE TABLE IF NOT EXISTS customer_needs (
   purpose TEXT,        -- 'gift' | 'kids_snack' | 'meal_replacement' | NULL
   residence TEXT,      -- 'busan' | 'outside' | NULL
   menu_ids TEXT,       -- 판매제품(등록 메뉴) id JSON 배열, 예 '[5,12]' — NULL/[] 가능 (다중 선택)
+  custom_values TEXT,  -- 2026-05-18 PR 1: 사장님 커스텀 필드 값 JSON {field_key: option_value}, NULL 가능. user_needs_fields 가 진실 (label/options 는 거기서 lookup).
   created_at INTEGER NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- 사장님별 커스텀 니즈 필드 정의 (2026-05-18 PR 1). 사장님마다 본인 가게 손님 설문 항목 자유 추가.
+-- 기존 5 hardcoded 필드 (gender/age_band/with_child/purpose/residence) + 사장님 커스텀 N필드 공존.
+-- 최대 5 필드/사장님, 6 옵션/필드 (앱 레이어 검증).
+CREATE TABLE IF NOT EXISTS user_needs_fields (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  field_key TEXT NOT NULL,          -- ^[a-z][a-z0-9_]{2,30}$ snake_case
+  label TEXT NOT NULL,              -- 표시 라벨 1-30자
+  options_json TEXT NOT NULL,       -- [{"v":"morning","l":"오전"}, ...] max 6
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0, -- 1=soft delete, 과거 row 의 그 필드 값 hide
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+-- 사장님별 field_key 중복 차단 (active 필드 한정. archived 는 허용 - 사장님이 같은 key 재생성 가능).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unf_user_key_active ON user_needs_fields(user_id, field_key) WHERE archived = 0;
+CREATE INDEX IF NOT EXISTS idx_unf_user ON user_needs_fields(user_id, archived, sort_order);
 
 -- 월별 고정 지출(임대료·공과금·인건비 등) — 사장님이 매월 자유 라벨로 입력
 CREATE TABLE IF NOT EXISTS monthly_cost_items (

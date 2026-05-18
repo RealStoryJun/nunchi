@@ -89,6 +89,7 @@ interface NeedsStats {
   purpose: Record<string, number>;
   residence: Record<string, number>;
   topMenus: { menuId: number; name: string | null; emoji: string | null; count: number }[];
+  customTally?: { fieldKey: string; label: string; options: { v: string; l: string; n: number }[] }[];
 }
 
 interface CostItem {
@@ -1236,6 +1237,13 @@ export default function BI() {
                     count: needsStats.residence[o.v] ?? 0,
                   }))}
                 />
+                {needsStats.customTally?.map((f) => (
+                  <NeedsDim
+                    key={f.fieldKey}
+                    title={f.label}
+                    items={f.options.map((o) => ({ label: o.l, count: o.n }))}
+                  />
+                ))}
               </div>
               {needsStats.topMenus.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-border">

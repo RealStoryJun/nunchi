@@ -223,11 +223,29 @@ export async function handleNeeds(
       args.push(Number(toQ));
     }
     const { results } = await env.DB.prepare(
-      `SELECT gender, age_band, with_child, purpose, residence, menu_ids
+      `SELECT gender, age_band, with_child, purpose, residence, menu_ids, custom_values
        FROM customer_needs WHERE ${conds.join(' AND ')}`,
     )
       .bind(...args)
-      .all<Pick<NeedRow, 'gender' | 'age_band' | 'with_child' | 'purpose' | 'residence' | 'menu_ids'>>();
+      .all<Pick<NeedRow, 'gender' | 'age_band' | 'with_child' | 'purpose' | 'residence' | 'menu_ids' | 'custom_values'>>();
+
+    // 사장님 active 커스텀 필드 정의 (옵션 라벨 lookup + 동적 tally 키)
+    const { results: customFields } = await env.DB.prepare(
+      `SELECT field_key, label, options_json, sort_order FROM user_needs_fields
+       WHERE user_id = ? AND archived = 0 ORDER BY sort_order ASC, id ASC`,
+    ).bind(user.id).all<{ field_key: string; label: string; options_json: string; sort_order: number }>();
+    type Opt = { v: string; l: string };
+    const customDefs = customFields.map((f) => {
+      let options: Opt[] = [];
+      try {
+        const parsed = JSON.parse(f.options_json) as unknown;
+        if (Array.isArray(parsed)) options = parsed as Opt[];
+      } catch { /* corrupt */ }
+      return { fieldKey: f.field_key, label: f.label, options };
+    });
+    // 동적 카운터: { [fieldKey]: { [optionV]: count } }
+    const customCounts: Record<string, Record<string, number>> = {};
+    for (const f of customDefs) customCounts[f.fieldKey] = {};
 
     const tally = () => {
       const m: Record<string, number> = {};
@@ -254,6 +272,12 @@ export async function handleNeeds(
       purpose.add(r.purpose);
       residence.add(r.residence);
       for (const id of parseMenuIds(r.menu_ids)) menuCounts[id] = (menuCounts[id] ?? 0) + 1;
+      // customValues tally - 사장님 active 필드와 매칭되는 값만
+      const cv = parseCustomValues(r.custom_values);
+      for (const [k, v] of Object.entries(cv)) {
+        const bucket = customCounts[k];
+        if (bucket) bucket[v] = (bucket[v] ?? 0) + 1;
+      }
     }
     const ranked = Object.entries(menuCounts)
       .map(([id, count]) => ({ menuId: Number(id), count }))
@@ -275,6 +299,17 @@ export async function handleNeeds(
       });
     }
 
+    // customTally: BI 카드용. 각 필드별 옵션 라벨·count
+    const customTally = customDefs.map((f) => ({
+      fieldKey: f.fieldKey,
+      label: f.label,
+      options: f.options.map((o) => ({
+        v: o.v,
+        l: o.l,
+        n: customCounts[f.fieldKey]?.[o.v] ?? 0,
+      })),
+    }));
+
     return ok({
       total: results.length,
       gender: gender.out,
@@ -283,6 +318,7 @@ export async function handleNeeds(
       purpose: purpose.out,
       residence: residence.out,
       topMenus,
+      customTally,
     });
   }
 

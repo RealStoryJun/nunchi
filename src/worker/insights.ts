@@ -38,6 +38,11 @@ interface NeedsAgg {
   purpose: Record<string, number>;
   residence: Record<string, number>;
   topMenus: { name: string; count: number }[];
+  customTally?: {
+    fieldKey: string;
+    label: string;
+    options: { v: string; l: string; n: number }[];
+  }[];
 }
 interface InsightsBody {
   stats?: StatsPayload;
@@ -145,6 +150,17 @@ const sanitizeNeeds = (v: unknown): NeedsAgg | null => {
       name: str(m.name) || '메뉴',
       count: Math.round(num(m.count)),
     })),
+    customTally: Array.isArray(o.customTally)
+      ? mapArr(o.customTally, 5, (f) => ({
+          fieldKey: str(f.fieldKey, 31),
+          label: str(f.label, 30),
+          options: mapArr(f.options, 6, (opt) => ({
+            v: str(opt.v, 31),
+            l: str(opt.l, 20),
+            n: Math.round(num(opt.n)),
+          })),
+        }))
+      : undefined,
   };
 };
 
@@ -279,6 +295,22 @@ const buildSummary = (b: InsightsBody): string => {
     const r = fmtDim(n.residence);
     if (r) parts.push(`${slotLabels.residence} [${r}]`);
     lines.push(`- 고객 니즈 조사 ${n.total}건: ${parts.join(', ')}`);
+    // 사장님 커스텀 필드 분포 (PR 1·2·3, user_needs_fields). 라벨은 사장님 본인이 정의.
+    if (n.customTally && n.customTally.length > 0) {
+      const customParts: string[] = [];
+      for (const f of n.customTally) {
+        const sum = f.options.reduce((x, y) => x + y.n, 0);
+        if (sum === 0) continue;
+        const inner = f.options
+          .filter((o) => o.n > 0)
+          .map((o) => `${o.l} ${Math.round((o.n / sum) * 100)}%`)
+          .join(' / ');
+        customParts.push(`${f.label} [${inner}]`);
+      }
+      if (customParts.length > 0) {
+        lines.push(`- 사장님 커스텀 항목 분포: ${customParts.join(', ')}`);
+      }
+    }
     if (n.topMenus.length)
       lines.push(
         `- 니즈 조사에서 손님이 자주 찾은 (모두 이미 등록된) 메뉴: ${n.topMenus.slice(0, 5).map((m) => `${m.name}(${m.count}회)`).join(', ')}`,

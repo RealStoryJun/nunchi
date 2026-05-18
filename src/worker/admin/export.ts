@@ -163,7 +163,7 @@ export async function handleAdminExport(
       const { results } = await env.DB.prepare(
         `SELECT n.id, n.user_id, u.email, u.business_name, u.business_type,
                 n.gender, n.age_band, n.with_child, n.purpose, n.residence,
-                n.menu_ids, n.created_at
+                n.menu_ids, n.custom_values, n.created_at
          FROM customer_needs n
          JOIN users u ON u.id = n.user_id
          ${whereN}
@@ -176,11 +176,34 @@ export async function handleAdminExport(
           business_type: string | null;
           gender: string | null; age_band: string | null; with_child: number | null;
           purpose: string | null; residence: string | null;
-          menu_ids: string | null; created_at: number;
+          menu_ids: string | null; custom_values: string | null; created_at: number;
         }>();
-      // 헤더: 업종 컬럼 추가 (카테고리별 의미 다른 필드 해석 단서).
-      // with_child/purpose/residence 의 정확한 의미는 row 의 카테고리 따라 다름 - 사용자가 업종 컬럼 보고 매핑.
-      const headers = ['ID', '사용자 ID', '이메일', '가게 이름', '업종', '성별', '연령대', '자녀/회원/차종', '목적/사유', '거주/경로', '관심 메뉴 ID', '등록 시각(KST)'];
+
+      // 사장님 active 커스텀 필드 (CSV 동적 컬럼 추가).
+      // PR 1·2·3: user_needs_fields 가 있으면 그 라벨·옵션 라벨로 row 별 lookup.
+      const { results: customFields } = await env.DB.prepare(
+        `SELECT field_key, label, options_json FROM user_needs_fields
+         WHERE user_id = ? AND archived = 0 ORDER BY sort_order ASC, id ASC`,
+      ).bind(targetUserId).all<{ field_key: string; label: string; options_json: string }>();
+      type Opt = { v: string; l: string };
+      const customDefs = customFields.map((f) => {
+        let options: Opt[] = [];
+        try {
+          const parsed = JSON.parse(f.options_json) as unknown;
+          if (Array.isArray(parsed)) options = parsed as Opt[];
+        } catch { /* corrupt */ }
+        return { fieldKey: f.field_key, label: f.label, options };
+      });
+      const customLookup = (fieldKey: string, v: string): string => {
+        const def = customDefs.find((f) => f.fieldKey === fieldKey);
+        if (!def) return v;
+        const opt = def.options.find((o) => o.v === v);
+        return opt?.l ?? v;
+      };
+
+      const baseHeaders = ['ID', '사용자 ID', '이메일', '가게 이름', '업종', '성별', '연령대', '자녀/회원/차종', '목적/사유', '거주/경로', '관심 메뉴 ID', '등록 시각(KST)'];
+      const customHeaders = customDefs.map((f) => f.label);
+      const headers = [...baseHeaders.slice(0, 11), ...customHeaders, baseHeaders[11]];
       const rows = results.map((r) => {
         const cat = isBusinessType(r.business_type) ? businessCategoryOf(r.business_type) : 'retail_food';
         const preset = NEEDS_PRESETS[cat];
@@ -189,6 +212,22 @@ export async function handleAdminExport(
           const opt = preset[slot].options.find((o) => o.v === v);
           return opt?.l ?? v;
         };
+        const customVals: Record<string, string> = (() => {
+          if (!r.custom_values) return {};
+          try {
+            const obj = JSON.parse(r.custom_values) as unknown;
+            if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+            const out: Record<string, string> = {};
+            for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+              if (typeof v === 'string') out[k] = v;
+            }
+            return out;
+          } catch { return {}; }
+        })();
+        const customCells = customDefs.map((f) => {
+          const v = customVals[f.fieldKey];
+          return v ? customLookup(f.fieldKey, v) : '';
+        });
         return [
           r.id, r.user_id, r.email, r.business_name, r.business_type ?? '',
           krGender(r.gender), krAgeBand(r.age_band),
@@ -196,6 +235,7 @@ export async function handleAdminExport(
           lookup('purpose', r.purpose),
           lookup('residence', r.residence),
           r.menu_ids ?? '',
+          ...customCells,
           fmtKstDateTime(r.created_at),
         ];
       });

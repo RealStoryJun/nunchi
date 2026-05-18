@@ -111,7 +111,7 @@ export default function Admin() {
       {tab === 'access' && <AccessTab meId={user.id} isMaster={!!user.is_master} />}
       {tab === 'stats' && <StatsTab />}
       {tab === 'audit' && <LogTab />}
-      {tab === 'push' && <PushTab />}
+      {tab === 'push' && <PushTab isMaster={!!user.is_master} />}
     </div>
   );
 }
@@ -527,6 +527,11 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
     if (selected.size === 0) return;
     if (!confirm(`선택한 ${selected.size}개 계정을 삭제할까요?\n해당 계정의 메뉴·판매 기록도 함께 삭제되며, 되돌릴 수 없습니다.`)) return;
     setPendingAction({ kind: 'delete' });
+    // master 는 server 측 step-up 면제 (helpers.ts) - client 모달도 skip + 바로 액션
+    if (isMaster) {
+      void doStepUpThenDelete();
+      return;
+    }
     setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
   };
 
@@ -538,12 +543,15 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
 
   const doStepUpThenDelete = async () => {
     setStepUpBusy(true); setStepUpErr(null);
-    try {
-      await apiPost('/api/admin/step-up', { password: stepUpPw });
-    } catch (e) {
-      setStepUpErr(e instanceof Error ? e.message : '인증 실패');
-      setStepUpBusy(false);
-      return;
+    if (!isMaster) {
+      // admin 만 step-up 비번 재확인. master 는 면제 (사장님 결정 2026-05-17).
+      try {
+        await apiPost('/api/admin/step-up', { password: stepUpPw });
+      } catch (e) {
+        setStepUpErr(e instanceof Error ? e.message : '인증 실패');
+        setStepUpBusy(false);
+        return;
+      }
     }
     setBusy(true);
     try {
@@ -748,7 +756,7 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
 // ─── 푸시 발송 탭 (PR 3 Phase 4) ───────────────────────────────────────
 // 발송 이력은 "로그" 탭 (kind=push) 으로 일반화됨 — 여기서는 발송 폼만.
 
-function PushTab() {
+function PushTab({ isMaster }: { isMaster: boolean }) {
   const [target, setTarget] = useState<'all' | 'user'>('all');
   const [userId, setUserId] = useState('');
   const [title, setTitle] = useState('');
@@ -772,17 +780,25 @@ function PushTab() {
       setError('유효한 사용자 ID 가 필요해요.'); return;
     }
     if (url.trim() && !url.trim().startsWith('/')) { setError('URL 은 / 로 시작해야 해요.'); return; }
-    setError(null); setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
+    setError(null);
+    // master 는 client step-up 모달 skip + 바로 발송 (server 도 면제)
+    if (isMaster) {
+      void doStepUpThenSend();
+      return;
+    }
+    setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
   };
 
   const doStepUpThenSend = async () => {
     setStepUpBusy(true); setStepUpErr(null);
-    try {
-      await apiPost('/api/admin/step-up', { password: stepUpPw });
-    } catch (e) {
-      setStepUpErr(e instanceof Error ? e.message : '인증 실패');
-      setStepUpBusy(false);
-      return;
+    if (!isMaster) {
+      try {
+        await apiPost('/api/admin/step-up', { password: stepUpPw });
+      } catch (e) {
+        setStepUpErr(e instanceof Error ? e.message : '인증 실패');
+        setStepUpBusy(false);
+        return;
+      }
     }
     setBusy(true);
     try {
@@ -1001,6 +1017,11 @@ function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
       : a.is_admin ? '어드민 지정' : '어드민 해제';
     if (!confirm(`선택한 ${selected.size}명에게 "${verb}" 적용할까요?`)) return;
     setPendingAction(a); setError(null); setInfo(null);
+    // master 는 client step-up 모달 skip + 바로 액션 (server 도 면제)
+    if (isMaster) {
+      void doStepUpThenApply();
+      return;
+    }
     setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
   };
 
@@ -1020,12 +1041,14 @@ function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
   const doStepUpThenApply = async () => {
     if (!pendingAction) return;
     setStepUpBusy(true); setStepUpErr(null);
-    try {
-      await apiPost('/api/admin/step-up', { password: stepUpPw });
-    } catch (e) {
-      setStepUpErr(e instanceof Error ? e.message : '인증 실패');
-      setStepUpBusy(false);
-      return;
+    if (!isMaster) {
+      try {
+        await apiPost('/api/admin/step-up', { password: stepUpPw });
+      } catch (e) {
+        setStepUpErr(e instanceof Error ? e.message : '인증 실패');
+        setStepUpBusy(false);
+        return;
+      }
     }
     setBusy(true);
     try {

@@ -1017,9 +1017,11 @@ function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
       : a.is_admin ? '어드민 지정' : '어드민 해제';
     if (!confirm(`선택한 ${selected.size}명에게 "${verb}" 적용할까요?`)) return;
     setPendingAction(a); setError(null); setInfo(null);
-    // master 는 client step-up 모달 skip + 바로 액션 (server 도 면제)
+    // master 는 client step-up 모달 skip + 바로 액션 (server 도 면제).
+    // setPendingAction 은 React batch (next render) 라 doStepUpThenApply 안의 if(!pendingAction) 가 옛 null 봄 → race.
+    // action 인자로 직접 전달해 우회.
     if (isMaster) {
-      void doStepUpThenApply();
+      void doStepUpThenApply(a);
       return;
     }
     setStepUpOpen(true); setStepUpPw(''); setStepUpErr(null);
@@ -1038,8 +1040,10 @@ function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
     requestAction({ kind: 'extend', days });
   };
 
-  const doStepUpThenApply = async () => {
-    if (!pendingAction) return;
+  const doStepUpThenApply = async (override?: Action) => {
+    // override 우선 (master skip 흐름의 race 회피용 인자 전달), 없으면 state 의 pendingAction (step-up 모달 흐름)
+    const action = override ?? pendingAction;
+    if (!action) return;
     setStepUpBusy(true); setStepUpErr(null);
     if (!isMaster) {
       try {
@@ -1054,12 +1058,12 @@ function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
     try {
       const ids = [...selected];
       let r: { updated: number; skipped: number };
-      if (pendingAction.kind === 'extend') {
-        r = await apiPost('/api/admin/users/access/bulk', { userIds: ids, days: pendingAction.days });
-      } else if (pendingAction.kind === 'revoke') {
+      if (action.kind === 'extend') {
+        r = await apiPost('/api/admin/users/access/bulk', { userIds: ids, days: action.days });
+      } else if (action.kind === 'revoke') {
         r = await apiPost('/api/admin/users/access/bulk', { userIds: ids, revoke: true });
       } else {
-        r = await apiPost('/api/admin/users/role/bulk', { userIds: ids, is_admin: pendingAction.is_admin });
+        r = await apiPost('/api/admin/users/role/bulk', { userIds: ids, is_admin: action.is_admin });
       }
       setSelected(new Set());
       setStepUpOpen(false);
@@ -1198,7 +1202,7 @@ function AccessTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
             {stepUpErr && <p className="text-warm text-sm mt-2 break-keep">{stepUpErr}</p>}
             <div className="flex gap-2 mt-4">
               <button onClick={() => { setStepUpOpen(false); setPendingAction(null); }} className="btn-outline flex-1">취소</button>
-              <button onClick={doStepUpThenApply} disabled={stepUpBusy || !stepUpPw}
+              <button onClick={() => void doStepUpThenApply()} disabled={stepUpBusy || !stepUpPw}
                 className={pendingAction?.kind === 'revoke' ? 'btn-warm flex-1' : 'btn-primary flex-1'}>
                 {stepUpBusy ? '확인 중…' : '인증 후 적용'}
               </button>

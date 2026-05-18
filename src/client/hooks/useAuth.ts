@@ -12,6 +12,7 @@ export interface User {
   access_until?: number | null; // 2026-05-16 신설. NULL = 무제한. 만료 시 read-only.
   mfa_enabled?: boolean;
   requires_security_setup?: boolean; // 어드민 생성 계정의 첫 보안질문 설정 필요 (PR B2)
+  ai_insights_enabled?: boolean; // 2026-05-18 master/admin 토글. false 면 BI AI 카드 hide + 안내
 }
 
 // 로그인 1단계 응답 - 2FA 활성이면 mfa_token 받아 2단계 진행

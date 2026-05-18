@@ -29,6 +29,7 @@ export interface SessionUser {
   is_admin: boolean;
   is_master: boolean; // 2026-05-16 신설. admin 부여·계정 삭제 권한 (사장님 god8night@naver.com 만)
   access_until: number | null; // 사용 기간 (ms epoch). NULL = 무제한. 만료 시 mutation 403
+  ai_insights_enabled: boolean; // 2026-05-18 신설. master/admin 이 토글. false 면 /api/insights 403
 }
 
 export interface UserRow {

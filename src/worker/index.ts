@@ -102,6 +102,9 @@ export default {
       }
 
       if (path === '/api/insights' && request.method === 'POST') {
+        if (!session.user.ai_insights_enabled) {
+          return err('AI 분석이 일시 비활성화됐어요. 관리자에게 문의해주세요.', 403);
+        }
         let body: unknown;
         try {
           body = await request.json();
@@ -113,6 +116,9 @@ export default {
 
       // 저장된 과거 월 인사이트 조회 - LLM 호출 X, 빠른 readonly. 현재 월은 항상 found:false.
       if (path === '/api/insights' && request.method === 'GET') {
+        if (!session.user.ai_insights_enabled) {
+          return err('AI 분석이 일시 비활성화됐어요. 관리자에게 문의해주세요.', 403);
+        }
         const ym = url.searchParams.get('ym') ?? '';
         return await handleInsightsGet(env, session.user.id, ym);
       }

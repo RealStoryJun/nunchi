@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS users (
   is_demo INTEGER NOT NULL DEFAULT 0,
   -- 사용 기간 (ms epoch). NULL = 무제한 (master·demo 계정). 일반 user 는 가입 시 +30일 자동.
   -- 만료 시 read-only 모드 (mutation API 403, 조회는 그대로). admin/master 가 연장.
-  access_until INTEGER
+  access_until INTEGER,
+  -- AI 인사이트 활성/비활성 (2026-05-18 PR). master/admin 이 사용자별 토글.
+  -- 1=활성 (default), 0=비활성 → /api/insights 403 + BI 페이지에 안내 카드.
+  ai_insights_enabled INTEGER NOT NULL DEFAULT 1
 );
 
 -- 기존 DB 마이그레이션 (apply by hand): 컬럼 없으면 추가

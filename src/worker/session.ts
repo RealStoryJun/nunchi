@@ -42,7 +42,7 @@ export const getSessionUser = async (
   const token = parseCookie(request.headers.get('cookie'), COOKIE);
   if (!token) return null;
   const row = await env.DB.prepare(
-    `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, u.is_master, u.access_until, s.expires_at
+    `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, u.is_master, u.access_until, u.ai_insights_enabled, s.expires_at
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token = ?`,
   )
@@ -55,6 +55,7 @@ export const getSessionUser = async (
       is_admin: number;
       is_master: number;
       access_until: number | null;
+      ai_insights_enabled: number;
       expires_at: number;
     }>();
   if (!row) return null;
@@ -72,6 +73,7 @@ export const getSessionUser = async (
       is_admin: !!row.is_admin,
       is_master: !!row.is_master,
       access_until: row.access_until,
+      ai_insights_enabled: !!row.ai_insights_enabled,
     },
   };
 };

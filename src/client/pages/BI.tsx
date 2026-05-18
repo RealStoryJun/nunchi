@@ -16,7 +16,7 @@ import StatCard from '../components/StatCard';
 import { Skeleton } from '../components/Skeleton';
 import { apiGet, apiPost, apiPut, apiDelete } from '../lib/api';
 import { getCache, setCache, isFresh, invalidate, invalidateByPrefix } from '../lib/cache';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth, refreshAuth } from '../hooks/useAuth';
 import { businessCategoryOf } from '../lib/businessTypes';
 import { NEEDS_PRESETS } from '../lib/needsPresets';
 import {
@@ -720,8 +720,10 @@ export default function BI() {
 
 // AI 인사이트 fetch - 지난 달 전체 분석 1회. 완료된 달이라 D1 영구 저장본 hit 시 LLM 호출 0회.
   // 사장님 결정: "니즈랑 판매해서 전략제시" - 지난 달 stats+needs를 함께 보내 LLM이 종합 분석.
+  // master/admin 이 비활성화하면 fetch skip (PR 2026-05-18). user.ai_insights_enabled !== false 만 허용.
   useEffect(() => {
     if (!user) return;
+    if (user.ai_insights_enabled === false) return;
     const w = aiWindow;
     const periodKey = `${w.fromMs}:${w.toMs}`;
     if (aiInflightRef.current.has(periodKey)) return;
@@ -792,8 +794,11 @@ export default function BI() {
         const result = await apiPost<{ insights: string[] }>('/api/insights', body);
         setAiByPeriod((prev) => ({ ...prev, [capturedKey]: result.insights }));
         if (result.insights.length > 0) setCache(key, result.insights);
-      } catch {
+      } catch (e) {
         setAiByPeriod((prev) => ({ ...prev, [capturedKey]: [] }));
+        // 403 (admin 이 토글 OFF) 시 user 갱신 → 안내 카드로 자연 전환 (flow #1)
+        const msg = e instanceof Error ? e.message : '';
+        if (msg.includes('비활성') || msg.includes('관리자')) void refreshAuth();
       } finally {
         aiInflightRef.current.delete(capturedKey);
       }
@@ -852,9 +857,19 @@ export default function BI() {
 
       {/* AI 인사이트 - 항상 지난 달 전체 분석. range selector와 무관, 한 번 생성 후 D1 영구 저장.
           데이터 도착 + 비어있지 않을 때만 카드 마운트. loading skeleton 표시 안 함 (phantom 깜빡임 차단).
-          데이터 0건 (신규 사장님) → 영영 안 보임. D1 hit 빠르게 끝나니 데이터 있는 사장님은
-          마운트 후 ~200-500ms 내 카드 anim-fade 로 자연스럽게 등장. */}
-      {(() => {
+          master/admin 이 토글 비활성화 시 안내 카드 (2026-05-18). */}
+      {user?.ai_insights_enabled === false ? (
+        <div className="card p-4 mb-4 border-warm/30 bg-warm/[0.05] anim-fade">
+          <div className="flex items-baseline gap-1.5 mb-1">
+            <span className="text-base leading-none shrink-0">⏸️</span>
+            <h3 className="font-semibold text-warm break-keep">AI 분석 일시 비활성</h3>
+          </div>
+          <p className="text-sm text-ink/80 break-keep">
+            관리자가 AI 분석을 일시적으로 꺼두었어요. 문의는{' '}
+            <a href="mailto:god8night@gmail.com" className="underline font-medium">관리자 메일</a>로.
+          </p>
+        </div>
+      ) : (() => {
         const periodKey = `${aiWindow.fromMs}:${aiWindow.toMs}`;
         const data = aiByPeriod[periodKey];
         if (!data || data.length === 0) return null;

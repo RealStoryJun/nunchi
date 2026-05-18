@@ -21,6 +21,7 @@ interface AdminUser {
   last_login_at: number | null;     // user_login_events 최신 timestamp
   last_activity_at: number | null;  // sales·needs·login 중 최신
   access_until: number | null;      // 사용 기간 만료 (NULL = 무제한, master·demo)
+  ai_insights_enabled: boolean;     // 2026-05-18 master/admin 토글 가능
 }
 interface AdminStats {
   total_users: number;
@@ -523,6 +524,17 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
     return next;
   });
 
+  const toggleAi = async (u: AdminUser) => {
+    const newState = !u.ai_insights_enabled;
+    if (!confirm(`${u.business_name} (${u.email}) 의 AI 분석을 ${newState ? '켤까요' : '끌까요'}?`)) return;
+    try {
+      await apiPost('/api/admin/users/ai-toggle', { userId: u.id, enabled: newState });
+      setUsers((prev) => (prev ?? []).map((x) => (x.id === u.id ? { ...x, ai_insights_enabled: newState } : x)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'AI 토글 실패');
+    }
+  };
+
   const requestBulkDelete = () => {
     if (selected.size === 0) return;
     if (!confirm(`선택한 ${selected.size}개 계정을 삭제할까요?\n해당 계정의 메뉴·판매 기록도 함께 삭제되며, 되돌릴 수 없습니다.`)) return;
@@ -614,6 +626,7 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
                 sales_count: 0, menu_count: 0,
                 access_until: u.access_until ?? null,
                 last_login_at: null, last_activity_at: null,
+                ai_insights_enabled: true,
               },
               ...(prev ?? []),
             ]);
@@ -658,6 +671,7 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
             <span className="w-14 text-right">판매</span>
             <span className="w-[88px] shrink-0" aria-hidden />
             <span className="w-12 shrink-0" aria-hidden />
+            <span className="hidden md:block w-14 shrink-0" aria-hidden />
           </div>
           {users.map((u) => {
             const self = u.id === meId;
@@ -714,6 +728,15 @@ function UsersTab({ meId, isMaster }: { meId: number; isMaster: boolean }) {
                   className="btn-outline px-2 h-8 text-xs shrink-0"
                   aria-label={`${u.business_name} CSV 내보내기`}>
                   CSV
+                </button>
+                {/* AI 토글 button: 모바일은 row 너비 부족으로 권한 badge 가려짐 (design 🔴) → 데스크탑만 표시.
+                    모바일은 admin 사용 빈도 낮음 (P2 페르소나는 데스크탑 위주). */}
+                <button type="button"
+                  onClick={!self ? () => void toggleAi(u) : undefined}
+                  disabled={self}
+                  className={`hidden md:inline-flex btn-outline px-2 h-8 text-xs shrink-0 disabled:opacity-30 disabled:cursor-not-allowed ${u.ai_insights_enabled ? '' : 'border-warm bg-warm/[0.06] text-warm'}`}
+                  aria-label={`${u.business_name} AI 분석 ${u.ai_insights_enabled ? '끄기' : '켜기'}`}>
+                  AI {u.ai_insights_enabled ? 'ON' : 'OFF'}
                 </button>
               </div>
             );

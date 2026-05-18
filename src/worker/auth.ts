@@ -247,7 +247,7 @@ export const handleAuth = async (
     if (!ipRl.ok) return tooMany(ipRl.retryAfterMs);
 
     const user = await env.DB.prepare(
-      'SELECT id, email, password_hash, business_name, business_type, is_admin, is_master, access_until, totp_secret, totp_enabled_at FROM users WHERE email = ?',
+      'SELECT id, email, password_hash, business_name, business_type, is_admin, is_master, access_until, ai_insights_enabled, totp_secret, totp_enabled_at FROM users WHERE email = ?',
     )
       .bind(email)
       .first<
@@ -261,7 +261,7 @@ export const handleAuth = async (
           | 'is_admin'
           | 'is_master'
           | 'access_until'
-        > & { totp_secret: string | null; totp_enabled_at: number | null }
+        > & { ai_insights_enabled: number; totp_secret: string | null; totp_enabled_at: number | null }
       >();
     // 사용자 존재 여부와 무관하게 PBKDF2 한 번 돌려서 timing 균형
     const stored = user?.password_hash ?? (await getDummyHash());
@@ -309,6 +309,7 @@ export const handleAuth = async (
           is_admin: !!user.is_admin,
           is_master: !!user.is_master,
           access_until: user.access_until,
+          ai_insights_enabled: !!user.ai_insights_enabled,
           mfa_enabled: false,
         },
       },
@@ -339,7 +340,7 @@ export const handleAuth = async (
     if (!userRl.ok) return tooMany(userRl.retryAfterMs);
 
     const u = await env.DB.prepare(
-      'SELECT id, email, business_name, business_type, is_admin, is_master, access_until, totp_secret, totp_backup_codes_hash FROM users WHERE id = ?',
+      'SELECT id, email, business_name, business_type, is_admin, is_master, access_until, ai_insights_enabled, totp_secret, totp_backup_codes_hash FROM users WHERE id = ?',
     )
       .bind(pending.user_id)
       .first<{
@@ -350,6 +351,7 @@ export const handleAuth = async (
         is_admin: number;
         is_master: number;
         access_until: number | null;
+        ai_insights_enabled: number;
         totp_secret: string | null;
         totp_backup_codes_hash: string | null;
       }>();
@@ -434,6 +436,7 @@ export const handleAuth = async (
           is_admin: !!u.is_admin,
           is_master: !!u.is_master,
           access_until: u.access_until,
+          ai_insights_enabled: !!u.ai_insights_enabled,
           mfa_enabled: true,
         },
       },
@@ -660,6 +663,7 @@ export const handleAuth = async (
       },
     });
   }
+  // 주의: ...session.user 에 ai_insights_enabled 가 이미 포함됨 (session.ts 가 SELECT 후 채움)
 
   // POST /api/auth/recovery-question - 본인 보안질문 변경.
   // sentinel 사용자(어드민이 생성, 첫 설정): password 면제 (임시 비번으로 방금 로그인, 새 보안질문 설정만).

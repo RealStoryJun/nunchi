@@ -58,7 +58,7 @@ export async function handleAdminUsers(
     const showMasters = user.is_master ? 1 : 0;
     const { results } = await env.DB.prepare(
       `SELECT u.id, u.email, u.business_name, u.business_type, u.is_admin, u.is_master, u.is_demo,
-              u.totp_enabled_at, u.created_at, u.access_until,
+              u.totp_enabled_at, u.created_at, u.access_until, u.ai_insights_enabled,
               (SELECT COUNT(*) FROM sales WHERE user_id = u.id) AS sales_count,
               (SELECT COUNT(*) FROM menus WHERE user_id = u.id AND archived = 0) AS menu_count,
               (SELECT MAX(at) FROM user_login_events WHERE user_id = u.id) AS last_login_at,
@@ -74,7 +74,7 @@ export async function handleAdminUsers(
        LIMIT 500`,
     )
       .bind(showMasters, q, like, like)
-      .all<AdminUserRow & { is_master: number; last_login_at: number | null; last_activity_at: number | null; access_until: number | null }>();
+      .all<AdminUserRow & { is_master: number; last_login_at: number | null; last_activity_at: number | null; access_until: number | null; ai_insights_enabled: number }>();
     const total = await env.DB.prepare(
       'SELECT COUNT(*) AS n FROM users WHERE ? = 1 OR is_master = 0',
     )
@@ -87,6 +87,7 @@ export async function handleAdminUsers(
         is_master: !!r.is_master,
         is_demo: !!r.is_demo,
         mfa_enabled: !!r.totp_enabled_at,
+        ai_insights_enabled: !!r.ai_insights_enabled,
       })),
       total: total?.n ?? results.length,
     });
@@ -461,6 +462,42 @@ export async function handleAdminUsers(
       email: target.email,
       business_name: target.business_name,
     });
+  }
+
+  // POST /api/admin/users/ai-toggle - admin/master, 사용자별 AI 인사이트 활성/비활성 (2026-05-18 사장님 결정).
+  // body: { userId, enabled: boolean }. master 대상은 차단 (admin 이 master 토글 X), self 차단.
+  if (rest === '/users/ai-toggle' && request.method === 'POST') {
+    const rlKey = `admin-users-single:${user.id}`;
+    const rl = await checkRateLimit(env, rlKey, 30, 60_000);
+    if (!rl.ok) return tooMany(rl.retryAfterMs);
+    if (!(await isAdminVerified(env, sessionToken, user))) {
+      return err('관리자 인증이 만료되었어요. 다시 인증해주세요.', 403);
+    }
+    await recordAttempt(env, rlKey);
+
+    interface AiToggleBody { userId?: unknown; enabled?: unknown }
+    let body: AiToggleBody;
+    try { body = (await request.json()) as AiToggleBody; } catch { return err('잘못된 요청입니다.'); }
+    const targetId = typeof body.userId === 'number' ? body.userId : NaN;
+    if (!Number.isInteger(targetId) || targetId <= 0) return err('userId 가 필요해요.');
+    if (targetId === user.id) {
+      await audit(env, user.id, 'users.ai_toggle', { targetId, reason: 'self' }, request, false, '자기 자신 변경 시도');
+      return err('자기 자신은 이 화면에서 바꿀 수 없어요.');
+    }
+    if (typeof body.enabled !== 'boolean') return err('enabled (boolean) 가 필요해요.');
+    const enabled = body.enabled;
+
+    const target = await env.DB.prepare('SELECT is_master, email, business_name FROM users WHERE id = ?')
+      .bind(targetId).first<{ is_master: number; email: string; business_name: string }>();
+    if (!target) return err('사용자를 찾을 수 없어요.', 404);
+    if (target.is_master && !user.is_master) {
+      return err('마스터 계정은 마스터만 바꿀 수 있어요.', 403);
+    }
+
+    await env.DB.prepare('UPDATE users SET ai_insights_enabled = ? WHERE id = ?')
+      .bind(enabled ? 1 : 0, targetId).run();
+    await audit(env, user.id, 'users.ai_toggle', { targetId, email: target.email, businessName: target.business_name, enabled }, request);
+    return ok({ userId: targetId, ai_insights_enabled: enabled });
   }
 
   // POST /api/admin/users/delete - master 만 + step-up 통과 필수 (2026-05-16 사장님 결정)

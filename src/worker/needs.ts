@@ -24,8 +24,25 @@ interface NeedRow {
   purpose: string | null;
   residence: string | null;
   menu_ids: string | null;
+  custom_values: string | null;
   created_at: number;
 }
+
+// custom_values JSON parse - { field_key: option_value } shape, 형식 깨졌으면 빈 객체.
+const parseCustomValues = (s: string | null): Record<string, string> => {
+  if (!s) return {};
+  try {
+    const obj = JSON.parse(s) as unknown;
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (typeof v === 'string' && typeof k === 'string') out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+};
 
 const parseMenuIds = (s: string | null): number[] => {
   if (!s) return [];
@@ -63,7 +80,7 @@ export async function handleNeeds(
       args.push(Number(toQ));
     }
     const { results } = await env.DB.prepare(
-      `SELECT id, gender, age_band, with_child, purpose, residence, menu_ids, created_at
+      `SELECT id, gender, age_band, with_child, purpose, residence, menu_ids, custom_values, created_at
        FROM customer_needs
        WHERE ${conds.join(' AND ')}
        ORDER BY created_at DESC, id DESC
@@ -82,6 +99,7 @@ export async function handleNeeds(
         purpose: r.purpose,
         residence: r.residence,
         menuIds: parseMenuIds(r.menu_ids),
+        customValues: parseCustomValues(r.custom_values),
         createdAt: r.created_at,
       })),
       hasMore,
@@ -124,13 +142,45 @@ export async function handleNeeds(
       menuIds = candidate.filter((id) => owned.has(id));
     }
 
+    // customValues: 사장님 active user_needs_fields 와 매칭. 본인 필드 X / 옵션 v 매치 안 됨 은 silently drop.
+    const customValuesRaw = body?.customValues;
+    const validatedCustom: Record<string, string> = {};
+    if (customValuesRaw && typeof customValuesRaw === 'object' && !Array.isArray(customValuesRaw)) {
+      const inputObj = customValuesRaw as Record<string, unknown>;
+      const inputKeys = Object.keys(inputObj).slice(0, 10); // 안전 cap
+      if (inputKeys.length > 0) {
+        // 사장님 active 필드 + options_json 조회
+        const { results: fields } = await env.DB.prepare(
+          'SELECT field_key, options_json FROM user_needs_fields WHERE user_id = ? AND archived = 0',
+        ).bind(user.id).all<{ field_key: string; options_json: string }>();
+        const fieldOpts = new Map<string, Set<string>>();
+        for (const f of fields) {
+          try {
+            const opts = JSON.parse(f.options_json) as Array<{ v?: unknown }>;
+            const set = new Set(opts
+              .map((o) => (o && typeof o.v === 'string' ? o.v : null))
+              .filter((v): v is string => v != null));
+            fieldOpts.set(f.field_key, set);
+          } catch { /* corrupt - skip */ }
+        }
+        for (const k of inputKeys) {
+          const v = inputObj[k];
+          if (typeof v !== 'string') continue;
+          const allowed = fieldOpts.get(k);
+          if (allowed && allowed.has(v)) validatedCustom[k] = v;
+        }
+      }
+    }
+    const hasCustom = Object.keys(validatedCustom).length > 0;
+
     if (
       gender === null &&
       ageBand === null &&
       withChild === null &&
       purpose === null &&
       residence === null &&
-      menuIds.length === 0
+      menuIds.length === 0 &&
+      !hasCustom
     ) {
       return err('한 가지 이상 선택해주세요.');
     }
@@ -140,8 +190,8 @@ export async function handleNeeds(
         ? body.createdAt
         : Date.now();
     const r = await env.DB.prepare(
-      `INSERT INTO customer_needs (user_id, gender, age_band, with_child, purpose, residence, menu_ids, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO customer_needs (user_id, gender, age_band, with_child, purpose, residence, menu_ids, custom_values, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         user.id,
@@ -151,6 +201,7 @@ export async function handleNeeds(
         purpose,
         residence,
         menuIds.length ? JSON.stringify(menuIds) : null,
+        hasCustom ? JSON.stringify(validatedCustom) : null,
         createdAt,
       )
       .run();

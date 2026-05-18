@@ -27,7 +27,16 @@ interface NeedEntry {
   purpose: 'gift' | 'kids_snack' | 'meal_replacement' | null;
   residence: 'busan' | 'outside' | null;
   menuIds: number[];
+  customValues?: Record<string, string>;
   createdAt: number;
+}
+
+// 사장님 커스텀 필드 (PR 2/3 동적 표시)
+interface CustomField {
+  id: number;
+  field_key: string;
+  label: string;
+  options: { v: string; l: string }[];
 }
 
 type Gender = 'female' | 'male';
@@ -130,6 +139,18 @@ export default function NeedsTab({
   const [submitting, setSubmitting] = useState(false);
   const [recent, setRecent] = useState<NeedEntry[] | null>(null); // 오늘 기록만
   const [toast, setToast] = useState<string | null>(null);
+  // 사장님 커스텀 필드 (PR 2/3) - 한 번 fetch 후 정적, 본인 가게 활성 필드만
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customValues, setCustomValues] = useState<Record<string, string | null>>({});
+  useEffect(() => {
+    let alive = true;
+    apiGet<{ fields: CustomField[] }>('/api/me/needs-fields')
+      .then((d) => { if (alive) setCustomFields(d.fields); })
+      .catch(() => { /* 빈 fallback */ });
+    return () => { alive = false; };
+  }, []);
+  const setCustomValue = (key: string, v: string | null) =>
+    setCustomValues((p) => ({ ...p, [key]: v }));
 
   // 오늘 기록만 - 어제까지의 누적은 BI 분포 카드에서
   useEffect(() => {
@@ -167,9 +188,10 @@ export default function NeedsTab({
     setMenuIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
-  const hasAny = !!(gender || age || child || purpose || residence) || menuIds.length > 0;
+  const customAny = customFields.some((f) => customValues[f.field_key] != null);
+  const hasAny = !!(gender || age || child || purpose || residence) || menuIds.length > 0 || customAny;
 
-  // 자주 오는 손님 기준 프리셋으로 되돌림 (제품 선택은 비움)
+  // 자주 오는 손님 기준 프리셋으로 되돌림 (제품 선택·커스텀 필드는 비움)
   const reset = () => {
     setGender(DEFAULTS.gender);
     setAge(DEFAULTS.age);
@@ -177,12 +199,18 @@ export default function NeedsTab({
     setPurpose(DEFAULTS.purpose);
     setResidence(DEFAULTS.residence);
     setMenuIds([]);
+    setCustomValues({});
   };
 
   const submit = async () => {
     if (submitting || !hasAny) return;
     setSubmitting(true);
     try {
+      const customPayload: Record<string, string> = {};
+      for (const f of customFields) {
+        const v = customValues[f.field_key];
+        if (typeof v === 'string') customPayload[f.field_key] = v;
+      }
       await apiPost('/api/needs', {
         gender,
         ageBand: age,
@@ -190,6 +218,7 @@ export default function NeedsTab({
         purpose,
         residence,
         menuIds,
+        customValues: Object.keys(customPayload).length > 0 ? customPayload : undefined,
       });
       await reloadRecent();
       // BI 페이지의 needs 집계 캐시 무효화 - 사장님이 곧장 /bi로 가도 방금 기록한 게 반영됨
@@ -228,6 +257,16 @@ export default function NeedsTab({
         <Seg label={preset.withChild.label} options={preset.withChild.options as { v: 'yes' | 'no'; l: string }[]} value={child} onChange={setChild} />
         <Seg label={preset.purpose.label} options={preset.purpose.options as { v: Purpose; l: string }[]} value={purpose} onChange={setPurpose} />
         <Seg label={preset.residence.label} options={preset.residence.options as { v: Resid; l: string }[]} value={residence} onChange={setResidence} />
+
+        {customFields.map((f) => (
+          <Seg<string>
+            key={f.id}
+            label={f.label}
+            options={f.options}
+            value={customValues[f.field_key] ?? null}
+            onChange={(v) => setCustomValue(f.field_key, v)}
+          />
+        ))}
 
         <div>
           <div className="label">판매제품 (선택사항, 여러 개 가능)</div>

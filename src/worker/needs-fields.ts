@@ -7,7 +7,9 @@ import { ok, err } from './types';
 const FIELD_KEY_RE = /^[a-z][a-z0-9_]{2,30}$/;
 const OPTION_V_RE = /^[a-z][a-z0-9_]{0,30}$/;
 const MAX_FIELDS = 5;
-const MAX_OPTIONS = 6;
+// 6 → 4 로 축소 (2026-05-18 design-reviewer 🔴 #1): /needs 의 Seg chip wrap 차단.
+// 사장님 chip wrap 룰: 한 줄 유지 = 정보 손실 회피 우선. 4 옵션이면 px-3.5 h-10 chip 모바일 375px 한 줄 fit.
+const MAX_OPTIONS = 4;
 const LABEL_MAX = 30;
 const OPT_LABEL_MAX = 20;
 

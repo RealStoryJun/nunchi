@@ -67,7 +67,7 @@ export default function CustomNeedsFieldsCard() {
                 </div>
               </div>
               <button type="button" onClick={() => void handleDelete(f.id, f.label)}
-                className="text-warm text-xs hover:underline shrink-0 px-1">삭제</button>
+                className="text-warm text-xs hover:underline shrink-0 h-10 px-3">삭제</button>
             </li>
           ))}
         </ul>
@@ -96,6 +96,16 @@ function autoFieldKey(label: string): string {
   return `custom_${Date.now().toString(36).slice(-6)}${rand}`;
 }
 
+// 옵션 라벨 → 영문 key 자동 생성. label 한국어면 'opt_{idx}' fallback.
+function autoOptionKey(label: string, idx: number): string {
+  const base = label.toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 30);
+  if (base.length >= 1 && /^[a-z]/.test(base)) return base;
+  return `opt_${idx + 1}`;
+}
+
 function AddFieldModal({
   onClose,
   onCreated,
@@ -104,17 +114,15 @@ function AddFieldModal({
   onCreated: () => void;
 }) {
   const [label, setLabel] = useState('');
-  const [fieldKey, setFieldKey] = useState('');
-  const [options, setOptions] = useState<{ v: string; l: string }[]>([
-    { v: '', l: '' },
-    { v: '', l: '' },
-  ]);
+  // 옵션은 라벨(한국어)만 사용자가 입력. 영문 키는 라벨 → autoOptionKey 자동 생성.
+  // "손쉽고" 모토: 영문 강제 입력 부담 제거.
+  const [options, setOptions] = useState<string[]>(['', '']);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const updateOption = (i: number, key: 'v' | 'l', val: string) =>
-    setOptions((prev) => prev.map((o, idx) => (idx === i ? { ...o, [key]: val } : o)));
-  const addOption = () => setOptions((p) => [...p, { v: '', l: '' }]);
+  const updateOption = (i: number, val: string) =>
+    setOptions((prev) => prev.map((o, idx) => (idx === i ? val : o)));
+  const addOption = () => setOptions((p) => [...p, '']);
   const removeOption = (i: number) =>
     setOptions((p) => p.filter((_, idx) => idx !== i));
 
@@ -123,17 +131,28 @@ function AddFieldModal({
     if (busy) return;
     setBusy(true); setError(null);
     try {
-      const key = fieldKey.trim() || autoFieldKey(label);
-      const cleaned = options
-        .map((o) => ({ v: o.v.trim().toLowerCase(), l: o.l.trim() }))
-        .filter((o) => o.v && o.l);
+      const fieldKey = autoFieldKey(label);
+      // 옵션 라벨 → key 자동 생성. 같은 라벨 중복 차단 (set).
+      const seenV = new Set<string>();
+      const cleaned: { v: string; l: string }[] = [];
+      for (let i = 0; i < options.length; i++) {
+        const l = options[i].trim();
+        if (!l) continue;
+        let v = autoOptionKey(l, i);
+        // v 중복 방지 (한국어만이면 idx fallback 다르고, 영문 같으면 -2/-3 suffix)
+        let tryV = v;
+        let suffix = 2;
+        while (seenV.has(tryV)) { tryV = `${v}_${suffix}`; suffix++; }
+        seenV.add(tryV);
+        cleaned.push({ v: tryV, l });
+      }
       if (cleaned.length < 1) {
         setError('옵션을 1개 이상 입력해주세요.');
         setBusy(false);
         return;
       }
       await apiPost('/api/me/needs-fields', {
-        field_key: key,
+        field_key: fieldKey,
         label: label.trim(),
         options: cleaned,
       });
@@ -156,27 +175,19 @@ function AddFieldModal({
             onChange={(e) => setLabel(e.target.value)} disabled={busy}
             placeholder="예: 방문 시간대" />
         </div>
-        <div>
-          <label className="label">키 (영문, 비우면 자동)</label>
-          <input className="field num" value={fieldKey} maxLength={31}
-            onChange={(e) => setFieldKey(e.target.value.toLowerCase())} disabled={busy}
-            placeholder="예: visit_time (영문 소문자/숫자/_ 3-31자)" />
-        </div>
         <div className="space-y-2">
           <label className="label">옵션 (1-6개)</label>
           {options.map((o, i) => (
             <div key={i} className="flex items-center gap-2">
-              <input maxLength={31} className="field num flex-1" placeholder="키"
-                value={o.v} onChange={(e) => updateOption(i, 'v', e.target.value)} disabled={busy} />
-              <input maxLength={20} className="field flex-1" placeholder="라벨"
-                value={o.l} onChange={(e) => updateOption(i, 'l', e.target.value)} disabled={busy} />
+              <input maxLength={20} className="field flex-1" placeholder={`예: ${i === 0 ? '점심' : i === 1 ? '저녁' : '옵션 ' + (i + 1)}`}
+                value={o} onChange={(e) => updateOption(i, e.target.value)} disabled={busy} />
               {options.length > 1 && (
                 <button type="button" onClick={() => removeOption(i)} disabled={busy}
-                  className="text-warm text-xs hover:underline shrink-0 px-1">삭제</button>
+                  className="text-warm text-xs hover:underline shrink-0 h-10 px-3">삭제</button>
               )}
             </div>
           ))}
-          {options.length < 6 && (
+          {options.length < 4 && (
             <button type="button" onClick={addOption} disabled={busy}
               className="text-accent text-sm hover:underline">+ 옵션 추가</button>
           )}
